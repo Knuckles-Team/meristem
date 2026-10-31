@@ -105,7 +105,7 @@ def fleet_history(tmp_path: Path) -> tuple[Path, str, str, str]:
     )
     rows = [
         {"id": target, "delivery_state": "LANDED", "evidence": [{"commit": wrong}]}
-        for target in ("MERISTEM-BOUNDARY-R005", "MERISTEM-BOUNDARY-R007", "MERISTEM-BOUNDARY-R008")
+        for target in ("AU-BOUNDARY-R005", "AU-BOUNDARY-R007", "AU-BOUNDARY-R008")
     ]
     (tmp_path / FLEET_STATUS).write_text(json.dumps({"requirements": rows}))
     _git(tmp_path, "add", FLEET_ARTIFACT, FLEET_STATUS)
@@ -123,10 +123,10 @@ def test_k_o_census_attribution_is_historical(
     from scripts.check_boundary_history import check_fleet_census
 
     root, census, merge, wrong = fleet_history
-    check_fleet_census(root, census, merge, wrong, "HEAD", target="MERISTEM-BOUNDARY-R007")
+    check_fleet_census(root, census, merge, wrong, "HEAD", target="AU-BOUNDARY-R007")
     with pytest.raises(ValueError, match="status attribution"):
         check_fleet_census(
-            root, census, merge, census, "HEAD", target="MERISTEM-BOUNDARY-R007"
+            root, census, merge, census, "HEAD", target="AU-BOUNDARY-R007"
         )
 
 
@@ -137,8 +137,8 @@ def test_p_s_census_attribution_is_historical(
     from scripts.check_boundary_history import check_fleet_census
 
     root, census, merge, wrong = fleet_history
-    check_fleet_census(root, census, merge, wrong, "HEAD", target="MERISTEM-BOUNDARY-R008")
+    check_fleet_census(root, census, merge, wrong, "HEAD", target="AU-BOUNDARY-R008")
     with pytest.raises(ValueError, match="status attribution"):
         check_fleet_census(
-            root, census, merge, census, "HEAD", target="MERISTEM-BOUNDARY-R008"
+            root, census, merge, census, "HEAD", target="AU-BOUNDARY-R008"
         )
