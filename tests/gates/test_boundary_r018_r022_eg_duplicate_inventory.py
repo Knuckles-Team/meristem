@@ -1,4 +1,4 @@
-"""Track the current state of the five EG-duplicate inventories."""
+"""Track the current state of the five Medulla-duplicate inventories."""
 
 from pathlib import Path
 

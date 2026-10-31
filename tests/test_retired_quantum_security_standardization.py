@@ -1,4 +1,4 @@
-"""Retirement proofs for the AU-boundary R028 family rows (1, 3, 4, 5).
+"""Retirement proofs for the Meristem-boundary R028 family rows (1, 3, 4, 5).
 
 The rows name pre-3.0.0-cut file paths under ``kg/``, ``observability/`` and
 ``protocols/``.  Those top-level trees were removed with the 3.0.0 cut, so

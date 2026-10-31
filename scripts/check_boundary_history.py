@@ -21,9 +21,9 @@ HARNESS_MERGE = "a754f1299033"
 FLEET_ARTIFACT = "specs/au-boundary-deconstruction/fleet-census-20261009.md"
 FLEET_STATUS = "specs/au-boundary-deconstruction/status.json"
 FLEET_SECTIONS = {
-    "AU-BOUNDARY-R005": "R005 (connector packages A–E)",
-    "AU-BOUNDARY-R007": "R007 (connector packages K–O)",
-    "AU-BOUNDARY-R008": "R008 (connector packages P–S)",
+    "MERISTEM-BOUNDARY-R005": "R005 (connector packages A–E)",
+    "MERISTEM-BOUNDARY-R007": "R007 (connector packages K–O)",
+    "MERISTEM-BOUNDARY-R008": "R008 (connector packages P–S)",
 }
 
 
@@ -93,7 +93,7 @@ def check_fleet_census(
     wrong: str,
     head: str,
     *,
-    target: str = "AU-BOUNDARY-R005",
+    target: str = "MERISTEM-BOUNDARY-R005",
 ) -> None:
     """Check one historical census without asserting current fleet parity."""
     if target not in FLEET_SECTIONS:
