@@ -18,19 +18,23 @@ Connectors depend on the SDK only. Meristem submits typed agent claims through t
 
 ## Wire shape
 
-No new wire record. The seam is an ownership boundary: the call direction above is the whole interface, and each owner exposes its capability through its own served operation or generated client.
+No record crosses at runtime. The seam is an import boundary: a connector repository imports the connector SDK and never imports meristem, and meristem contains no connector, manifest, certification or ontology-pack code.
+
+The census reads connector checkouts and flags any import of the retired meristem modules `agent_utilities.mcp`, `agent_utilities.core.config`, `agent_utilities.core.exceptions`, `agent_utilities.core.transport_security` and `agent_utilities.base_utilities` (`BANNED` in `scripts/check_connector_import_census.py`). Meristem reaches a fleet connector only through the host-bound `ToolCaller` (`meristem/host_ports.py`).
 
 ## Refusal codes
 
-The owner refuses with its own typed codes. Meristem maps an unknown or invalid reply to a refusal and never to a local fallback.
+The census reports a `Finding` per connector checkout (`census(root)` in `scripts/check_connector_import_census.py`) and exits non-zero when a banned import is present. A tool step addressed to a connector that the host cannot call fails with `ToolCallRefused` or `ToolCallFailed` (`meristem/graph/state.py`).
 
 ## Authoritative types
 
-The owner repository holds the types; meristem imports the generated client and never copies a type.
+- Meristem: `scripts/check_connector_import_census.py` (`BANNED`, `inspect_file`, `census`) and `meristem/host_ports.py` (`ToolCaller`).
+- SDK: the connector toolkit, manifest and certification types named by the provider rows.
 
 ## Test vectors
 
-The removal census `tests/gates/test_boundary_removal_census.py` holds the absence checks on the meristem side; the owner specs hold the behaviour vectors.
+- `tests/gates/test_connector_import_census.py` runs the census over fixture checkouts.
+- `tests/gates/test_boundary_r011_source_connectors_deleted.py`, `test_boundary_r011_universal_connector_deleted.py`, `test_boundary_r011_manifest_deleted.py` and `test_boundary_r002_3_certification_oidc_deleted.py` assert the moved modules are absent.
 
 ## Implementing specs
 

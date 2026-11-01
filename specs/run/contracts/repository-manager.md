@@ -16,19 +16,21 @@ Meristem and arbora reach repository operations through repository-manager opera
 
 ## Wire shape
 
-No new wire record. The seam is an ownership boundary: the call direction above is the whole interface, and each owner exposes its capability through its own served operation or generated client.
+No record crosses at runtime. Meristem holds no merge-queue, concept-reservation or worktree code and calls no repository-manager operation; repository-manager does not call meristem. The seam is the absence of the `governance/` modules from meristem, recorded as a relocation in `specs/run/plan.md` and checked by the relocation census.
 
 ## Refusal codes
 
-The owner refuses with its own typed codes. Meristem maps an unknown or invalid reply to a refusal and never to a local fallback.
+None. No call crosses the seam, so no refusal is defined. A reappearance of a moved path fails the census assertion in `tests/gates/test_boundary_r036_r047_relocation_census.py` and the governance import check below.
 
 ## Authoritative types
 
-The owner repository holds the types; meristem imports the generated client and never copies a type.
+- Meristem: the relocation inventory in `tests/gates/test_boundary_r036_r047_relocation_census.py` (the `governance/` concept modules among the paths it records).
+- Repository-manager: the governance operations named by the provider row.
 
 ## Test vectors
 
-The removal census `tests/gates/test_boundary_removal_census.py` holds the absence checks on the meristem side; the owner specs hold the behaviour vectors.
+- `tests/gates/test_boundary_r036_r047_relocation_census.py` and `tests/gates/test_boundary_r024_governance_import_moved.py` hold the absence vectors.
+- `tests/gates/test_boundary_removal_census.py` covers the removed console scripts and modules.
 
 ## Implementing specs
 
