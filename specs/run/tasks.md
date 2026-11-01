@@ -1,0 +1,65 @@
+# MERISTEM-RUN tasks
+
+- [ ] T001 [US1] MERISTEM-RUN-R014 Gate AU's retained config.py against duplicate environment readers.
+- [ ] T002 [US1] MERISTEM-RUN-R010 The answer step calls the retrieval round and applies its verdicts.
+- [ ] T003 [US1] MERISTEM-RUN-R011 The retrieval step applies the Discover quality verdict.
+- [ ] T004 [US1] MERISTEM-RUN-R012 Add a cross-owner component registry and path guard.
+- [ ] T005 [US1] MERISTEM-RUN-R013 Every package directory has one recorded disposition.
+- [ ] T006 [US1] MERISTEM-RUN-R001 The agent run loop stays in Meristem.
+- [ ] T007 [US1] MERISTEM-RUN-R001.1 The run loop applies a received run plan.
+- [ ] T008 [US1] MERISTEM-RUN-R001.2 The run loop has a documented fallback plan and fails closed.
+- [ ] T009 [US1] MERISTEM-RUN-R001.3 The recursive run loop enforces a received depth and budget.
+- [ ] T010 [US1] MERISTEM-RUN-R001.4 Restore the model-edited run scaffold.
+- [ ] T011 [US1] MERISTEM-RUN-R001.4.1 One run's scaffold state.
+- [ ] T012 [US1] MERISTEM-RUN-R001.4.2 Gated update tool.
+- [ ] T013 [US1] MERISTEM-RUN-R001.4.3 Request-only injection.
+- [ ] T014 [US1] MERISTEM-RUN-R001.4.4 No planner authority.
+- [ ] T015 [US1] MERISTEM-RUN-R001.4.5 End-to-end scaffold proof.
+- [ ] T016 [US1] MERISTEM-RUN-R001.5 Produce real scaffold state for an owner-composed read.
+- [ ] T017 [US1] MERISTEM-RUN-R001.5.1 Atomic scaffold revision.
+- [ ] T018 [US1] MERISTEM-RUN-R001.5.2 Publish actual scaffold revisions through a run-local host port.
+- [ ] T019 [US1] MERISTEM-RUN-R001.6 Apply a received bounded dependency plan.
+- [ ] T020 [US1] MERISTEM-RUN-R001.6.1 Tool step model and caller port.
+- [ ] T021 [US1] MERISTEM-RUN-R001.6.2 Deterministic binding resolution.
+- [ ] T022 [US1] MERISTEM-RUN-R001.6.3 Typed step failure without model retry.
+- [ ] T023 [US1] MERISTEM-RUN-R001.6.4 Per-step record.
+- [ ] T024 [US1] MERISTEM-RUN-R001.6.5 Mixed plans share one scheduler.
+- [ ] T025 [US1] MERISTEM-RUN-R001.6.6 Wiring.
+- [ ] T026 [US1] MERISTEM-RUN-R001.6.7 Hot-path proof.
+- [ ] T027 [US1] MERISTEM-RUN-R001.7 Account and drain parallel work.
+- [ ] T028 [US1] MERISTEM-RUN-R001.8 Resume a run from a host checkpoint.
+- [ ] T029 [US1] MERISTEM-RUN-R001.9 Carry completed conversation history into a fresh run.
+- [ ] T030 [US1] MERISTEM-RUN-R001.10 Publish model and tool events through a durable host port.
+- [ ] T031 [US1] MERISTEM-RUN-R015 Assign an owner to the skill-content directories under `skills/`.
+- [ ] T032 [US1] MERISTEM-RUN-R001.11 Apply host-selected client tools.
+- [ ] T033 [US1] MERISTEM-RUN-R002 The run loop checks the engine render receipt before model transport.
+- [ ] T034 [US1] MERISTEM-RUN-R002.1 Model.
+- [ ] T035 [US1] MERISTEM-RUN-R002.2 Behavior.
+- [ ] T036 [US1] MERISTEM-RUN-R002.3 Wiring.
+- [ ] T037 [US1] MERISTEM-RUN-R002.4 Refusal.
+- [ ] T038 [US1] MERISTEM-RUN-R002.5 Evidence.
+- [ ] T039 [US1] MERISTEM-RUN-R002.6 Hot-path proof of the render-receipt consumer.
+- [ ] T040 [US1] MERISTEM-RUN-R001.12 Emit bounded run-local model measurements.
+- [ ] T041 [US1] MERISTEM-RUN-R001.9.1 Hydrate a sequential fresh turn from completed text history.
+- [ ] T042 [US1] MERISTEM-RUN-R001.9.2 Complete checkpoint-backed conversation history integration.
+- [ ] T043 [US1] MERISTEM-RUN-R001.9.2.1 Apply one host checkpoint selection before effects.
+- [ ] T044 [US1] MERISTEM-RUN-R001.9.2.2 Qualify genuine checkpoint restoration and served continuation.
+- [ ] T045 [US1] MERISTEM-RUN-R001.13 Apply a received text-only execution constraint.
+- [ ] T046 [US1] MERISTEM-RUN-R001.13.1 Enforce the constraint at the model boundary.
+- [ ] T047 [US1] MERISTEM-RUN-R001.13.2 Qualify the installed constrained execution path.
+- [ ] T048 [US1] MERISTEM-RUN-R001.14 Emit explicit child lineage through existing run events.
+- [ ] T049 [US1] MERISTEM-RUN-R001.15 Apply host-admitted active-child input at a safe boundary.
+- [ ] T050 [US1] MERISTEM-RUN-R001.16 Consume selected completed-child history for a fresh turn.
+- [ ] T051 [US1] MERISTEM-RUN-R001.17 Publish bounded public child records with provenance.
+- [ ] T052 [US1] MERISTEM-RUN-R003 Consumer of the graph-backed study sources decision.
+- [ ] T053 [US1] MERISTEM-RUN-R003.1 Accept graph-referenced and graph-ingested study sources.
+- [ ] T054 [US1] MERISTEM-RUN-R004 Consumer of the field shielding decision.
+- [ ] T055 [US1] MERISTEM-RUN-R004.1 Apply the projection and reject withheld paths.
+- [ ] T056 [US1] MERISTEM-RUN-R005 Consumer of the workflow registry decision.
+- [ ] T057 [US1] MERISTEM-RUN-R005.1 Resolve each workflow through the registry before execution.
+- [ ] T058 [US1] MERISTEM-RUN-R006 Consumer of the replay decision.
+- [ ] T059 [US1] MERISTEM-RUN-R006.1 Treat the replay event source as an external producer.
+- [ ] T060 [US1] MERISTEM-RUN-R007 Resume consumes the arbora host checkpoint port.
+- [ ] T061 [US1] MERISTEM-RUN-R008 Declare the host-facing public module set.
+- [ ] T062 [US1] MERISTEM-RUN-R009 Deliver an admitted child message at the step boundary.
+- [ ] T063 [US1] MERISTEM-RUN-R016 Moved capabilities stay absent from this repository.

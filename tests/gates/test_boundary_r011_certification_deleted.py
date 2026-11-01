@@ -4,7 +4,7 @@ import pytest
 from _census import assert_absent, references
 
 
-@pytest.mark.spec("MERISTEM-BOUNDARY-R011.4")
+@pytest.mark.spec("MERISTEM-RUN-R016")
 def test_certification_modules_absent() -> None:
     assert_absent(
         "knowledge_graph/integrations/connector_certification.py",

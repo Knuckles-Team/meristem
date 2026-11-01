@@ -20,7 +20,7 @@ from meristem.runtime import (
     StopRule,
 )
 
-pytestmark = pytest.mark.spec("MERISTEM-BOUNDARY-R043.13.1")
+pytestmark = pytest.mark.spec("MERISTEM-RUN-R001.13.1")
 
 
 def fixture(

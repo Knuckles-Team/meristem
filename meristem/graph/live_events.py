@@ -238,7 +238,7 @@ async def run_step(
 
     ``child_records`` (a ``ChildPublicRecordPublisher``) replaces the raw
     projection with bounded public child records: no raw tool arguments,
-    results or reasoning are published (MERISTEM-BOUNDARY-R043.17).
+    results or reasoning are published (MERISTEM-RUN-R001.17).
     """
     if publisher is None and stream_observer is None and child_records is None:
         result = await agent.run(prompt, **kwargs)

@@ -22,7 +22,7 @@ from meristem.graph import (
 )
 from meristem.graph.executor import iterate_run
 
-pytestmark = pytest.mark.spec("MERISTEM-BOUNDARY-R043.8")
+pytestmark = pytest.mark.spec("MERISTEM-RUN-R001.8")
 
 
 class HostCheckpoint:

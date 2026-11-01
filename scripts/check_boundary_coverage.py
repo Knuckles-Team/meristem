@@ -10,7 +10,7 @@ from pathlib import Path, PurePosixPath
 def check(root: Path) -> list[str]:
     """Compare the first two package-directory levels with the inventory."""
     rows: dict[str, tuple[str, str]] = {}
-    coverage = root / "specs/au-boundary-deconstruction/plan.md"
+    coverage = root / "specs/run/plan.md"
     for line in (
         coverage.read_text()
         .split("### Current package-directory ownership", 1)[-1]

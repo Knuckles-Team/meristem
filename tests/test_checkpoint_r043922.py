@@ -22,7 +22,7 @@ from meristem.graph import (
     run,
 )
 
-pytestmark = pytest.mark.spec("MERISTEM-BOUNDARY-R043.9.2.2")
+pytestmark = pytest.mark.spec("MERISTEM-RUN-R001.9.2.2")
 
 
 class MemoryCheckpoint:

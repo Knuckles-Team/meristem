@@ -4,7 +4,7 @@ import pytest
 from _census import assert_absent, console_scripts, references
 
 
-@pytest.mark.spec("MERISTEM-BOUNDARY-R011.5")
+@pytest.mark.spec("MERISTEM-RUN-R016")
 def test_manifest_modules_and_script_absent() -> None:
     assert_absent(
         "knowledge_graph/ontology/connector_manifest.py",

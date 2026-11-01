@@ -59,7 +59,7 @@ bootstrap skill, together with the [SDD full lifecycle](https://github.com/Knuck
 - [`MERISTEM-CONTEXT`](agent-context-and-finance/spec.md) — agent context and finance orchestration.
 - [`MERISTEM-CONTROL`](agent-control-plane/spec.md) — agent control plane and workflows.
 - [`MERISTEM-SEC`](agent-security-policy/spec.md) — agent security and policy boundary.
-- [`MERISTEM-BOUNDARY`](au-boundary-deconstruction/spec.md) — move non-agent ownership to the right repository.
+- [`MERISTEM-RUN`](run/spec.md) — the agent run loop, its host ports and the package ownership guards; ownership contracts live in `run/contracts/`.
 - [`MERISTEM-QUAL`](au-boundary-quality/spec.md) — quality and acceptance of the AU boundary.
 - [`MERISTEM-DEV`](au-developer-environment/spec.md) — developer environment and release setup.
 - [`MERISTEM-INTEGRATION`](au-integration-reliability/spec.md) — reliability of live integrations.

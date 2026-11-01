@@ -1,4 +1,4 @@
-"""Bounded public child records with provenance (MERISTEM-BOUNDARY-R043.17).
+"""Bounded public child records with provenance (MERISTEM-RUN-R001.17).
 
 A child run may publish three kinds of public record through the existing
 :class:`~meristem.host_ports.DurableRunEventPublisher`: public text,

@@ -12,7 +12,7 @@ from pydantic_ai.models.function import FunctionModel
 from meristem import host_ports
 from meristem.graph import RunBudget, RunPlan, RunRequest, run
 
-pytestmark = pytest.mark.spec("MERISTEM-BOUNDARY-R043.15")
+pytestmark = pytest.mark.spec("MERISTEM-RUN-R001.15")
 
 
 class Port:

@@ -129,7 +129,7 @@ async def test_explicit_summary_and_unbound_run() -> None:
     assert unbound.transcript_status == "unavailable"
 
 
-@pytest.mark.spec("MERISTEM-BOUNDARY-R043.17")
+@pytest.mark.spec("MERISTEM-RUN-R001.17")
 async def test_run_loop_builds_child_publisher_from_host_child_identity() -> None:
     from contextlib import asynccontextmanager
 
@@ -173,7 +173,7 @@ async def test_run_loop_builds_child_publisher_from_host_child_identity() -> Non
     assert "PRIVATE-REASONING" not in dump and "RAW-RESULT-SECRET" not in dump
 
 
-@pytest.mark.spec("MERISTEM-BOUNDARY-R043.17")
+@pytest.mark.spec("MERISTEM-RUN-R001.17")
 async def test_run_loop_without_child_identity_keeps_ordinary_projection() -> None:
     from contextlib import asynccontextmanager
 
