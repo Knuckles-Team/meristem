@@ -16,7 +16,7 @@ This repository inherits the [organization constitution](https://github.com/Knuc
 
 Meristem runs one agent run. It applies a decision it receives and enforces a limit it receives. It has no store, planner, selector, router, retriever or policy, and no MCP, server, API or A2A.
 
-**Enforced by:** Pre-commit hooks `boundary-owners`, `boundary-coverage`, `boundary-file-owners` and `boundary-history` (`scripts/check_boundary_*.py`); [ecosystem boundaries](https://github.com/Knuckles-Team/pipelines/blob/main/reference/ecosystem-boundaries.md).
+**Enforced by:** Pre-commit hooks `boundary-owners`, `boundary-coverage` and `boundary-file-owners` (`scripts/check_boundary_*.py`); [ecosystem boundaries](https://github.com/Knuckles-Team/pipelines/blob/main/reference/ecosystem-boundaries.md).
 
 **Plan check:** Does every threshold in the change arrive as a received value with a default?
 
@@ -32,7 +32,7 @@ The harness depends on the connector SDK and the model client library only. It i
 
 Each directory and file of the package has a named boundary owner. A file without an owner fails the gate.
 
-**Enforced by:** The four `boundary-*` hooks above.
+**Enforced by:** The three `boundary-*` hooks above.
 
 **Plan check:** Does every new file sit under a registered boundary owner?
 

@@ -1,6 +1,4 @@
-# AU_BOUNDARY_DECONSTRUCTION — Requirements quality checklist
-
-Fill this before landing. Check an item only when the spec text satisfies it; an unchecked item blocks landing. Copy the file to `specs/<family>/checklists/requirements.md`.
+# MERISTEM-RUN — Requirements quality checklist
 
 ## Content quality
 

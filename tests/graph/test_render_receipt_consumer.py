@@ -76,7 +76,7 @@ def _plan(transport: Transport, check: RenderReceiptCheck | None) -> RunPlan:
     )
 
 
-@pytest.mark.spec("MERISTEM-BOUNDARY-R050.1")
+@pytest.mark.spec("MERISTEM-RUN-R002.1")
 def test_consumer_model() -> None:
     consumer = RenderReceiptConsumer()
     assert RenderReceiptConsumer.from_dict(consumer.as_dict()) == consumer
@@ -87,7 +87,7 @@ def test_consumer_model() -> None:
         )
 
 
-@pytest.mark.spec("MERISTEM-BOUNDARY-R050.2")
+@pytest.mark.spec("MERISTEM-RUN-R002.2")
 async def test_dispatch_behavior() -> None:
     transport = Transport()
     result = await run(
@@ -97,7 +97,7 @@ async def test_dispatch_behavior() -> None:
     assert transport.requests == 1
 
 
-@pytest.mark.spec("MERISTEM-BOUNDARY-R050.3")
+@pytest.mark.spec("MERISTEM-RUN-R002.3")
 async def test_producer_wiring() -> None:
     """The receipt arrives on the plan the host decision port returns."""
     transport = Transport()
@@ -115,7 +115,7 @@ async def test_producer_wiring() -> None:
     assert transport.requests == 0
 
 
-@pytest.mark.spec("MERISTEM-BOUNDARY-R050.4")
+@pytest.mark.spec("MERISTEM-RUN-R002.4")
 async def test_partial_refusal() -> None:
     cases = {
         "receipt_invalid": _check(_receipt(variables_digest="not-a-digest")),
@@ -142,7 +142,7 @@ async def test_partial_refusal() -> None:
     assert refused.value.code == "revisions_unavailable"
 
 
-@pytest.mark.spec("MERISTEM-BOUNDARY-R050.5")
+@pytest.mark.spec("MERISTEM-RUN-R002.5")
 async def test_location_evidence() -> None:
     evidence = await check_render_receipt(_check(), PROMPT)
     assert evidence == {

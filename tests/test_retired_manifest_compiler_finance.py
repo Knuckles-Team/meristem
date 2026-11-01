@@ -13,8 +13,8 @@ These tests bind that state:
   for dynamic (string-literal) references to the full dotted paths.
 
 The named-module list for the finance census is taken verbatim from the
-``MERISTEM-BOUNDARY-R041`` row in
-``specs/au-boundary-deconstruction/requirements.md``.
+``MERISTEM-RUN-R016`` row in
+``specs/run/requirements.md``.
 
 Pure Python: no network, no git subprocesses.
 """
@@ -34,7 +34,7 @@ PACKAGE_DIRS = ("meristem", "tests")
 MANIFEST_COMPILER = "manifest_compiler"
 MANIFEST_COMPILER_DOTTED = "meristem.knowledge_graph.ontology.manifest_compiler"
 
-# The exact module names the MERISTEM-BOUNDARY-R041 row in requirements.md names.
+# The exact module names the MERISTEM-RUN-R016 row in requirements.md names.
 R041_NAMED_MODULES = (
     "trade_journal",
     "strategy_export",
@@ -110,7 +110,7 @@ def _import_census(
     return hits
 
 
-@pytest.mark.spec("MERISTEM-BOUNDARY-R030.6")
+@pytest.mark.spec("MERISTEM-RUN-R016")
 def test_manifest_compiler_deleted_without_importers():
     """The retired manifest compiler is absent and no caller remains."""
     retired = (
@@ -131,7 +131,7 @@ def test_manifest_compiler_deleted_without_importers():
     )
 
 
-@pytest.mark.spec("MERISTEM-BOUNDARY-R041")
+@pytest.mark.spec("MERISTEM-RUN-R016")
 @pytest.mark.parametrize("module_name", R041_NAMED_MODULES)
 def test_retired_finance_module_absent_without_importers(module_name):
     """Each named fabricated-data finance module is gone and unreferenced."""

@@ -35,12 +35,12 @@ def _env_name(node: ast.AST) -> str | None:
     return None
 
 
-@pytest.mark.spec("MERISTEM-BOUNDARY-R016.1")
+@pytest.mark.spec("MERISTEM-RUN-R014")
 def test_retained_package_has_no_duplicate_environment_reader() -> None:
     assert duplicate_env_readers(PACKAGE) == {}
 
 
-@pytest.mark.spec("MERISTEM-BOUNDARY-R016.1")
+@pytest.mark.spec("MERISTEM-RUN-R014")
 def test_gate_fails_on_an_injected_duplicate_reader(tmp_path: Path) -> None:
     (tmp_path / "a.py").write_text("import os\nX = os.environ.get('ARBORA_X')\n")
     (tmp_path / "b.py").write_text("import os\nY = os.getenv('ARBORA_X')\n")

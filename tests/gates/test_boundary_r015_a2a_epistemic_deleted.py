@@ -4,7 +4,7 @@ import pytest
 from _census import assert_absent, console_scripts, references
 
 
-@pytest.mark.spec("MERISTEM-BOUNDARY-R015.2")
+@pytest.mark.spec("MERISTEM-RUN-R016")
 def test_a2a_epistemic_module_and_script_absent() -> None:
     assert_absent("protocols/a2a_epistemic.py")
     assert "meristem-acp" not in console_scripts()
