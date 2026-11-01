@@ -2,21 +2,126 @@
 
 Governing spec: [spec.md](spec.md). Design: [plan.md](plan.md). Rows: [requirements.md](requirements.md).
 
-- [ ] Inventory the harness package, the run loop entry and the host ports; record the reuse map.
-- [ ] Add `HarnessCandidate` and `CycleOutcome` with the closed refusal codes.
-- [ ] Implement the propose step against the MEDULLA-ORCH-VOCAB-R802.3 query.
-- [ ] Implement host-admitted, materialized probes under the shared actual conditions.
-- [ ] Implement the compose step as one served `Decide` call.
-- [ ] Implement the persist step through the generated-client envelopes and `apply_edits`.
-- [ ] Implement the reflect step and the typed refusals.
-- [ ] Register `HarnessCycleProvider` in `host_ports.py` beside `RunDecisionProvider`.
-- [ ] MERISTEM-HARNESS-CYCLE-R001.10: Replace the fake persist port with the released generated EG client.
-- [ ] MERISTEM-HARNESS-CYCLE-R001.11: Prove a host-registered provider drives one tick on the served path.
-- [ ] Add the served double test and the focused unit tests; run the gates.
-- [ ] Update `status.json` only after the required gates pass on the merged revision.
+Each task line reads `- [ ] T001 [P] [US1] <ID>-R012.4 description`. The task number and the row ID are required.
+`[P]` marks a task that may run in parallel. `[US1]` names the user story. Order tasks producer first.
 
-- [ ] MERISTEM-HARNESS-CYCLE-R001.12: Refuse unverified contrast measurements before Decide or persistence.
-- [ ] Bind owner-authenticated baseline and candidate measurements before enabling contrast decisions.
-
-- [ ] MERISTEM-HARNESS-CYCLE-R001.13: Refuse probe execution without a host admission executor.
-- [ ] Implement and verify host-owned admission and component materialization before claiming actual probe conditions.
+- [x] T001 [US1] MERISTEM-HARNESS-CYCLE-R001.1 Model: Add HarnessCandidate{candidate_id, task_ref, component_kind, component_version_ref, seed, model_ref, budget_re.
+- [x] T002 [US1] MERISTEM-HARNESS-CYCLE-R001.2 Propose: The propose step builds one candidate per returned version.
+- [x] T003 [US1] MERISTEM-HARNESS-CYCLE-R001.3 Probe.
+- [x] T004 [US1] MERISTEM-HARNESS-CYCLE-R001.4 Compose: The compose step sends the probe traces and the contrasts.
+- [x] T005 [US1] MERISTEM-HARNESS-CYCLE-R001.5 Persist.
+- [x] T006 [US1] MERISTEM-HARNESS-CYCLE-R001.6 Reflect: The reflect step submits the lesson only when the compose step adopted a candidate.
+- [x] T007 [US1] MERISTEM-HARNESS-CYCLE-R001.7 Refusal: The cycle refuses with a typed code and keeps the current harness.
+- [x] T008 [US1] MERISTEM-HARNESS-CYCLE-R001.8 Wiring: meristem/host_ports.py gains a HarnessCycleProvider port beside RunDecisionProvider.
+- [ ] T009 [US1] MERISTEM-HARNESS-CYCLE-R001.9 Hot-path proof: served cycle journey.
+- [ ] T010 [US1] MERISTEM-HARNESS-CYCLE-R001.10 Persist through the engine decision port.
+- [ ] T011 [US1] MERISTEM-HARNESS-CYCLE-R001.11 Host registration and tick trigger.
+- [x] T012 [US1] MERISTEM-HARNESS-CYCLE-R001.12 Measurement safety refusal.
+- [x] T013 [US1] MERISTEM-HARNESS-CYCLE-R001.13 Probe admission refusal: Delegate probe requests to a host executor; refuse before execution when none is registered.
+- [ ] T014 [US1] MERISTEM-HARNESS-CYCLE-R001.14 Contrast request carries trace references; the engine measures.
+- [ ] T015 [US1] MERISTEM-HARNESS-CYCLE-R001.15 Candidate bounds are received values.
+- [ ] T016 [US1] MERISTEM-HARNESS-CYCLE-R003.1 Report each model step's cost as a usage event.
+- [ ] T017 [US1] MERISTEM-HARNESS-CYCLE-R004.1 Record run outcomes through `DecisionLog` `Evaluate`.
+- [ ] T018 [US1] MERISTEM-HARNESS-CYCLE-R005.1 Compile context from the selected partition.
+- [ ] T019 [US1] MERISTEM-HARNESS-CYCLE-R005.2 Verify the immutable command file against the record.
+- [ ] T020 [US1] MERISTEM-HARNESS-CYCLE-R006.1 Shield workflow boundaries.
+- [ ] T021 [US1] MERISTEM-HARNESS-CYCLE-R006.2 Submit a task plan when no route stage matches.
+- [ ] T022 [US1] MERISTEM-HARNESS-CYCLE-R007.1 Continue only verified steps.
+- [ ] T023 [US1] MERISTEM-HARNESS-CYCLE-R008.1 Read only the active rule version.
+- [ ] T024 [US1] MERISTEM-HARNESS-CYCLE-R009.1 Apply the assembled primitive composition.
+- [ ] T025 [US1] MERISTEM-HARNESS-CYCLE-R010.1 Re-admit width and depth changes.
+- [ ] T026 [US1] MERISTEM-HARNESS-CYCLE-R011.1 Send council positions with producer identity.
+- [ ] T027 [US1] MERISTEM-HARNESS-CYCLE-R012.1 Ask the engine for topology.
+- [ ] T028 [US1] MERISTEM-HARNESS-CYCLE-R013.1 Apply capability designations.
+- [ ] T029 [US1] MERISTEM-HARNESS-CYCLE-R013.2 Report capability outcomes.
+- [ ] T030 [US1] MERISTEM-HARNESS-CYCLE-R014.1 Apply the selected system prompt.
+- [ ] T031 [US1] MERISTEM-HARNESS-CYCLE-R015.1.1 The run loop enforces the signed allowed tool subset.
+- [ ] T032 [US1] MERISTEM-HARNESS-CYCLE-R016.1 Hand received quota values to the sandbox.
+- [ ] T033 [US1] MERISTEM-HARNESS-CYCLE-R016.2 Attach run trace receipt nodes to the terminal result.
+- [ ] T034 [US1] MERISTEM-HARNESS-CYCLE-R016.3 Read trace critique pages.
+- [ ] T035 [US1] MERISTEM-HARNESS-CYCLE-R017.1 Split an over-window prompt.
+- [ ] T036 [US1] MERISTEM-HARNESS-CYCLE-R017.2 Apply the chosen context package exactly.
+- [ ] T037 [US1] MERISTEM-HARNESS-CYCLE-R017.3 Choose direct or recursive execution.
+- [ ] T038 [US1] MERISTEM-HARNESS-CYCLE-R017.4 Replace context only on a sealed replace result.
+- [ ] T039 [US1] MERISTEM-HARNESS-CYCLE-R017.5 Admit and validate parallel sub-calls.
+- [ ] T040 [US1] MERISTEM-HARNESS-CYCLE-R017.6 Disclose instructions at start and on trigger.
+- [ ] T041 [US1] MERISTEM-HARNESS-CYCLE-R018.1 Apply the command config immutably.
+- [ ] T042 [US1] MERISTEM-HARNESS-CYCLE-R019.1 Adjust the next run from observed cost.
+- [ ] T043 [US1] MERISTEM-HARNESS-CYCLE-R020.1 Compare each tool decision with the engine measure.
+- [ ] T044 [US1] MERISTEM-HARNESS-CYCLE-R021.1 Apply the sealed skill tree.
+- [ ] T045 [US1] MERISTEM-HARNESS-CYCLE-R021.2 Return child summaries only.
+- [ ] T046 [US1] MERISTEM-HARNESS-CYCLE-R021.3 Run plan horizons and report credit checkpoints.
+- [ ] T047 [US1] MERISTEM-HARNESS-CYCLE-R021.4 Run the selected trajectory rung.
+- [ ] T048 [US1] MERISTEM-HARNESS-CYCLE-R021.5 Collect one finding per analyst role.
+- [ ] T049 [US1] MERISTEM-HARNESS-CYCLE-R021.6 Submit branch outcomes for fusion.
+- [ ] T050 [US1] MERISTEM-HARNESS-CYCLE-R021.7 Submit the fan-out result for aggregation.
+- [ ] T051 [US1] MERISTEM-HARNESS-CYCLE-R021.8 Run the designated coordinator.
+- [ ] T052 [US1] MERISTEM-HARNESS-CYCLE-R021.9 Delegate only against an admitted verdict.
+- [ ] T053 [US1] MERISTEM-HARNESS-CYCLE-R022.1 Store the typed step graph before compile.
+- [ ] T054 [US1] MERISTEM-HARNESS-CYCLE-R022.2 Submit run insights and apply selected ones.
+- [ ] T055 [US1] MERISTEM-HARNESS-CYCLE-R022.3 Record injected insights.
+- [ ] T056 [US1] MERISTEM-HARNESS-CYCLE-R023.1 Run a comparative-analysis plan within stage budgets.
+- [ ] T057 [US1] MERISTEM-HARNESS-CYCLE-R024.1 Draft a typed step graph from a skill document.
+- [ ] T058 [US1] MERISTEM-HARNESS-CYCLE-R025.1 Report tool-call outcomes as evaluations.
+- [ ] T059 [US1] MERISTEM-HARNESS-CYCLE-R026.1 Ask planning admission after study.
+- [ ] T060 [US1] MERISTEM-HARNESS-CYCLE-R027.1 Expand the chosen thought nodes.
+- [ ] T061 [US1] MERISTEM-HARNESS-CYCLE-R028.1 Send subgoal hierarchies and apply curriculum verdicts.
+- [ ] T062 [US1] MERISTEM-HARNESS-CYCLE-R029.1 Measure windows and honour the replica verdict.
+- [ ] T063 [US1] MERISTEM-HARNESS-CYCLE-R030.1 Run parallel trajectories, gates and probes.
+- [ ] T064 [US1] MERISTEM-HARNESS-CYCLE-R031.1 Stop an exploration loop on exhausted budget.
+- [ ] T065 [US1] MERISTEM-HARNESS-CYCLE-R032.1 Run the retrieval fallback window once.
+- [ ] T066 [US1] MERISTEM-HARNESS-CYCLE-R033.1 Accept the no-model-call rank result.
+- [ ] T067 [US1] MERISTEM-HARNESS-CYCLE-R034.1 Serialize search state across continuation.
+- [ ] T068 [US1] MERISTEM-HARNESS-CYCLE-R034.2 Restore all four fields before a compacted summary.
+- [ ] T069 [US1] MERISTEM-HARNESS-CYCLE-R035.1 Capture notes after a successful run.
+- [ ] T070 [US1] MERISTEM-HARNESS-CYCLE-R036.1 Render received context facts as prose.
+- [ ] T071 [US1] MERISTEM-HARNESS-CYCLE-R036.2 Serve compiled context with exact byte count.
+- [ ] T072 [US1] MERISTEM-HARNESS-CYCLE-R037.1 Read source text through ReadSpan.
+- [ ] T073 [US1] MERISTEM-HARNESS-CYCLE-R038.1 Recall and seal session episodes.
+- [ ] T074 [US1] MERISTEM-HARNESS-CYCLE-R039.1 Record branch outcomes and apply received breadth.
+- [ ] T075 [US1] MERISTEM-HARNESS-CYCLE-R040.1 Use memory only through the memory routes.
+- [ ] T076 [US1] MERISTEM-HARNESS-CYCLE-R041.1 Scaffold a skill directory per candidate row.
+- [ ] T077 [US1] MERISTEM-HARNESS-CYCLE-R041.2 Record experiences as typed run outcomes.
+- [ ] T078 [US1] MERISTEM-HARNESS-CYCLE-R042.1 Run evolution stages on the allocated model.
+- [ ] T079 [US1] MERISTEM-HARNESS-CYCLE-R043.1 Apply the champion skill revision.
+- [ ] T080 [US1] MERISTEM-HARNESS-CYCLE-R044.1 Pin the champion revision in the cycle.
+- [ ] T081 [US1] MERISTEM-HARNESS-CYCLE-R045.1 Apply disclosed instruction sets without substitution.
+- [ ] T082 [US1] MERISTEM-HARNESS-CYCLE-R046.1 Run the loop step a lease hands out.
+- [ ] T083 [US1] MERISTEM-HARNESS-CYCLE-R047.1 Apply the next-read and stop decision.
+- [ ] T084 [US1] MERISTEM-HARNESS-CYCLE-R048.1 Bind the trajectory budget decision.
+- [ ] T085 [US1] MERISTEM-HARNESS-CYCLE-R048.2 Apply the trajectory projection.
+- [ ] T086 [US1] MERISTEM-HARNESS-CYCLE-R048.3 Apply the selected branch breadth.
+- [ ] T087 [US1] MERISTEM-HARNESS-CYCLE-R048.4 Execute pairwise comparisons and bounded revisions.
+- [ ] T088 [US1] MERISTEM-HARNESS-CYCLE-R049.1 Emit the local-model evaluation receipt.
+- [ ] T089 [US1] MERISTEM-HARNESS-CYCLE-R050.1 Delegate only when the quality gate admits.
+- [ ] T090 [US1] MERISTEM-HARNESS-CYCLE-R051.1 Record skill run outcomes with the package digest.
+- [ ] T091 [US1] MERISTEM-HARNESS-CYCLE-R052.1 Advance the agent through engine lifecycle types.
+- [ ] T092 [US1] MERISTEM-HARNESS-CYCLE-R053.1 Grade every output and loop on continue or stop.
+- [ ] T093 [US1] MERISTEM-HARNESS-CYCLE-R054 Run loop refuses tool calls outside the carried subset.
+- [ ] T094 [US1] MERISTEM-HARNESS-CYCLE-R055 The tool guard asks `arbora.plan/confirm` for an action admission and treats every refusal as deny.
+- [ ] T095 [US1] MERISTEM-HARNESS-CYCLE-R056 The run loop applies a held item only after an admitted verdict.
+- [ ] T096 [US1] MERISTEM-HARNESS-CYCLE-R057 Submit the local-model certification receipt to the engine.
+- [ ] T097 [US1] MERISTEM-HARNESS-CYCLE-R058 Export the harness environment declarations.
+- [ ] T098 [US1] MERISTEM-HARNESS-CYCLE-R059 Apply a received skill transformation.
+- [ ] T099 [US1] MERISTEM-HARNESS-CYCLE-R060 Declare child-run lineage in run events.
+- [ ] T100 [US1] MERISTEM-HARNESS-CYCLE-R061 Record client-monotonic elapsed time per turn.
+- [ ] T101 [US1] MERISTEM-HARNESS-CYCLE-R062 Emit serving technique benchmark receipts.
+- [ ] T102 [US1] MERISTEM-HARNESS-CYCLE-R063 Emit liveness evidence and stop a bound process.
+- [ ] T103 [US1] MERISTEM-HARNESS-CYCLE-R064 Record evolution proposal progress facts.
+- [ ] T104 [US1] MERISTEM-HARNESS-CYCLE-R065 Run loop requests and applies historical impact risk.
+- [ ] T105 [US1] MERISTEM-HARNESS-CYCLE-R066 The harness consumes n-ary hypotheses as proposals only.
+- [ ] T106 [US1] MERISTEM-HARNESS-CYCLE-R067 Run retrieval step submits ContextCompile and renders the bundle.
+- [ ] T107 [US1] MERISTEM-HARNESS-CYCLE-R068 Invoke the admitted summary provider and mint the receipt.
+- [ ] T108 [US1] MERISTEM-HARNESS-CYCLE-R069 Apply the received nested input projection before dispatch.
+- [ ] T109 [US1] MERISTEM-HARNESS-CYCLE-R070 Export parent and child spans with run correlation.
+- [ ] T110 [US1] MERISTEM-HARNESS-CYCLE-R071 Record and send the run observation window.
+- [ ] T111 [US1] MERISTEM-HARNESS-CYCLE-R072 Compare replayed step digests with the stored digests.
+- [ ] T112 [US1] MERISTEM-HARNESS-CYCLE-R073 Produce the code walkthrough manifest for a run.
+- [ ] T113 [US1] MERISTEM-HARNESS-CYCLE-R074 Ask recruit and allocate and advance instance state.
+- [ ] T114 [US1] MERISTEM-HARNESS-CYCLE-R075 Report run success only after a matched readback.
+- [ ] T115 [US1] MERISTEM-HARNESS-CYCLE-R076 Verify the prompt render receipt before model dispatch.
+- [ ] T116 [US1] MERISTEM-HARNESS-CYCLE-R077 Replay recorded engine answers for consumer run tests.
+- [ ] T117 [US1] MERISTEM-HARNESS-CYCLE-R078 Run lifecycle hooks called from the run loop.
+- [ ] T118 [US1] MERISTEM-HARNESS-CYCLE-R079 Extend the engine decision port with served reads and writes.
+- [ ] T119 [US1] MERISTEM-HARNESS-CYCLE-R082 Condition the next step on a committed observation reference.
+- [ ] T120 [US1] MERISTEM-HARNESS-CYCLE-R083 Export meristem environment declarations.
