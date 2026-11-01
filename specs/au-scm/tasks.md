@@ -25,3 +25,12 @@ Each task line reads `- [ ] T001 [P] [US1] <ID>-R012.4 description`. The task nu
 - [ ] T018 [P] [US3] MERISTEM-SCM-R011.3 Wiring: the coding toolset starts the task run.
 - [ ] T019 [P] [US3] MERISTEM-SCM-R011.4 Evidence and typed failure.
 - [ ] T020 [P] [US3] MERISTEM-SCM-R011.5 Hot-path proof: served task run.
+- [ ] T021 [US4] MERISTEM-SCM-R012 One delivery assignment run applies received feedback (rollup).
+- [ ] T022 [US4] MERISTEM-SCM-R012.1 Model: delivery assignment context and report.
+- [ ] T023 [US4] MERISTEM-SCM-R012.2 Behavior: apply delivered inputs only at a step boundary.
+- [ ] T024 [US4] MERISTEM-SCM-R012.3 Behavior: a revision iterates the same proposal.
+- [ ] T025 [P] [US4] MERISTEM-SCM-R012.4 Behavior: review-thread disposition.
+- [ ] T026 [P] [US4] MERISTEM-SCM-R012.5 Behavior: report states and one structured question.
+- [ ] T027 [P] [US4] MERISTEM-SCM-R012.6 Behavior: a recovery note reads state before any outside effect.
+- [ ] T028 [P] [US4] MERISTEM-SCM-R012.7 Behavior: enforce the received background-work limit.
+- [ ] T029 [US4] MERISTEM-SCM-R012.8 Hot-path proof: served delivery run.

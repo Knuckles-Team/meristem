@@ -4,7 +4,7 @@ Governing spec: [spec.md](spec.md). Rows: [requirements.md](requirements.md).
 
 ## Summary
 
-The harness drives a repository on changesets in one loop: edit, gate, submit, rebase. It applies received decisions and runs one task run per received task. It reuses `apply_edits`, `DevWorkspace`, the host ports and the existing coding toolset.
+The harness drives a repository on changesets in one loop: edit, gate, submit, rebase. It applies received decisions and runs one task run per received task. It also runs one delivery assignment that revises one change proposal from received feedback. It reuses `apply_edits`, `DevWorkspace`, the host ports and the existing coding toolset.
 
 ## Technical Context
 
@@ -32,6 +32,9 @@ meristem/harness/coding_toolset.py      existing
 meristem/harness/task_run.py            new
 tests/harness/test_task_run.py          new
 tests/harness/test_task_run_served.py   new
+meristem/harness/delivery_run.py        new
+tests/harness/test_delivery_run.py      new
+tests/harness/test_delivery_run_served.py new
 ```
 
 ## Phase 0: Research
@@ -140,9 +143,13 @@ Rows MERISTEM-SCM-R003 to MERISTEM-SCM-R007 file the in-run harness obligations 
 
 `MEDULLA-SDLC-R015.3` hands one task with its context to an agent run. The run enters through `execute_graph`. `CodingToolset.run_task` builds a `TaskRunContext` from the run input and calls `run_task_run`. That function calls `run_changeset_cycle` once and returns a `TaskRunResult` with evidence. A failure returns a typed code, a stage and the evidence for `MEDULLA-SDLC-R015.5`. The harness holds no planner, never picks the next task and never edits a spec.
 
+### Delivery assignment run
+
+Arbora starts one assignment per delivery and delivers its inputs (`MERISTEM-SCM-R012.2`). The run enters through `execute_graph` and calls `run_delivery_assignment`. Inputs apply only between model turns through the active-child input port. A CI or review input runs one more `run_changeset_cycle` on the same proposal (`MERISTEM-SCM-R012.3`). Before a push the run asks for the arming verdict and applies a `disarm`. Review findings take one disposition each (`MERISTEM-SCM-R012.4`). Each turn ends with one report in one of six states (`MERISTEM-SCM-R012.5`). A recovery note makes the run read the proposal before any outside effect (`MERISTEM-SCM-R012.6`). A received limit bounds background work after a turn (`MERISTEM-SCM-R012.7`). The harness never picks work, arms, merges or edits a spec.
+
 ## Phase 2: Task approach
 
-Tasks follow the rows. The model row precedes the behavior row. The wiring row follows both. The hot-path proof closes the list. Rows R011.1 and R011.4 may run in parallel.
+Tasks follow the rows. The model row precedes the behavior row. The wiring row follows both. The hot-path proof closes the list. Rows R011.1 and R011.4 may run in parallel. Rows R012.4 to R012.7 may run in parallel after R012.3.
 
 ## Complexity Tracking
 
@@ -150,14 +157,15 @@ None. The constitution check passed.
 
 ## Build contract
 
-Focused tests: `uv run --frozen python -m pytest tests/harness/test_changeset_loop.py tests/harness/test_task_run.py -q`. Language-native gates: ruff, mypy, CCCC, jscpd, dupehound and KISS run through `.config/pre-commit.yaml` and `release.yml`. The new module holds no scanner suppression and no copy of the loop.
+Focused tests: `uv run --frozen python -m pytest tests/harness/test_changeset_loop.py tests/harness/test_task_run.py tests/harness/test_delivery_run.py -q`. Language-native gates: ruff, mypy, CCCC, jscpd, dupehound and KISS run through `.config/pre-commit.yaml` and `release.yml`. The new module holds no scanner suppression and no copy of the loop.
 
 ## Production caller chain
 
-Arbora run start (`ARBORA-OPS-R896.3`) calls `execute_graph` (`meristem/graph/runner.py:96`). That calls `build_agent` (`meristem/graph/executor.py:70`). That appends `CodingToolset`, whose `run_task` calls `run_task_run` and then `run_changeset_cycle`. Arbora registers `ChangesetSubmitter` at startup. The provider maps `submit` to `source.commit` and `source.land`. No obsolete path exists to delete.
+Arbora run start (`ARBORA-OPS-R896.3`) calls `execute_graph` (`meristem/graph/runner.py:96`). That calls `build_agent` (`meristem/graph/executor.py:70`). That appends `CodingToolset`, whose `run_task` calls `run_task_run` and then `run_changeset_cycle`. Arbora registers `ChangesetSubmitter` at startup. The provider maps `submit` to `source.commit` and `source.land`. A delivery assignment start calls `execute_graph`, then `run_delivery_assignment`, then `run_changeset_cycle`. No obsolete path exists to delete.
 
 ## Cross-repo seams
 
-- `MEDULLA-SDLC-R015` (medulla): the decision that assembles the context and accepts the result.
-- `ARBORA-OPS-R896.3` and `ARBORA-OPS-R896.4` (arbora): run start and run observe.
-- `MEDULLA-SCM-R003` and `ARBORA-OPS-R849`: acceptance, refusal and landing policy.
+- `MEDULLA-SDLC-R015` (medulla): the decision that assembles the task context and accepts the result. Contract: `contracts/task-dispatch.md`.
+- `ARBORA-OPS-R896.3` and `ARBORA-OPS-R896.4` (arbora): run start and run observe. Contract: `contracts/run-operations.md`.
+- `MEDULLA-SCM-R003` and `ARBORA-OPS-R849`: acceptance, refusal and landing policy. Contract: `contracts/changeset-acceptance.md`.
+- `MERISTEM-SCM-R012` (this spec) consumes the delivery inputs, verdicts and reports of arbora and medulla. Contract: `contracts/delivery-assignment.md`.
