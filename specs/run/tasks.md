@@ -1,6 +1,6 @@
 # MERISTEM-RUN tasks
 
-- [ ] T001 [US1] MERISTEM-RUN-R014 Gate AU's retained config.py against duplicate environment readers.
+- [ ] T001 [US1] MERISTEM-RUN-R014 Gate the retained package against duplicate environment readers.
 - [ ] T002 [US1] MERISTEM-RUN-R010 The answer step calls the retrieval round and applies its verdicts.
 - [ ] T003 [US1] MERISTEM-RUN-R011 The retrieval step applies the Discover quality verdict.
 - [ ] T004 [US1] MERISTEM-RUN-R012 Add a cross-owner component registry and path guard.

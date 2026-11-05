@@ -11,7 +11,7 @@ Consumer: meristem MERISTEM-RUN-R001
 | Deployment, installation, environment diagnostics, skill certification and the certification identity authority | arbora | Owned by arbora. Meristem has no `deployment/` package. |
 | Fleet reconciliation, autoscaling, scaling authority and deploy watch | arbora | Owned by arbora. Meristem has no orchestration package. |
 | Messaging adapters, request identity, readiness | arbora | Owned by arbora. |
-| Process configuration | split | Connector base settings belong to the connector SDK. Meristem keeps only the harness settings in `core/config.py`, read through one environment reader. |
+| Process configuration | split | Connector base settings belong to the connector SDK. Meristem keeps no settings module: its only environment reads are the directory roots in `meristem/core/paths.py`, and `MERISTEM-RUN-R014` gates the package against duplicate environment readers. |
 | Run execution | meristem | Meristem runs the loop. Arbora admits the run and passes the plan through host ports. |
 
 ## Allowed call direction

@@ -703,7 +703,7 @@ The gate scripts and census tests listed in `MERISTEM-RUN-R012` to `MERISTEM-RUN
 
 ## Production caller chain
 
-The arbora host operation (`arbora/api/ops/runs.py`) calls `meristem.graph.executor.iterate_run`, which resolves the plan, runs the loop and publishes events through the host ports.
+The arbora host (arbora/api/ops/plans.py:485 and the AgentRunExecutor adapter at arbora/agent_runs.py:583, per contracts/arbora.md) calls `meristem.graph.executor.iterate_run`, which resolves the plan, runs the loop and publishes events through the host ports.
 
 ## Cross-repo seams
 
