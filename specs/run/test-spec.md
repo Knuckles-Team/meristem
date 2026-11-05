@@ -65,3 +65,9 @@
 | `MERISTEM-RUN-R008` | Declare the host-facing public module set. | `tests/test_public_host_modules.py::test_public_host_modules_import_and_are_documented` (L1). |
 | `MERISTEM-RUN-R009` | Deliver an admitted child message at the step boundary. | Test: `tests/harness/test_child_input_delivery.py::test_queued_input_is_applied_at_next_step` (L3, driven by a recorded engine record through `meristem.graph.execute_graph`). |
 | `MERISTEM-RUN-R016` | Moved capabilities stay absent from this repository. | `tests/gates/test_boundary_removal_census.py`, the per-seam deletion census gates under `tests/gates/` and `tests/gates/test_connector_import_census.py` pass. Proof: `tests/test_retired_quantum_security_standardization.py::test_standardization_retirement_holds`. |
+| `MERISTEM-RUN-R017` | The run carries image input from the request to the model. | The children pass. |
+| `MERISTEM-RUN-R017.1` | Carry a multimodal message through context assembly. | Test: `tests/test_run_media.py::test_history_keeps_image_parts_and_trimming_emits_media_dropped` (L3). |
+| `MERISTEM-RUN-R017.2` | Check image capability and apply the received fallback. | Test: `tests/test_run_media.py::test_unsupported_image_refuses_or_falls_back_but_never_vanishes` (L3). |
+| `MERISTEM-RUN-R017.3` | Record images by digest in trace and replay. | Test: `tests/test_run_media.py::test_events_and_checkpoint_hold_digests_and_never_bytes` (L3). |
+| `MERISTEM-RUN-R017.4` | Count images in the context budget. | Test: `tests/test_run_media.py::test_image_reservation_counts_against_token_limit_and_measured_usage_replaces_it` (L3). |
+| `MERISTEM-RUN-R017.5` | Hot-path proof for image input. | Test: `tests/test_run_media.py::test_iterate_run_png_reaches_model_request_end_to_end` (L3). |
