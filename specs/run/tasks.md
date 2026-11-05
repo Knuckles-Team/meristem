@@ -63,3 +63,9 @@
 - [ ] T061 [US1] MERISTEM-RUN-R008 Declare the host-facing public module set.
 - [ ] T062 [US1] MERISTEM-RUN-R009 Deliver an admitted child message at the step boundary.
 - [ ] T063 [US1] MERISTEM-RUN-R016 Moved capabilities stay absent from this repository.
+- [ ] T064 [US1] MERISTEM-RUN-R017 The run carries image input from the request to the model.
+- [ ] T065 [US1] MERISTEM-RUN-R017.1 Carry a multimodal message through context assembly.
+- [ ] T066 [US1] MERISTEM-RUN-R017.2 Check image capability and apply the received fallback.
+- [ ] T067 [US1] MERISTEM-RUN-R017.3 Record images by digest in trace and replay.
+- [ ] T068 [US1] MERISTEM-RUN-R017.4 Count images in the context budget.
+- [ ] T069 [US1] MERISTEM-RUN-R017.5 Hot-path proof for image input.

@@ -689,6 +689,18 @@ The current-tree census at `scripts/check_connector_import_census.py` inspects
 
 Rows MERISTEM-RUN-R003 to MERISTEM-RUN-R006 file the in-run harness obligations of the medulla decision engine. The rows cover cut and ownership contracts for replay sources, study sources and withheld paths. Each rollup row names one medulla row. Each child row names the meristem file, the planned test and the received decision. The harness decides nothing in these rows. Any threshold is a received value with a fallback default. Medulla issue 1029 tracks the source decisions.
 
+### Image input in the run (MERISTEM-RUN-R017 to R017.5)
+
+The run loop already validates inline binary attachments against `RunPlan.input_media_types` and `RunBudget` limits (executor.py:170). This section completes the path for terminal image input. It keeps the harness free of decisions: support, fallback mode and per-image cost are received values with a fallback default.
+
+Call path. Arbora calls `iterate_run` (meristem/graph/executor.py:202). `_attachment_input` (executor.py:170) validates the parts. The first executed step receives text and images as one user message. The history keeps the parts. Capability refusal and text fallback happen before `run_started` and before any model request (R017.2). Each image emits `media_attached` with its digest only (R017.3). The budget reserves the per-image cost before the first request (R017.4).
+
+Trace. The checkpoint attachment descriptor (meristem/graph/checkpoint.py:101) is the single digest source. No event or replay record holds raw bytes.
+
+Open questions for the owner. The Medulla decision that supplies `media_fallback` and a per-image token cost. The host port that resolves image bytes by digest on re-execution.
+
+Cross-repo rows. ARBORA-A2A-R001.5.2, R001.5.7 and R001.5.8 supply the capability, the attachments and the served proof. TUIG-RUNTIME-R012.5.2 is the user-facing feature.
+
 ## Phase 2: Task approach
 
 One task per row in `tasks.md`; the host-facing rows land before the guards that name their modules.
