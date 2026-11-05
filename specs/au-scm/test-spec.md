@@ -14,8 +14,8 @@ Governing spec: [spec.md](spec.md).
 | T-008 | `MERISTEM-SCM-R004.1` | Integration/unit | See `tests/harness/test_consumer_preplan_tests.py::test_receipt_submitted_before_planning`. | The row acceptance holds. |  |
 | T-009 | `MERISTEM-SCM-R005` | Integration/unit | See `tests/harness/test_consumer_edit_prediction.py::test_edit_reverted_on_failed_prediction`. | The row acceptance holds. |  |
 | T-010 | `MERISTEM-SCM-R005.1` | Integration/unit | See `tests/harness/test_consumer_edit_prediction.py::test_edit_reverted_on_failed_prediction`. | The row acceptance holds. |  |
-| T-011 | `MERISTEM-SCM-R006` | Integration/unit | See `tests/run/test_verifier_receipt.py::test_each_case_is_retested_against_the_new_digest`. | The row acceptance holds. |  |
-| T-012 | `MERISTEM-SCM-R006.1` | Integration/unit | See `tests/run/test_verifier_receipt.py::test_each_case_is_retested_against_the_new_digest`. | The row acceptance holds. |  |
+| T-011 | `MERISTEM-SCM-R006` | Integration/unit | See `tests/run/test_verifier_receipt.py::test_each_case_is_retested_against_the_new_digest` (planned). | The row acceptance holds. |  |
+| T-012 | `MERISTEM-SCM-R006.1` | Integration/unit | See `tests/run/test_verifier_receipt.py::test_each_case_is_retested_against_the_new_digest` (planned). | The row acceptance holds. |  |
 | T-013 | `MERISTEM-SCM-R007` | Integration/unit | See `tests/harness/test_consumer_regression_test.py::test_test_runs_on_both_revisions`. | The row acceptance holds. |  |
 | T-014 | `MERISTEM-SCM-R007.1` | Integration/unit | See `tests/harness/test_consumer_regression_test.py::test_test_runs_on_both_revisions`. | The row acceptance holds. |  |
 | T-015 | `MERISTEM-SCM-R008` | Integration/unit | See `tests/test_host_ports.py::test_engine_decision_port_registration_and_absence`. | The row acceptance holds. |  |
