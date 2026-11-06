@@ -129,7 +129,15 @@ Each task line reads `- [ ] T001 [P] [US1] <ID>-R012.4 description`. The task nu
 - [ ] T122 [US1] MERISTEM-HARNESS-CYCLE-R084.1 Model: the closed run states and the transition table.
 - [ ] T123 [US1] MERISTEM-HARNESS-CYCLE-R084.2 Refusal: an illegal run transition raises a typed error.
 - [ ] T124 [US1] MERISTEM-HARNESS-CYCLE-R084.3 Wiring: every run status write goes through the transition function.
-- [ ] T125 [US1] MERISTEM-HARNESS-CYCLE-R084.4 Persist: the checkpoint stores the run state as one field.
-- [ ] T126 [US1] MERISTEM-HARNESS-CYCLE-R085 Fan-out task is one explicit state machine.
-- [ ] T127 [US1] MERISTEM-HARNESS-CYCLE-R086 Cancellation is a named state between Running and Stopped.
-- [ ] T128 [US1] MERISTEM-HARNESS-CYCLE-R087 Harness cycle probe status uses the run state enum.
+- [ ] T125 [US1] MERISTEM-HARNESS-CYCLE-R084.4 Persist: the checkpoint stores the run status as one field.
+- [ ] T126 [US1] MERISTEM-HARNESS-CYCLE-R084.5 Ontology: describe the run machine and roll up to the core classes.
+- [ ] T127 [US1] MERISTEM-HARNESS-CYCLE-R085 Fan-out task is one explicit state machine (rollup).
+- [ ] T128 [US1] MERISTEM-HARNESS-CYCLE-R085.1 Model: the closed task states and the transition table.
+- [ ] T129 [US1] MERISTEM-HARNESS-CYCLE-R085.2 Refusal and persist: a typed task refusal and one stored field per task.
+- [ ] T130 [US1] MERISTEM-HARNESS-CYCLE-R085.3 Wiring: the scheduler drives every task through the transition function.
+- [ ] T131 [US1] MERISTEM-HARNESS-CYCLE-R085.4 Ontology: describe the task machine and roll up to the core classes.
+- [ ] T132 [US1] MERISTEM-HARNESS-CYCLE-R086 Cancellation is a named state between Running and Stopped (rollup).
+- [ ] T133 [US1] MERISTEM-HARNESS-CYCLE-R086.1 Wiring: the run loop cancel handler uses the transition.
+- [ ] T134 [US1] MERISTEM-HARNESS-CYCLE-R086.2 Wiring: the dependency scheduler cancel uses the transitions.
+- [ ] T135 [US1] MERISTEM-HARNESS-CYCLE-R086.3 Wiring: the recursive runner cancel uses the transition.
+- [ ] T136 [US1] MERISTEM-HARNESS-CYCLE-R087 Harness cycle probe status uses the run status enum.
