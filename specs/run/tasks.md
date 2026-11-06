@@ -69,3 +69,11 @@
 - [ ] T067 [US1] MERISTEM-RUN-R017.3 Record images by digest in trace and replay.
 - [ ] T068 [US1] MERISTEM-RUN-R017.4 Count images in the context budget.
 - [ ] T069 [US1] MERISTEM-RUN-R017.5 Hot-path proof for image input.
+- [ ] T070 [US1] MERISTEM-RUN-R018 Apply branch, join, decision and approval-wait steps of a received plan (rollup).
+- [ ] T071 [US1] MERISTEM-RUN-R018.1 Control step model and host ports.
+- [ ] T072 [US1] MERISTEM-RUN-R018.2 Apply a received branch verdict.
+- [ ] T073 [US1] MERISTEM-RUN-R018.3 Wait at an approval step.
+- [ ] T074 [US1] MERISTEM-RUN-R018.4 Apply a received decision result.
+- [ ] T075 [US1] MERISTEM-RUN-R018.5 Wiring: validate and dispatch control steps.
+- [ ] T076 [US1] MERISTEM-RUN-R018.6 Control step trace events.
+- [ ] T077 [US1] MERISTEM-RUN-R018.7 Hot-path proof: control steps in the real run loop.

@@ -71,3 +71,11 @@
 | `MERISTEM-RUN-R017.3` | Record images by digest in trace and replay. | Test: `tests/test_run_media.py::test_events_and_checkpoint_hold_digests_and_never_bytes` (L3). |
 | `MERISTEM-RUN-R017.4` | Count images in the context budget. | Test: `tests/test_run_media.py::test_image_reservation_counts_against_token_limit_and_measured_usage_replaces_it` (L3). |
 | `MERISTEM-RUN-R017.5` | Hot-path proof for image input. | Test: `tests/test_run_media.py::test_iterate_run_png_reaches_model_request_end_to_end` (L3). |
+| `MERISTEM-RUN-R018` | Apply branch, join, decision and approval-wait steps of a received plan (rollup). | Rollup closes when `.1` to `.7` pass their tests. Root test: `tests/test_dependency_control.py::test_process_plan_branches_waits_and_joins` (L3). |
+| `MERISTEM-RUN-R018.1` | Control step model and host ports. | Test: `tests/test_dependency_control.py::test_control_fields_validate_and_ports_register` (L1). |
+| `MERISTEM-RUN-R018.2` | Apply a received branch verdict. | Test: `tests/test_dependency_control.py::test_exclusive_branch_skips_untaken_arm_until_join` (L1). |
+| `MERISTEM-RUN-R018.3` | Wait at an approval step. | Test: `tests/test_dependency_control.py::test_approval_wait_frees_slot_and_reject_skips_dependents` (L1). |
+| `MERISTEM-RUN-R018.4` | Apply a received decision result. | Test: `tests/test_dependency_control.py::test_decision_step_outputs_verdict_and_abstention_fails` (L1). |
+| `MERISTEM-RUN-R018.5` | Wiring: validate and dispatch control steps. | Test: `tests/test_dependency_control.py::test_missing_ports_refuse_before_any_task` (L2). |
+| `MERISTEM-RUN-R018.6` | Control step trace events. | Test: `tests/test_dependency_control.py::test_events_cite_verdicts_waits_and_skips` (L2). |
+| `MERISTEM-RUN-R018.7` | Hot-path proof: control steps in the real run loop. | Test: `tests/test_dependency_control.py::test_process_plan_branches_waits_and_joins` (L3). |

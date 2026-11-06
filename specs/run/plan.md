@@ -701,6 +701,10 @@ Open questions for the owner. The Medulla decision that supplies `media_fallback
 
 Cross-repo rows. ARBORA-A2A-R001.5.2, R001.5.7 and R001.5.8 supply the capability, the attachments and the served proof. TUIG-RUNTIME-R012.5.2 is the user-facing feature.
 
+### Process control steps (MERISTEM-RUN-R018)
+
+A received dependency plan may hold four control step kinds beside prompt and tool steps. The medulla task-plan model owns them, and the medulla `BranchSelect` and `DecisionTableEval` questions own the verdicts. The harness asks the host `DecisionPort` for each branch verdict and decision result and applies it. It marks not-taken arm tasks `skipped` up to the matching join. An approval step releases its slot and awaits the host `ApprovalWaiter`; arbora binds it to its approval operations. A missing port refuses before any task starts. [contracts/process-control-steps.md](contracts/process-control-steps.md) names the provider and consumer rows. Call path: `iterate_run` → `validate_dependency_plan` → `_execute_dependency_plan` → `_apply_branch`, `_await_approval` or `_apply_decision`.
+
 ## Phase 2: Task approach
 
 One task per row in `tasks.md`; the host-facing rows land before the guards that name their modules.
@@ -723,3 +727,4 @@ The arbora host (arbora/api/ops/plans.py:485 and the AgentRunExecutor adapter at
 - `MERISTEM-RUN-R002`: [contracts/medulla.md](contracts/medulla.md)
 - `MERISTEM-RUN-R016`: [contracts/scion-sdk.md](contracts/scion-sdk.md)
 - `MERISTEM-RUN-R016`: [contracts/repository-manager.md](contracts/repository-manager.md)
+- `MERISTEM-RUN-R018`: [contracts/process-control-steps.md](contracts/process-control-steps.md)

@@ -39,6 +39,7 @@ A maintainer adds code to the repository. The ownership guards reject a module u
 
 - **FR-001**: The harness applies the received plan, limits, checkpoint and events through host ports and decides nothing. Rows: `MERISTEM-RUN-R001`.
 - **FR-001a**: The harness carries admitted image input to the model, refuses or falls back by the received mode, records images by digest and counts them in the budget. Rows: `MERISTEM-RUN-R017`.
+- **FR-001b**: The harness applies received branch, join, decision and approval-wait steps through host ports and decides nothing. Rows: `MERISTEM-RUN-R018`.
 - **FR-002**: The harness consumes the engine decisions it receives and refuses an invalid one. Rows: `MERISTEM-RUN-R002`, `MERISTEM-RUN-R003`, `MERISTEM-RUN-R004`, `MERISTEM-RUN-R005`, `MERISTEM-RUN-R006`, `MERISTEM-RUN-R007`, `MERISTEM-RUN-R009`, `MERISTEM-RUN-R010`, `MERISTEM-RUN-R011`.
 - **FR-003**: The ownership guards reject drift from the recorded owners. Rows: `MERISTEM-RUN-R008`, `MERISTEM-RUN-R012`, `MERISTEM-RUN-R013`, `MERISTEM-RUN-R014`, `MERISTEM-RUN-R015`, `MERISTEM-RUN-R016`.
 
