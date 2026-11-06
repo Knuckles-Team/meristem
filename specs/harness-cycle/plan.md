@@ -107,11 +107,11 @@ The repository pre-commit hooks apply: `ruff-format`, `ruff-check`, `secrets`, `
 3. `MERISTEM-HARNESS-CYCLE-R003` to `MERISTEM-HARNESS-CYCLE-R083`: each consumer row names its own chain from `meristem.graph.execute_graph` or `meristem/rlm/runner.py::run_rlm` to the stage function that applies the received decision.
 4. `MERISTEM-HARNESS-CYCLE-R084` to `MERISTEM-HARNESS-CYCLE-R087`: the in-run state machines. `meristem/graph/state.py::transition` owns the run edges and `meristem/graph/dependency.py::transition_task` owns the fan-out task edges. Every status write in `executor.py`, `dependency.py`, `checkpoint.py` and `rlm/runner.py` calls them. The persisted run record belongs to medulla; the harness keeps no store. See the section *In-run state machines* below.
 
-## In-run state machines
+### In-run state machines
 
-Organization constitution Article XXXI governs `MERISTEM-HARNESS-CYCLE-R084` to `MERISTEM-HARNESS-CYCLE-R087`. Meristem holds in-run machines only. The persisted outcome is a medulla record (pending cross-link: MEDULLA-ORCH-VOCAB-R812).
+Organization constitution Article XXXI governs `MERISTEM-HARNESS-CYCLE-R084` to `MERISTEM-HARNESS-CYCLE-R087`. Meristem holds in-run machines only. The persisted outcome is a medulla record (the medulla work-item vocabulary; cross-link pending).
 
-### Run machine (R084, R086)
+#### Run machine (R084, R086)
 
 States: `Pending`, `Running`, `Cancelling`, `Completed`, `Stopped(requested|budget|cancelled)` and `Failed`. Terminals: `Completed`, `Stopped`, `Failed`. Every pair outside this table is refused with `RUN_TRANSITION_REFUSED`.
 
@@ -130,7 +130,7 @@ States: `Pending`, `Running`, `Cancelling`, `Completed`, `Stopped(requested|budg
 
 Refusal: `RunTransitionRefused(machine="run", from_status, event, reason)`, code `RUN_TRANSITION_REFUSED`, in `meristem/graph/state.py`. The reason set matches the medulla `TransitionRefused` record. Persisted field: `run_status` in `_Snapshot` at `meristem/graph/checkpoint.py:49`; the in-run field is `GraphState.status` at `meristem/graph/state.py:293`. `stop_reason` and `is_terminal` are derived. Single transition function: `meristem/graph/state.py::transition` (this repository).
 
-### Task machine (R085)
+#### Task machine (R085)
 
 States: `Blocked`, `Ready`, `Active`, `Done`, `Failed`, `Cancelled`, `Skipped`. Terminals: `Done`, `Failed`, `Cancelled`, `Skipped`. Every pair outside this table is refused with `TASK_TRANSITION_REFUSED`.
 
@@ -146,11 +146,11 @@ States: `Blocked`, `Ready`, `Active`, `Done`, `Failed`, `Cancelled`, `Skipped`. 
 
 Persisted field: `task_states` in `_Snapshot` (`meristem/graph/checkpoint.py`). Single transition function: `meristem/graph/dependency.py::transition_task`.
 
-### Ontology (R084.5, R085.4)
+#### Ontology (R084.5, R085.4)
 
-The pack file is `meristem/ontology/run_state_machines.ttl`. `:RunMachine`, `:TaskMachine` extend `:StateMachine`. `:RunStatusState`, `:TaskState` extend `:State`. `:RunTerminalState`, `:TaskTerminalState` extend `:TerminalState`. `:RunTransition`, `:TaskTransition` extend `:Transition`. `:RunEvent` extends `:TransitionEvent`. `:RunGuard` extends `:TransitionGuard`. The core file is `crates/medulla-core/ontology/state-machines-v1.ttl` (pending: MEDULLA-ORCH-VOCAB-R811.1). The pack uses no `owl:imports`.
+The pack file is `meristem/ontology/run_state_machines.ttl`. `:RunMachine`, `:TaskMachine` extend `:StateMachine`. `:RunStatusState`, `:TaskState` extend `:State`. `:RunTerminalState`, `:TaskTerminalState` extend `:TerminalState`. `:RunTransition`, `:TaskTransition` extend `:Transition`. `:RunEvent` extends `:TransitionEvent`. `:RunGuard` extends `:TransitionGuard`. The core file is `crates/medulla-core/ontology/state-machines-v1.ttl` (cross-link pending). The pack uses no `owl:imports`.
 
-### Wiring and hot-path proof
+#### Wiring and hot-path proof
 
 Entry point `meristem.graph.execute_graph` → `meristem/graph/runner.py::execute_graph_iter` → `meristem/graph/executor.py::iterate_run` → `transition` at the status writes `executor.py:273,308,344,521` → `meristem/graph/dependency.py::run_dependency_graph` → `transition_task` at `dependency.py:643,846,877,922,984` and the cancel mapping at `dependency.py:738,956,1007,1108` → `meristem/graph/checkpoint.py` save and restore at `checkpoint.py:257-269,369-379` → `meristem/rlm/runner.py::_run_drained` at `runner.py:181-198` → probe `meristem/harness/harness_cycle.py:156`. Wiring rows: R084.3, R085.3, R086.1 to R086.3. Hot-path proof: `tests/graph/test_run_state_machine.py::test_execute_graph_status_changes_all_pass_through_transition` and `tests/graph/test_task_state_machine.py::test_run_dependency_graph_status_changes_all_pass_through_transition_task`.
 
