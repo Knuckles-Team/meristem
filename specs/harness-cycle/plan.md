@@ -105,6 +105,7 @@ The repository pre-commit hooks apply: `ruff-format`, `ruff-check`, `secrets`, `
 1. `MERISTEM-HARNESS-CYCLE-R001`: arbora host (ARBORA-HOST-R035) → `meristem/host_ports.py::harness_cycle_provider` (`host_ports.py:304`) → `meristem/harness/harness_cycle.py::drive_cycle_tick` (`harness_cycle.py:610`) → `run_cycle_tick` (`harness_cycle.py:504`) → `propose`, `probe_candidates`, `compose`, `persist`, `reflect`. The probes run through `meristem/graph/runner.py::execute_graph` (`runner.py:96`).
 2. `MERISTEM-HARNESS-CYCLE-R001.11`: the arbora host binding `arbora/agent_runs.py::bind_run_ports` (arbora repository, `agent_runs.py:613`) is planned to call `register_harness_cycle_provider` (`host_ports.py:288`). Today it registers no cycle provider, so no run drives a tick.
 3. `MERISTEM-HARNESS-CYCLE-R003` to `MERISTEM-HARNESS-CYCLE-R083`: each consumer row names its own chain from `meristem.graph.execute_graph` or `meristem/rlm/runner.py::run_rlm` to the stage function that applies the received decision.
+4. `MERISTEM-HARNESS-CYCLE-R084` to `MERISTEM-HARNESS-CYCLE-R087`: the in-run state machines. `meristem/graph/state.py::transition` owns the run edges and `meristem/graph/dependency.py` owns the fan-out task edges. Every status write in `executor.py`, `dependency.py`, `checkpoint.py` and `rlm/runner.py` calls them. The persisted run record belongs to medulla; the harness keeps no store.
 
 ## Cross-repo seams
 

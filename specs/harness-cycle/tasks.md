@@ -125,3 +125,11 @@ Each task line reads `- [ ] T001 [P] [US1] <ID>-R012.4 description`. The task nu
 - [ ] T118 [US1] MERISTEM-HARNESS-CYCLE-R079 Extend the engine decision port with served reads and writes.
 - [ ] T119 [US1] MERISTEM-HARNESS-CYCLE-R082 Condition the next step on a committed observation reference.
 - [ ] T120 [US1] MERISTEM-HARNESS-CYCLE-R083 Export meristem environment declarations.
+- [ ] T121 [US1] MERISTEM-HARNESS-CYCLE-R084 Run status is one explicit state machine (rollup).
+- [ ] T122 [US1] MERISTEM-HARNESS-CYCLE-R084.1 Model: the closed run states and the transition table.
+- [ ] T123 [US1] MERISTEM-HARNESS-CYCLE-R084.2 Refusal: an illegal run transition raises a typed error.
+- [ ] T124 [US1] MERISTEM-HARNESS-CYCLE-R084.3 Wiring: every run status write goes through the transition function.
+- [ ] T125 [US1] MERISTEM-HARNESS-CYCLE-R084.4 Persist: the checkpoint stores the run state as one field.
+- [ ] T126 [US1] MERISTEM-HARNESS-CYCLE-R085 Fan-out task is one explicit state machine.
+- [ ] T127 [US1] MERISTEM-HARNESS-CYCLE-R086 Cancellation is a named state between Running and Stopped.
+- [ ] T128 [US1] MERISTEM-HARNESS-CYCLE-R087 Harness cycle probe status uses the run state enum.
