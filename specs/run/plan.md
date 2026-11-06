@@ -703,7 +703,7 @@ Cross-repo rows. ARBORA-A2A-R001.5.2, R001.5.7 and R001.5.8 supply the capabilit
 
 ### Process control steps (MERISTEM-RUN-R018)
 
-A received dependency plan may hold four control step kinds beside prompt and tool steps. The engine owns them (`MEDULLA-DECISION-ENGINE-R134.111.14`) and the verdicts (`MEDULLA-DECISION-ENGINE-R180`). The harness asks the host `DecisionPort` for each branch verdict and decision result and applies it. It marks not-taken arm tasks `skipped` up to the matching join. An approval step releases its slot and awaits the host `ApprovalWaiter`; arbora binds it to its approval operations (`ARBORA-OPS-R898.4`). A missing port refuses before any task starts. Call path: `iterate_run` → `validate_dependency_plan` → `_execute_dependency_plan` → `_apply_branch`, `_await_approval` or `_apply_decision`.
+A received dependency plan may hold four control step kinds beside prompt and tool steps. The medulla task-plan model owns them, and the medulla `BranchSelect` and `DecisionTableEval` questions own the verdicts. The harness asks the host `DecisionPort` for each branch verdict and decision result and applies it. It marks not-taken arm tasks `skipped` up to the matching join. An approval step releases its slot and awaits the host `ApprovalWaiter`; arbora binds it to its approval operations. A missing port refuses before any task starts. [contracts/process-control-steps.md](contracts/process-control-steps.md) names the provider and consumer rows. Call path: `iterate_run` → `validate_dependency_plan` → `_execute_dependency_plan` → `_apply_branch`, `_await_approval` or `_apply_decision`.
 
 ## Phase 2: Task approach
 
