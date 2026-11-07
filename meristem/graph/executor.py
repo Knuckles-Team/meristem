@@ -24,8 +24,10 @@ from pydantic_ai.messages import AgentStreamEvent
 from pydantic_ai.usage import UsageLimits
 
 from meristem import host_ports
-from meristem.harness.conversation_history import decode_completed_history
-from meristem.harness.plan import PlanState
+from meristem.harness.conversation_history import (
+    decode_completed_history,
+    read_run_history,
+)
 from meristem.harness.plan_runtime import PlanScaffold
 
 from .budget import LiveSharedBudget, SharedBudget, initial_run_usage
@@ -56,7 +58,7 @@ ModelStreamObserver = Callable[[AgentStreamEvent], Awaitable[None]]
 
 async def resolve_plan(request: RunRequest, config: Mapping[str, Any]) -> RunPlan:
     """The host's plan for ``request``, else the fallback plan."""
-    provider = host_ports.run_decision_provider()
+    provider = request.ports.run_decision_provider()
     if provider is None:
         return default_run_plan(request, config)
     plan = provider(request)
@@ -71,14 +73,16 @@ def build_agent(
     plan: RunPlan,
     run_id: str,
     *,
-    scaffold: PlanState | None = None,
+    scaffold: host_ports.PlanState | None = None,
     publisher: host_ports.ScaffoldPublisher | None = None,
+    ports: host_ports.HostPorts | None = None,
     metrics: RunMetrics | None = None,
     shared_budget: SharedBudget | None = None,
     deadline: float | None = None,
     active_input: Any = None,
 ) -> Agent[GraphDeps, Any]:
     """One pydantic-ai agent bound to the plan's model, instructions and tools."""
+    ports = ports if ports is not None else host_ports.HostPorts()
     if plan.execution_constraint not in (None, "text-only"):
         raise ValueError("unknown received execution constraint")
     if plan.execution_constraint == "text-only":
@@ -86,7 +90,12 @@ def build_agent(
     if plan.harness.plan_scaffold not in ("on", "off"):
         raise ValueError("plan_scaffold must be on or off")
     capabilities: list[Any] = (
-        [PlanScaffold(scaffold if scaffold is not None else PlanState(), publisher)]
+        [
+            PlanScaffold(
+                scaffold if scaffold is not None else host_ports.PlanState(),
+                publisher,
+            )
+        ]
         if plan.harness.plan_scaffold == "on"
         else []
     )
@@ -95,9 +104,7 @@ def build_agent(
     if active_input is not None:
         capabilities.append(active_input)
     model = (
-        host_ports.resolve_model(plan.model)
-        if isinstance(plan.model, str)
-        else plan.model
+        ports.resolve_model(plan.model) if isinstance(plan.model, str) else plan.model
     )
     if plan.execution_constraint == "text-only":
         model = TextOnlyModel(model, plan, deadline=deadline)
@@ -114,11 +121,12 @@ def build_agent(
                 plan.harness.client_tools,
                 limits=plan.harness.client_tool_limits,
                 run_id=run_id,
+                ports=ports,
             )
         )
     if plan.tool_names:
         toolsets.append(
-            host_ports.build_native_toolset(
+            ports.build_native_toolset(
                 list(plan.tool_names), toolset_id=f"run-{run_id}"
             )
         )
@@ -148,7 +156,12 @@ def _text(output: Any) -> str:
 
 
 def _event(
-    state: GraphState, kind: str, *, publish: bool = True, **fields: Any
+    state: GraphState,
+    kind: str,
+    *,
+    ports: host_ports.HostPorts,
+    publish: bool = True,
+    **fields: Any,
 ) -> dict[str, Any]:
     state.event_sequence += 1
     event = {
@@ -163,7 +176,7 @@ def _event(
         ).hex,
     }
     if publish:
-        host_ports.emit_run_event(event)
+        ports.emit_run_event(event)
     return event
 
 
@@ -231,7 +244,9 @@ async def iterate_run(
     restricted = plan is not None and plan.execution_constraint == "text-only"
 
     def emit(state: GraphState, kind: str, **fields: Any) -> dict[str, Any]:
-        return _event(state, kind, publish=not restricted, **fields)
+        return _event(
+            state, kind, ports=request.ports, publish=not restricted, **fields
+        )
 
     cfg = dict(config or {})
     state = GraphState(run_id=request.run_id, query=request.task, mode=request.mode)
@@ -257,7 +272,7 @@ async def iterate_run(
         # Read the existing prior-turn selection before planning.  If the
         # bound current-run transaction restores content, that content replaces
         # this history; the selection port still owns current-run precedence.
-        content = None if restricted else await host_ports.read_run_history(request)
+        content = None if restricted else await read_run_history(request.ports, request)
         history = (
             decode_completed_history(content, run_id=state.run_id)
             if content is not None
@@ -299,11 +314,11 @@ async def iterate_run(
                 )
         if history and run_plan.dependency_plan is not None:
             raise ValueError("dependency-plan conversation history is unavailable")
-        tool_caller = host_ports.tool_caller()
+        tool_caller = request.ports.tool_caller()
         validate_dependency_plan(run_plan, tool_caller=tool_caller)
         attachments = _attachment_input(request, run_plan)
         if run_plan.harness.plan_scaffold == "on":
-            state.scaffold = PlanState()
+            state.scaffold = host_ports.PlanState()
     except Exception as exc:  # noqa: BLE001 - a failed plan is a failed run
         state.status, state.error = "failed", f"{type(exc).__name__}: {exc}"
         yield emit(state, "error", error=state.error, result=_result(state))
@@ -312,7 +327,7 @@ async def iterate_run(
     limits = _limits(run_plan)
     steps = run_plan.steps[: max(run_plan.stop.max_steps, 0)]
     try:
-        async with host_ports.run_checkpoint_scope(
+        async with request.ports.run_checkpoint_scope(
             request, run_plan
         ) as checkpoint_port:
             if checkpoint_port is not None and shared_execution is not None:
@@ -393,7 +408,7 @@ async def iterate_run(
                 async with (
                     no_host_scope()
                     if restricted
-                    else host_ports.authority_keepalive_scope()
+                    else request.ports.authority_keepalive_scope()
                 ):
                     scope_deadline = (
                         asyncio.get_running_loop().time()
@@ -412,19 +427,19 @@ async def iterate_run(
                             (
                                 no_host_scope()
                                 if restricted
-                                else host_ports.scaffold_publication_scope(
+                                else request.ports.scaffold_publication_scope(
                                     request, state.scaffold
                                 )
                             ) as publisher,
                             (
                                 no_host_scope()
                                 if restricted
-                                else host_ports.durable_run_event_scope(request)
+                                else request.ports.durable_run_event_scope(request)
                             ) as event_publisher,
                             (
                                 no_host_scope()
                                 if restricted
-                                else host_ports.active_child_input_scope(request)
+                                else request.ports.active_child_input_scope(request)
                             ) as input_port,
                         ):
                             child_records = child_records_for(request, event_publisher)
@@ -461,6 +476,7 @@ async def iterate_run(
                                 state.run_id,
                                 scaffold=state.scaffold,
                                 publisher=publisher,
+                                ports=request.ports,
                                 metrics=state.metrics,
                                 shared_budget=shared_budget,
                                 deadline=timeout.when(),
@@ -607,8 +623,14 @@ class AgentRunExecutor:
     result raises :class:`RunFailed` with the same aggregate receipt.
     """
 
-    def __init__(self, config: Mapping[str, Any] | None = None) -> None:
+    def __init__(
+        self,
+        config: Mapping[str, Any] | None = None,
+        *,
+        ports: host_ports.HostPorts | None = None,
+    ) -> None:
         self._config = dict(config or {})
+        self._ports = ports if ports is not None else host_ports.HostPorts()
 
     async def execute_text_only(
         self, request: RunRequest, *, plan: RunPlan
@@ -647,6 +669,7 @@ class AgentRunExecutor:
             response_format=getattr(request, "response_format", "text"),
             metadata={"session": session} if session is not None else {},
             attachments=tuple(getattr(request, "attachments", ())),
+            ports=self._ports,
         )
         result = await run(
             run_request,

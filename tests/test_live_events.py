@@ -4,14 +4,14 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 
+import ports_support as support
 import pytest
 from pydantic_ai import Agent
 from pydantic_ai.messages import ModelResponse, TextPart
 from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 from pydantic_ai.toolsets import FunctionToolset
 
-from meristem import host_ports
-from meristem.graph import RunPlan, RunRequest, run
+from meristem.graph import RunPlan, run
 from meristem.graph.live_events import (
     LineageBinding,
     LineageIdentityError,
@@ -84,13 +84,13 @@ async def test_executor_binds_one_publisher_before_exposing_model_output() -> No
         bindings.append(request.run_id)
         yield publisher
 
-    host_ports.register_durable_run_event_factory(scope)
+    support.register_durable_run_event_factory(scope)
 
     async def stream(messages, info):
         yield "answer"
 
     result = await run(
-        RunRequest(task="hello", run_id="run"),
+        support.request(task="hello", run_id="run"),
         plan=RunPlan(model=FunctionModel(stream_function=stream), steps=("hello",)),
     )
 
@@ -127,9 +127,9 @@ async def test_executor_stops_before_tool_effect_on_call_publication_failure() -
     async def scope(request):
         yield publisher
 
-    host_ports.register_durable_run_event_factory(scope)
+    support.register_durable_run_event_factory(scope)
     result = await run(
-        RunRequest(task="do", run_id="run"),
+        support.request(task="do", run_id="run"),
         plan=RunPlan(
             model=FunctionModel(stream_function=stream),
             steps=("do",),
@@ -151,7 +151,7 @@ async def test_executor_without_host_publisher_keeps_ordinary_path() -> None:
         return ModelResponse(parts=[TextPart("ordinary")])
 
     result = await run(
-        RunRequest(task="hello", run_id="run"),
+        support.request(task="hello", run_id="run"),
         plan=RunPlan(model=FunctionModel(ordinary), steps=("hello",)),
     )
 

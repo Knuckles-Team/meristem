@@ -11,7 +11,11 @@ from typing import Any
 
 from pydantic_ai.toolsets import FunctionToolset
 
-from meristem import host_ports
+from meristem.host_ports import (
+    ClientCapabilityRefused,
+    ClientCapabilityTransport,
+    HostPorts,
+)
 
 
 @dataclass(frozen=True)
@@ -40,18 +44,20 @@ class ClientCapabilityToolset(FunctionToolset[Any]):
 
     def __init__(
         self,
-        transport: host_ports.ClientCapabilityTransport | None,
+        transport: ClientCapabilityTransport | None,
         selected: tuple[str, ...],
         *,
         limits: ClientToolLimits | None = None,
         run_id: str,
+        ports: HostPorts,
     ) -> None:
         super().__init__()
         if transport is None:
-            raise host_ports.ClientCapabilityRefused("client_disconnected")
+            raise ClientCapabilityRefused("client_disconnected")
         self._transport = transport
         self._limits = limits or ClientToolLimits()
         self._run_id = run_id
+        self._ports = ports
         available: dict[str, Callable[..., Awaitable[str]]] = {
             "read_file": self.read_file,
             "search_files": self.search_files,
@@ -69,7 +75,7 @@ class ClientCapabilityToolset(FunctionToolset[Any]):
         outcome, output = "request_limit", ""
         if request_bytes <= self._limits.request_bytes:
             outcome, output = await self._dispatch(method, params)
-        host_ports.emit_run_event(
+        self._ports.emit_run_event(
             {
                 "type": "client_capability",
                 "run_id": self._run_id,
@@ -87,7 +93,7 @@ class ClientCapabilityToolset(FunctionToolset[Any]):
         try:
             async with asyncio.timeout(self._limits.timeout_seconds):
                 output = await self._transport.call(method, params)
-        except host_ports.ClientCapabilityRefused as exc:
+        except ClientCapabilityRefused as exc:
             return exc.reason, ""
         except TimeoutError:
             # The host may have dispatched the effect. Do not retry or claim rollback.

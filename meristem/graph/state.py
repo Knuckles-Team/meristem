@@ -2,7 +2,7 @@
 
 The harness never chooses any field of a :class:`RunPlan`. The host (arbora,
 answering from epistemic-graph) supplies the plan through
-:func:`meristem.host_ports.register_run_decision_provider`. Without a
+:attr:`meristem.host_ports.HostPorts.decide`. Without a
 host, :func:`default_run_plan` builds the documented fallback plan from the
 request and the graph configuration only.
 """
@@ -10,7 +10,7 @@ request and the graph configuration only.
 from __future__ import annotations
 
 import uuid
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal
@@ -18,13 +18,16 @@ from typing import TYPE_CHECKING, Any, Literal
 from pydantic_ai import BinaryContent
 from pydantic_ai.usage import RunUsage
 
-from meristem.harness.plan import PlanState
+from meristem.host_ports import (
+    ClientCapabilityTransport,
+    HostPorts,
+    PlanState,
+)
 
 from .metrics import RunMetrics
 
 if TYPE_CHECKING:
     from meristem.harness.client_capabilities import ClientToolLimits
-    from meristem.host_ports import ClientCapabilityTransport
 
 RunStatus = Literal["pending", "running", "completed", "stopped", "failed"]
 
@@ -109,9 +112,6 @@ class HarnessConfig:
     client_tool_limits: ClientToolLimits | None = None
 
 
-ToolOutcome = Literal["ok", "refused", "failed"]
-
-
 @dataclass(frozen=True, slots=True)
 class ToolStep:
     """One host-bound call in a received dependency plan.
@@ -123,50 +123,6 @@ class ToolStep:
     server: str
     tool: str
     arguments: Mapping[str, Any] = field(default_factory=dict)
-
-
-@dataclass(frozen=True, slots=True)
-class ToolStepResult:
-    """Structured result returned by a host-bound :class:`ToolCaller`."""
-
-    result: Any = None
-    outcome: ToolOutcome = "ok"
-    error: str | None = None
-
-    def __post_init__(self) -> None:
-        # Accept the natural ``ToolStepResult("ok", value)`` positional form
-        # as well as the named ``result=..., outcome=...`` form. The latter is
-        # the stable wire shape; this small normalization keeps host adapters
-        # from having to coordinate constructor ordering.
-        if self.outcome not in ("ok", "refused", "failed"):
-            if isinstance(self.result, str) and self.result in (
-                "ok",
-                "refused",
-                "failed",
-            ):
-                positional_outcome = self.result
-                positional_result = self.outcome
-                object.__setattr__(self, "result", positional_result)
-                object.__setattr__(self, "outcome", positional_outcome)
-            else:
-                raise ValueError("tool result outcome must be ok, refused or failed")
-        if self.error is not None and not isinstance(self.error, str):
-            raise ValueError("tool result error must be a string or None")
-
-    @property
-    def status(self) -> ToolOutcome:
-        """Compatibility spelling for callers that use status terminology."""
-
-        return self.outcome
-
-    @property
-    def output(self) -> Any:
-        """Compatibility spelling for the structured result value."""
-
-        return self.result
-
-
-ToolCaller = Callable[[str, str, Mapping[str, Any], str], Awaitable[ToolStepResult]]
 
 
 class ToolCallerUnavailable(RuntimeError):
@@ -216,6 +172,7 @@ class RunRequest:
     response_format: Literal["text", "json"] = "text"
     metadata: Mapping[str, Any] = field(default_factory=dict)
     attachments: tuple[BinaryContent, ...] = ()
+    ports: HostPorts = field(default_factory=HostPorts, compare=False, repr=False)
 
 
 @dataclass(frozen=True)
@@ -484,12 +441,9 @@ __all__ = [
     "RunStatus",
     "RunTask",
     "StopRule",
-    "ToolCaller",
     "ToolCallerUnavailable",
     "ToolCallFailed",
     "ToolCallRefused",
-    "ToolOutcome",
     "ToolStep",
-    "ToolStepResult",
     "default_run_plan",
 ]

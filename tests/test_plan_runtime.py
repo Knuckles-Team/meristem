@@ -3,6 +3,7 @@
 from copy import deepcopy
 from typing import Any
 
+import ports_support as support
 import pytest
 from pydantic_ai import Agent
 from pydantic_ai.messages import (
@@ -14,7 +15,7 @@ from pydantic_ai.messages import (
 )
 from pydantic_ai.models.function import FunctionModel
 
-from meristem.graph import HarnessConfig, RunPlan, RunRequest, run
+from meristem.graph import HarnessConfig, RunPlan, run
 
 
 def injected(messages):
@@ -39,7 +40,7 @@ async def test_received_decision_gates_tool_and_injection(mode):
         return ModelResponse(parts=[TextPart("done")])
 
     result = await run(
-        RunRequest(task="task"),
+        support.request(task="task"),
         plan=RunPlan(
             model=FunctionModel(model),
             steps=("task",),
@@ -82,7 +83,7 @@ async def test_two_updates_reach_each_request_but_never_stored_history(monkeypat
         return ModelResponse(parts=[ToolCallPart("update_plan", {"items": items})])
 
     result = await run(
-        RunRequest(task="task"),
+        support.request(task="task"),
         plan=RunPlan(
             model=FunctionModel(model),
             steps=("first prompt", "second prompt"),
@@ -129,7 +130,7 @@ async def test_separate_executions_start_with_empty_scaffolds():
         harness=HarnessConfig(plan_scaffold="on"),
     )
     for _ in range(2):
-        await run(RunRequest(task="task"), plan=plan)
+        await run(support.request(task="task"), plan=plan)
     assert initial == [["Current run plan: []"], ["Current run plan: []"]]
 
 
@@ -158,7 +159,7 @@ async def test_budget_exit_cleans_tool_payload_without_another_request(monkeypat
         )
 
     result = await run(
-        RunRequest(task="task"),
+        support.request(task="task"),
         plan=RunPlan(
             model=FunctionModel(model),
             steps=("task",),
@@ -177,7 +178,8 @@ async def test_scaffold_surface_and_imports_have_no_selection_authority():
     import ast
     import inspect
 
-    from meristem.harness import plan, plan_runtime
+    from meristem import host_ports as plan
+    from meristem.harness import plan_runtime
 
     for module in (plan, plan_runtime):
         tree = ast.parse(inspect.getsource(module))
@@ -201,7 +203,7 @@ async def test_scaffold_surface_and_imports_have_no_selection_authority():
         return ModelResponse(parts=[TextPart("done")])
 
     await run(
-        RunRequest(task="task"),
+        support.request(task="task"),
         plan=RunPlan(
             model=FunctionModel(model),
             steps=("task",),
@@ -222,7 +224,7 @@ async def test_invalid_received_scaffold_decision_fails_before_model_call(mode):
         return ModelResponse(parts=[TextPart("unexpected")])
 
     result = await run(
-        RunRequest(task="task"),
+        support.request(task="task"),
         plan=RunPlan(
             model=FunctionModel(model),
             steps=("task",),
@@ -238,8 +240,6 @@ async def test_invalid_received_scaffold_decision_fails_before_model_call(mode):
 @pytest.mark.spec("MERISTEM-RUN-R001.5.2")
 async def test_host_receives_only_actual_accepted_revisions():
     from contextlib import asynccontextmanager
-
-    from meristem import host_ports
 
     published = []
     lifecycle = []
@@ -257,7 +257,7 @@ async def test_host_receives_only_actual_accepted_revisions():
         finally:
             lifecycle.append("closed")
 
-    host_ports.register_scaffold_publication_factory(factory)
+    support.register_scaffold_publication_factory(factory)
 
     def model(messages, info):
         turns.append(len(published))
@@ -281,7 +281,7 @@ async def test_host_receives_only_actual_accepted_revisions():
         )
 
     result = await run(
-        RunRequest(task="task", run_id="bound-run"),
+        support.request(task="task", run_id="bound-run"),
         plan=RunPlan(
             model=FunctionModel(model),
             steps=("task",),
@@ -302,8 +302,6 @@ async def test_host_receives_only_actual_accepted_revisions():
 @pytest.mark.parametrize("failure_at", ["enter", "initial", "update", "close"])
 async def test_publication_failure_stops_run_without_disclosing_payload(failure_at):
     from contextlib import asynccontextmanager
-
-    from meristem import host_ports
 
     calls = []
     closed = []
@@ -326,7 +324,7 @@ async def test_publication_failure_stops_run_without_disclosing_payload(failure_
             if failure_at == "close":
                 raise ValueError("private-plan-payload")
 
-    host_ports.register_scaffold_publication_factory(factory)
+    support.register_scaffold_publication_factory(factory)
 
     def model(messages, info):
         calls.append(True)
@@ -346,7 +344,7 @@ async def test_publication_failure_stops_run_without_disclosing_payload(failure_
         return ModelResponse(parts=[TextPart("done")])
 
     result = await run(
-        RunRequest(task="task"),
+        support.request(task="task"),
         plan=RunPlan(
             model=FunctionModel(model),
             steps=("task",),
@@ -365,8 +363,6 @@ async def test_concurrent_runs_publish_to_their_own_host_binding():
     import asyncio
     from contextlib import asynccontextmanager
 
-    from meristem import host_ports
-
     observed = {}
     ready = asyncio.Event()
 
@@ -384,7 +380,7 @@ async def test_concurrent_runs_publish_to_their_own_host_binding():
     async def factory(request):
         yield Publisher(request.run_id)
 
-    host_ports.register_scaffold_publication_factory(factory)
+    support.register_scaffold_publication_factory(factory)
 
     async def execute(run_id):
         calls = []
@@ -403,7 +399,7 @@ async def test_concurrent_runs_publish_to_their_own_host_binding():
             return ModelResponse(parts=[TextPart("done")])
 
         return await run(
-            RunRequest(task="task", run_id=run_id),
+            support.request(task="task", run_id=run_id),
             plan=RunPlan(
                 model=FunctionModel(model),
                 steps=("task",),

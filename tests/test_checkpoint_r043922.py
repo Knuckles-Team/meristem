@@ -7,12 +7,12 @@ import json
 from dataclasses import replace
 from typing import Any
 
+import ports_support as support
 import pytest
 from pydantic_ai.messages import ModelResponse, TextPart
 from pydantic_ai.models.function import FunctionModel
 from pydantic_ai.usage import RequestUsage
 
-from meristem import host_ports
 from meristem.graph import (
     DependencyPlan,
     RunBudget,
@@ -71,7 +71,7 @@ def _bind(port: MemoryCheckpoint) -> None:
     async def factory(request, plan):
         yield port
 
-    host_ports.register_run_checkpoint_factory(factory)
+    support.register_run_checkpoint_factory(factory)
 
 
 def _plan(model: Any, *, request_limit: int = 8, timeout_seconds: float = 60.0):
@@ -104,7 +104,7 @@ async def _seed_partial(
 ) -> tuple[RunRequest, RunPlan]:
     """Create a real completed checkpoint, then seed a valid partial DAG state."""
     _bind(port)
-    request = RunRequest(task="dag", run_id="checkpoint-run")
+    request = support.request(task="dag", run_id="checkpoint-run")
     plan = _plan(
         recorder.model,
         request_limit=request_limit,
@@ -152,7 +152,7 @@ async def _seed_full(
     port: MemoryCheckpoint, recorder: RecordingModel
 ) -> tuple[RunRequest, RunPlan, dict[str, Any]]:
     _bind(port)
-    request = RunRequest(task="dag", run_id="checkpoint-run")
+    request = support.request(task="dag", run_id="checkpoint-run")
     plan = _plan(recorder.model)
     result = await run(request, plan=plan)
     assert result.status == "completed"
@@ -190,9 +190,9 @@ async def test_dependency_checkpoint_ack_precedes_effect_and_output_events():
         events.append(dict(event))
         port.timeline.append(("event", event["type"], event.get("task_id")))
 
-    host_ports.register_run_event_sink(capture)
+    support.register_run_event_sink(capture)
     result = await run(
-        RunRequest(task="dag", run_id="checkpoint-run"),
+        support.request(task="dag", run_id="checkpoint-run"),
         plan=_plan(recorder.model),
     )
 

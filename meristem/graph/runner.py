@@ -10,6 +10,8 @@ from __future__ import annotations
 from collections.abc import AsyncIterator, Mapping
 from typing import Any
 
+from meristem.host_ports import HostPorts
+
 from . import executor
 from .builder import RunGraph
 from .state import RunRequest
@@ -32,6 +34,7 @@ def _request_and_config(
     requested_model_id: str | None,
     agent_name: str,
     metadata: Mapping[str, Any] | None,
+    ports: HostPorts | None,
 ) -> tuple[RunRequest, dict[str, Any]]:
     cfg = dict(config or {})
     if isinstance(graph, RunGraph):
@@ -53,6 +56,8 @@ def _request_and_config(
         fields["run_id"] = run_id
     if metadata:
         fields["metadata"] = dict(metadata)
+    if ports is not None:
+        fields["ports"] = ports
     return RunRequest(**fields), cfg
 
 
@@ -67,6 +72,7 @@ async def execute_graph_iter(
     requested_model_id: str | None = None,
     agent_name: str = "",
     metadata: Mapping[str, Any] | None = None,
+    ports: HostPorts | None = None,
 ) -> AsyncIterator[dict[str, Any]]:
     """Yield each event of one run in the caller's task.
 
@@ -83,6 +89,7 @@ async def execute_graph_iter(
         requested_model_id,
         agent_name,
         metadata,
+        ports,
     )
     async for event in executor.iterate_run(request, cfg):
         if handler is not None:
@@ -103,6 +110,7 @@ async def execute_graph(
     requested_model_id: str | None = None,
     agent_name: str = "",
     metadata: Mapping[str, Any] | None = None,
+    ports: HostPorts | None = None,
 ) -> dict[str, Any]:
     """Run one query to its end; return the terminal result as a dict."""
     final: dict[str, Any] = {}
@@ -116,6 +124,7 @@ async def execute_graph(
         requested_model_id=requested_model_id,
         agent_name=agent_name,
         metadata=metadata,
+        ports=ports,
     ):
         final = event
     return dict(final["result"])

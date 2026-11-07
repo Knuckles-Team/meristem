@@ -5,12 +5,13 @@ from __future__ import annotations
 import asyncio
 from contextlib import asynccontextmanager
 
+import ports_support as support
 import pytest
 from pydantic_ai.messages import ModelResponse, TextPart, UserPromptPart
 from pydantic_ai.models.function import FunctionModel
 
 from meristem import host_ports
-from meristem.graph import RunBudget, RunPlan, RunRequest, run
+from meristem.graph import RunBudget, RunPlan, run
 
 pytestmark = pytest.mark.spec("MERISTEM-RUN-R001.15")
 
@@ -47,13 +48,13 @@ def bind(port: Port) -> None:
     async def factory(request):
         yield port
 
-    host_ports.register_active_child_input_factory(factory)
+    support.register_active_child_input_factory(factory)
 
 
 @pytest.fixture(autouse=True)
 def reset_port():
     yield
-    host_ports.register_active_child_input_factory(None)
+    support.register_active_child_input_factory(None)
 
 
 async def test_input_waits_for_next_model_request_and_preserves_budget() -> None:
@@ -78,7 +79,7 @@ async def test_input_waits_for_next_model_request_and_preserves_budget() -> None
 
     task = asyncio.create_task(
         run(
-            RunRequest(task="start", run_id="child"),
+            support.request(task="start", run_id="child"),
             plan=RunPlan(
                 model=FunctionModel(model),
                 steps=("one", "two"),
@@ -117,7 +118,7 @@ async def test_wrong_child_or_failed_receipt_refuses_before_model() -> None:
             return ModelResponse(parts=[TextPart("unexpected")])
 
         result = await run(
-            RunRequest(task="start", run_id="child"),
+            support.request(task="start", run_id="child"),
             plan=RunPlan(model=FunctionModel(model), steps=("one",)),
         )
         assert result.status == "failed"
@@ -158,7 +159,7 @@ async def test_input_is_applied_between_internal_tool_and_model_turns() -> None:
 
     task = asyncio.create_task(
         run(
-            RunRequest(task="start", run_id="child"),
+            support.request(task="start", run_id="child"),
             plan=RunPlan(
                 model=FunctionModel(model),
                 steps=("one",),
@@ -193,7 +194,7 @@ async def test_cancellation_does_not_apply_queued_input() -> None:
         finally:
             closed.set()
 
-    host_ports.register_active_child_input_factory(factory)
+    support.register_active_child_input_factory(factory)
 
     async def model(messages, info):
         started.set()
@@ -202,7 +203,7 @@ async def test_cancellation_does_not_apply_queued_input() -> None:
 
     task = asyncio.create_task(
         run(
-            RunRequest(task="start", run_id="child"),
+            support.request(task="start", run_id="child"),
             plan=RunPlan(model=FunctionModel(model), steps=("one", "two")),
         )
     )
@@ -234,7 +235,7 @@ async def test_checkpointed_input_refuses_before_model() -> None:
     async def checkpoint(request, plan):
         yield Checkpoint()
 
-    host_ports.register_run_checkpoint_factory(checkpoint)
+    support.register_run_checkpoint_factory(checkpoint)
     try:
 
         def model(messages, info):
@@ -242,13 +243,13 @@ async def test_checkpointed_input_refuses_before_model() -> None:
             return ModelResponse(parts=[TextPart("unexpected")])
 
         result = await run(
-            RunRequest(task="start", run_id="child"),
+            support.request(task="start", run_id="child"),
             plan=RunPlan(model=FunctionModel(model), steps=("one",)),
         )
         assert result.status == "failed"
         assert calls == [] and port.receipts == []
     finally:
-        host_ports.register_run_checkpoint_factory(None)
+        support.register_run_checkpoint_factory(None)
 
 
 async def test_failed_receipt_after_tool_never_repeats_effect() -> None:
@@ -275,7 +276,7 @@ async def test_failed_receipt_after_tool_never_repeats_effect() -> None:
         return ModelResponse(parts=[ToolCallPart("effect", {})])
 
     result = await run(
-        RunRequest(task="start", run_id="child"),
+        support.request(task="start", run_id="child"),
         plan=RunPlan(model=FunctionModel(model), steps=("one",), toolsets=(tools,)),
     )
     assert result.status == "failed"
@@ -307,7 +308,7 @@ async def test_entire_invalid_batch_refuses_before_receipts_or_model() -> None:
         return ModelResponse(parts=[TextPart("unexpected")])
 
     result = await run(
-        RunRequest(task="start", run_id="child"),
+        support.request(task="start", run_id="child"),
         plan=RunPlan(model=FunctionModel(model), steps=("one",)),
     )
     assert result.status == "failed"
@@ -337,7 +338,7 @@ async def test_host_order_is_preserved_and_completion_does_not_reopen_port() -> 
         return ModelResponse(parts=[TextPart("done")])
 
     result = await run(
-        RunRequest(task="start", run_id="child"),
+        support.request(task="start", run_id="child"),
         plan=RunPlan(model=FunctionModel(model), steps=("one",)),
     )
     assert result.status == "completed"

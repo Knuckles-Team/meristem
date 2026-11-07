@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import dataclasses
 
+import ports_support as support
 import pytest
 from pydantic_ai.messages import ModelResponse, TextPart
 from pydantic_ai.models.function import FunctionModel
 
-from meristem import host_ports as hp
 from meristem.graph import RunBudget, RunPlan, RunRequest
-from meristem.harness.harness_cycle import (
+from meristem.graph.harness_cycle import (
     ABSTAIN_REASONS,
     ContrastAnswer,
     ContrastDelta,
@@ -36,9 +36,9 @@ def _fixture_probe_executor(monkeypatch):
     from meristem.graph.runner import execute_graph
 
     async def fake_probe(*, graph, config, task, budget_ref, **kwargs):
-        return await execute_graph(graph, config, task, **kwargs)
+        return await execute_graph(graph, config, task, **kwargs, ports=support.PORTS)
 
-    monkeypatch.setattr(hp, "_PROBE", fake_probe)
+    support.register_harness_probe_provider(fake_probe)
 
 
 def _candidate() -> HarnessCandidate:
@@ -139,7 +139,7 @@ async def test_probe_rejects_inconsistent_candidates_before_any_run(
     async def unexpected_run(*args, **kwargs):
         raise AssertionError("a mismatched candidate must not start a probe")
 
-    monkeypatch.setattr(hp, "_PROBE", unexpected_run)
+    support.register_harness_probe_provider(unexpected_run)
     candidates = _probe_candidates()
     candidates[1] = dataclasses.replace(candidates[1], **{field: "different"})
 
@@ -154,6 +154,7 @@ async def test_probe_rejects_inconsistent_candidates_before_any_run(
             run_id="run-1",
             current_version_ref="v-0",
             candidates=candidates,
+            ports=support.PORTS,
         )
 
 
@@ -161,7 +162,7 @@ async def test_probe_shares_conditions_and_records_trace() -> None:
     def model(messages, info):
         return ModelResponse(parts=[TextPart("done")])
 
-    hp.register_run_decision_provider(
+    support.register_run_decision_provider(
         lambda request: RunPlan(model=FunctionModel(model), steps=(request.task,))
     )
 
@@ -175,6 +176,7 @@ async def test_probe_shares_conditions_and_records_trace() -> None:
         run_id="run-1",
         current_version_ref="",
         candidates=_probe_candidates(),
+        ports=support.PORTS,
     )
 
     assert [trace.candidate_id for trace in traces] == ["c-0", "c-1"]
@@ -197,7 +199,7 @@ async def test_probe_records_current_harness_baseline() -> None:
     def model(messages, info):
         return ModelResponse(parts=[TextPart("done")])
 
-    hp.register_run_decision_provider(
+    support.register_run_decision_provider(
         lambda request: RunPlan(model=FunctionModel(model), steps=(request.task,))
     )
 
@@ -211,6 +213,7 @@ async def test_probe_records_current_harness_baseline() -> None:
         run_id="run-1",
         current_version_ref="v-0",
         candidates=_probe_candidates(),
+        ports=support.PORTS,
     )
 
     assert [trace.candidate_id for trace in traces] == [
@@ -285,7 +288,7 @@ async def test_compose_refuses_unverified_measurements_before_decide(
 
 @pytest.mark.spec("MERISTEM-HARNESS-CYCLE-R001.4")
 async def test_compose_delegates_to_engine(monkeypatch) -> None:
-    import meristem.harness.harness_cycle as cycle
+    import meristem.graph.harness_cycle as cycle
 
     monkeypatch.setattr(cycle, "measure_contrasts", _fixture_contrasts)
     candidates = _probe_candidates()
@@ -339,7 +342,7 @@ async def test_compose_delegates_to_engine(monkeypatch) -> None:
 
 
 async def test_compose_abstains_when_engine_abstains(monkeypatch) -> None:
-    import meristem.harness.harness_cycle as cycle
+    import meristem.graph.harness_cycle as cycle
 
     monkeypatch.setattr(cycle, "measure_contrasts", _fixture_contrasts)
     candidates = _probe_candidates()
@@ -412,7 +415,7 @@ def _library() -> list[dict[str, str]]:
 
 
 def _tick_request() -> RunRequest:
-    return RunRequest(
+    return support.request(
         task="classify",
         run_id="task-1",
         metadata={
@@ -431,7 +434,7 @@ async def test_tick_refuses_without_owner_measurements_before_decide_or_persist(
     def model(messages, info):
         return ModelResponse(parts=[TextPart("done")])
 
-    hp.register_run_decision_provider(
+    support.register_run_decision_provider(
         lambda request: RunPlan(
             model=FunctionModel(model),
             steps=(request.task,),
@@ -441,7 +444,7 @@ async def test_tick_refuses_without_owner_measurements_before_decide_or_persist(
     metadata = {"harness_seed": "seed-1"}
     if has_baseline:
         metadata["harness_current_version_ref"] = "v-0"
-    request = RunRequest(task="classify", run_id="task-1", metadata=metadata)
+    request = support.request(task="classify", run_id="task-1", metadata=metadata)
     calls: list[object] = []
     writes: list[object] = []
     component = tmp_path / "harness" / "system_prompt.md"
@@ -481,7 +484,7 @@ def test_reflect_reports_adoption_or_abstention(events) -> None:
         contrast_ref="ref-contrast",
         lesson_ref="ref-lesson",
     )
-    reflect(adopted, evidence_run_ids=("baseline", "candidate"))
+    reflect(adopted, evidence_run_ids=("baseline", "candidate"), ports=support.PORTS)
     assert events[-1]["lesson_ref"] == "ref-lesson"
     assert events[-1]["evidence_run_ids"] == ["baseline", "candidate"]
     abstained = CycleOutcome(
@@ -492,14 +495,14 @@ def test_reflect_reports_adoption_or_abstention(events) -> None:
         contrast_ref=None,
         lesson_ref=None,
     )
-    reflect(abstained, evidence_run_ids=("baseline", "candidate"))
+    reflect(abstained, evidence_run_ids=("baseline", "candidate"), ports=support.PORTS)
     assert events[-1]["lesson_ref"] is None
     assert events[-1]["evidence_run_ids"] == []
 
 
 @pytest.mark.spec("MERISTEM-HARNESS-CYCLE-R001.7")
 async def test_refusals_keep_harness(tmp_path, monkeypatch) -> None:
-    import meristem.harness.harness_cycle as cycle
+    import meristem.graph.harness_cycle as cycle
 
     def model(messages, info):
         return ModelResponse(parts=[TextPart("done")])
@@ -518,7 +521,7 @@ async def test_refusals_keep_harness(tmp_path, monkeypatch) -> None:
             budget=RunBudget(candidate_slots=2),
         )
 
-    hp.register_run_decision_provider(registered_provider)
+    support.register_run_decision_provider(registered_provider)
 
     component = tmp_path / "harness" / "system_prompt.md"
     component.parent.mkdir(parents=True)
@@ -584,8 +587,8 @@ async def test_refusals_keep_harness(tmp_path, monkeypatch) -> None:
     async def lost_probe(*args, **kwargs):
         raise RuntimeError("trace lost")
 
-    fixture_probe = hp.harness_probe_provider()
-    monkeypatch.setattr(hp, "_PROBE", lost_probe)
+    fixture_probe = support.PORTS.harness_probe_provider()
+    support.register_harness_probe_provider(lost_probe)
     outcome = await run_cycle_tick(
         _tick_request(),
         plan(2),
@@ -605,7 +608,7 @@ async def test_refusals_keep_harness(tmp_path, monkeypatch) -> None:
     assert written == []
 
     # compose_abstention: the engine abstains, and no adoption persists.
-    monkeypatch.setattr(hp, "_PROBE", fixture_probe)
+    support.register_harness_probe_provider(fixture_probe)
     monkeypatch.setattr(cycle, "measure_contrasts", _fixture_contrasts)
     outcome = await run_cycle_tick(
         _tick_request(),
@@ -627,11 +630,11 @@ async def test_refusals_keep_harness(tmp_path, monkeypatch) -> None:
 
 @pytest.mark.spec("MERISTEM-HARNESS-CYCLE-R001.8")
 async def test_port_fails_closed_without_provider() -> None:
-    from meristem.harness.harness_cycle import drive_cycle_tick
+    from meristem.graph.harness_cycle import drive_cycle_tick
 
     with pytest.raises(RuntimeError, match="arbora"):
         await drive_cycle_tick(
-            RunRequest(task="classify"),
+            support.request(task="classify"),
             RunPlan(model="m-1"),
             task_class="classification",
             graph=object(),
@@ -640,7 +643,7 @@ async def test_port_fails_closed_without_provider() -> None:
 
 @pytest.mark.spec("MERISTEM-HARNESS-CYCLE-R001.8")
 async def test_drive_delegates_to_registered_provider() -> None:
-    from meristem.harness.harness_cycle import drive_cycle_tick
+    from meristem.graph.harness_cycle import drive_cycle_tick
 
     outcome = CycleOutcome(
         task_ref="task-1",
@@ -656,10 +659,10 @@ async def test_drive_delegates_to_registered_provider() -> None:
         seen.append((request, kwargs))
         return outcome
 
-    hp.register_harness_cycle_provider(provider)
+    support.register_harness_cycle_provider(provider)
     assert (
         await drive_cycle_tick(
-            RunRequest(task="classify"),
+            support.request(task="classify"),
             RunPlan(model="m-1"),
             task_class="classification",
             graph=object(),
@@ -669,10 +672,10 @@ async def test_drive_delegates_to_registered_provider() -> None:
     assert seen[0][0].task == "classify"
     assert seen[0][1]["task_class"] == "classification"
 
-    hp.register_harness_cycle_provider(lambda *args, **kwargs: "not an outcome")
+    support.register_harness_cycle_provider(lambda *args, **kwargs: "not an outcome")
     with pytest.raises(TypeError, match="CycleOutcome"):
         await drive_cycle_tick(
-            RunRequest(task="classify"),
+            support.request(task="classify"),
             RunPlan(model="m-1"),
             task_class="classification",
             graph=object(),
@@ -764,7 +767,7 @@ def test_propose_queries_lesson_library(returned, k, expected_refs) -> None:
 
 @pytest.mark.spec("MERISTEM-HARNESS-CYCLE-R001.13")
 async def test_missing_host_refuses_before_any_probe(monkeypatch):
-    monkeypatch.setattr(hp, "_PROBE", None)
+    support.register_harness_probe_provider(None)
     with pytest.raises(CycleRefusal, match="probe_trace_missing"):
         await probe_candidates(
             graph=object(),
@@ -776,6 +779,7 @@ async def test_missing_host_refuses_before_any_probe(monkeypatch):
             run_id="run",
             current_version_ref="version",
             candidates=[],
+            ports=support.PORTS,
         )
 
 
@@ -787,7 +791,7 @@ async def test_host_gets_candidate_and_requested_conditions(monkeypatch):
         calls.append(kwargs)
         return {"run_id": kwargs["run_id"], "status": "completed"}
 
-    monkeypatch.setattr(hp, "_PROBE", provider)
+    support.register_harness_probe_provider(provider)
     traces = await probe_candidates(
         graph=object(),
         config=None,
@@ -798,6 +802,7 @@ async def test_host_gets_candidate_and_requested_conditions(monkeypatch):
         run_id="run",
         current_version_ref="version",
         candidates=[],
+        ports=support.PORTS,
     )
     assert traces[0].trace_id == "run:probe:current"
     assert calls[0]["metadata"]["harness_probe"] == {
@@ -814,7 +819,7 @@ async def test_wrong_run_identity_is_refused(monkeypatch):
     async def provider(**kwargs):
         return {"run_id": "another-run", "status": "completed"}
 
-    monkeypatch.setattr(hp, "_PROBE", provider)
+    support.register_harness_probe_provider(provider)
     with pytest.raises(CycleRefusal, match="probe_trace_missing"):
         await probe_candidates(
             graph=object(),
@@ -826,4 +831,5 @@ async def test_wrong_run_identity_is_refused(monkeypatch):
             run_id="run",
             current_version_ref="version",
             candidates=[],
+            ports=support.PORTS,
         )

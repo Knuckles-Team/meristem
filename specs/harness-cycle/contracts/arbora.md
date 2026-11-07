@@ -9,7 +9,7 @@ Arbora drives the evolution tick. It registers the cycle and probe providers at 
 
 | Capability | Owner | Decision |
 |---|---|---|
-| Host registration of the cycle and probe providers | arbora | Arbora calls `register_harness_cycle_provider` and `register_harness_probe_provider` (ARBORA-HOST-R035). Meristem adds no registration code. |
+| Host registration of the cycle and probe providers | arbora | Arbora calls `HostPorts.cycle` and `HostPorts.probe` (ARBORA-HOST-R035). Meristem adds no registration code. |
 | Engine decision port | arbora | Arbora binds the port and its `log` call (ARBORA-OPS-R890). Meristem calls it and holds no client of its own. |
 | Probe admission and execution | arbora | The host executor admits each probe run and returns its trace. Meristem checks the run identity of the reply. |
 | Tick trigger | arbora | One tick per completed run. A probe run carries `metadata.harness_probe` and never starts a tick. |
@@ -20,7 +20,7 @@ Arbora calls meristem through `meristem/host_ports.py`. Meristem never imports a
 
 ## Wire shape
 
-Arbora registers a provider callable through `register_harness_cycle_provider` (`meristem/host_ports.py:288`). `drive_cycle_tick` (`meristem/harness/harness_cycle.py:610`) calls it and raises `RuntimeError` when none is bound. The probe provider receives the requested component version, seed, model, budget and run identity and returns a `ProbeTrace` (`harness_cycle.py:145`). The outcome returns as one `harness_cycle_outcome` run event.
+Arbora registers a provider callable through `HostPorts.cycle` (`meristem/host_ports.py:288`). `drive_cycle_tick` (`meristem/graph/harness_cycle.py:610`) calls it and raises `RuntimeError` when none is bound. The probe provider receives the requested component version, seed, model, budget and run identity and returns a `ProbeTrace` (`harness_cycle.py:145`). The outcome returns as one `harness_cycle_outcome` run event.
 
 ## Refusal codes
 

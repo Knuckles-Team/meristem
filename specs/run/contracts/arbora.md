@@ -24,8 +24,8 @@ No served record crosses this seam. Arbora calls meristem in process and binds t
 
 | Direction | Call | Where |
 |---|---|---|
-| arbora to meristem | `AgentRunExecutor.execute_agent`, `iterate_run`, `iterate_client_run`, `run_rlm`, `execute_task_plan` entry points | `meristem/graph/executor.py`, `meristem/harness/hosted_run.py`, `meristem/rlm/runner.py`; called from `arbora/agent_runs.py`, `arbora/api/ops/plans.py`, `arbora/acp/adapter.py`, `arbora/api/contracts/agent_control_plane.py`, `arbora/a2a/anonymous_send.py` |
-| arbora binds | `register_run_decision_provider`, `register_model_provider`, `register_run_event_sink`, `register_optional_scaffold_publication_factory`, `register_run_history_provider`, `register_tool_caller`, `register_run_checkpoint_factory`, `register_active_child_input_factory`, `register_durable_run_event_factory` | `meristem/host_ports.py`; arbora binds the first four in `bind_run_ports` (`arbora/agent_runs.py`) and the history reader in `arbora/acp/local_runtime.py` |
+| arbora to meristem | `AgentRunExecutor.execute_agent`, `iterate_run`, `iterate_client_run`, `run_rlm`, `execute_task_plan` entry points | `meristem/graph/executor.py`, `meristem/graph/hosted_run.py`, `meristem/rlm/runner.py`; called from `arbora/agent_runs.py`, `arbora/api/ops/plans.py`, `arbora/acp/adapter.py`, `arbora/api/contracts/agent_control_plane.py`, `arbora/a2a/anonymous_send.py` |
+| arbora binds | `HostPorts.decide`, `HostPorts.models`, `HostPorts.events`, `HostPorts.scaffold_publication`, `HostPorts.run_history`, `HostPorts.caller`, `HostPorts.checkpoint_factory`, `HostPorts.active_child_input`, `HostPorts.durable_run_events` | `meristem/host_ports.py`; arbora binds the first four in `bind_run_ports` (`arbora/agent_runs.py`) and the history reader in `arbora/acp/local_runtime.py` |
 
 The run plan is the one value that crosses: the decision provider returns a `RunPlan` (`model`, `steps`, `tool_names`, `toolsets`, `budget`, `stop`, `harness`, `client_transport`, `dependency_plan`, `initial_usage`, `render_receipt`), and `iterate_run` yields event dicts whose last event carries a `RunResult`.
 

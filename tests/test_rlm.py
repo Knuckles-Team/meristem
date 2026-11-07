@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ports_support as support
 import pytest
 from pydantic_ai.messages import ModelResponse, TextPart, ToolCallPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
@@ -68,7 +69,12 @@ async def test_root_reads_slices_and_recurses():
         ("read_input", {"start": 2, "end": 5}), ("sub_query", {"question": "q"})
     )
     child = TestModel(call_tools=[], custom_output_text="child-answer")
-    out = await run_rlm("t", "abcdefgh", config=RLMConfig(model=root, sub_model=child))
+    out = await run_rlm(
+        "t",
+        "abcdefgh",
+        config=RLMConfig(model=root, sub_model=child),
+        ports=support.PORTS,
+    )
     assert out["ok"] and out["result"] == "child-answer"
     assert out["usage"]["requests"] >= 3 and out["max_depth"] == 3
 
@@ -128,6 +134,7 @@ async def test_recursive_lineage_requires_explicit_child_identity_and_preserves_
         ),
         lineage=LineageBinding("root-run", "run", "same-name", plan_id="plan"),
         child_identity_provider=child_identity,
+        ports=support.PORTS,
     )
 
     assert result["ok"] and result["result"] == "root-answer"
@@ -174,6 +181,7 @@ async def test_recursive_lineage_refuses_missing_identity_before_dispatch(
         ),
         lineage=LineageBinding("root-run", "run", "root"),
         child_identity_provider=child_identity_provider,
+        ports=support.PORTS,
     )
 
     assert not result["ok"]
@@ -185,7 +193,12 @@ async def test_recursive_lineage_refuses_missing_identity_before_dispatch(
 # spec: MERISTEM-RUN-R001.3
 async def test_read_input_is_capped_by_the_slice_limit():
     root = scripted(("read_input", {"start": 0, "end": 100}))
-    out = await run_rlm("t", "x" * 50, config=RLMConfig(model=root, max_slice_chars=4))
+    out = await run_rlm(
+        "t",
+        "x" * 50,
+        config=RLMConfig(model=root, max_slice_chars=4),
+        ports=support.PORTS,
+    )
     assert out["result"] == "xxxx"
 
 
@@ -193,7 +206,12 @@ async def test_read_input_is_capped_by_the_slice_limit():
 @pytest.mark.parametrize("max_depth", [0, 1])
 async def test_recursion_stops_at_max_depth(max_depth):
     root = scripted(("sub_query", {"question": "q"}))
-    out = await run_rlm("t", "abc", config=RLMConfig(model=root, max_depth=max_depth))
+    out = await run_rlm(
+        "t",
+        "abc",
+        config=RLMConfig(model=root, max_depth=max_depth),
+        ports=support.PORTS,
+    )
     assert out["result"] == "refused: maximum recursion depth reached"
 
 
@@ -201,7 +219,9 @@ async def test_model_failure_returns_a_typed_failure():
     def boom(messages, info):
         raise RuntimeError("sandbox timeout")
 
-    out = await run_rlm("t", config=RLMConfig(model=FunctionModel(boom)))
+    out = await run_rlm(
+        "t", config=RLMConfig(model=FunctionModel(boom)), ports=support.PORTS
+    )
     assert (out["ok"], out["failure_class"]) == (False, "sandbox_exec_timeout")
 
 
@@ -211,22 +231,24 @@ async def test_fatal_failure_propagates():
         raise SandboxFatalError("dead")
 
     with pytest.raises(SandboxFatalError):
-        await run_rlm("t", config=RLMConfig(model=FunctionModel(boom)))
+        await run_rlm(
+            "t", config=RLMConfig(model=FunctionModel(boom)), ports=support.PORTS
+        )
 
 
 # spec: MERISTEM-RUN-R001.3
 async def test_without_a_model_the_host_plan_supplies_it():
-    host_ports.register_run_decision_provider(
+    support.register_run_decision_provider(
         lambda req: RunPlan(
             model=TestModel(call_tools=[], custom_output_text=req.agent_name)
         )
     )
-    out = await run_rlm("t")
+    out = await run_rlm("t", ports=support.PORTS)
     assert out["result"] == "rlm"
 
 
 async def test_without_any_model_the_run_fails():
-    out = await run_rlm("t")
+    out = await run_rlm("t", ports=support.PORTS)
     assert out["ok"] is False and "no model" in out["error"]
 
 
@@ -271,6 +293,7 @@ async def test_recursive_requests_refill_slots_without_holding_parent_permits():
                 sub_model=FunctionModel(child),
                 max_concurrent_requests=2,
             ),
+            ports=support.PORTS,
         )
     )
     try:
@@ -328,6 +351,7 @@ async def test_nested_recursion_capacity_one_finishes_or_drains_on_cancel(cancel
                 model=FunctionModel(model),
                 max_concurrent_requests=1,
             ),
+            ports=support.PORTS,
         )
     )
     await asyncio.wait_for(deepest.wait(), 0.5)
@@ -363,6 +387,7 @@ async def test_recursive_shared_budget_and_batch_refusal(
             request_limit=request_limit,
             tool_calls_limit=tool_limit,
         ),
+        ports=support.PORTS,
     )
     assert result["ok"] is False
     assert len(calls) == expected_calls
@@ -372,13 +397,13 @@ async def test_recursive_shared_budget_and_batch_refusal(
 async def test_host_zero_request_limit_is_not_widened_to_fallback():
     from meristem.graph import RunBudget
 
-    host_ports.register_run_decision_provider(
+    support.register_run_decision_provider(
         lambda req: RunPlan(
             model=FunctionModel(lambda *_: pytest.fail("must not dispatch")),
             budget=RunBudget(request_limit=0),
         )
     )
-    assert (await run_rlm("t"))["ok"] is False
+    assert (await run_rlm("t", ports=support.PORTS))["ok"] is False
 
 
 # spec: MERISTEM-RUN-R001.7
@@ -407,6 +432,7 @@ async def test_repeated_recursive_cancellation_waits_for_async_child_cleanup():
                 sub_model=FunctionModel(child),
                 max_concurrent_requests=1,
             ),
+            ports=support.PORTS,
         )
     )
     try:
@@ -450,6 +476,7 @@ async def test_recursive_fallback_refuses_oversized_batch_before_child_fanout(
             sub_model=FunctionModel(child),
             tool_calls_limit=tool_limit,
         ),
+        ports=support.PORTS,
     )
     assert result["ok"] is False and children == 0
     assert "tool_calls_limit" in result["error"]
@@ -512,18 +539,21 @@ async def test_recursive_history_selection_refuses_before_model(case):
         return "legacy history"
 
     if case == "factory":
-        host_ports.register_run_checkpoint_factory(lambda *_: None)
+        support.register_run_checkpoint_factory(lambda *_: None)
     elif case == "legacy":
-        host_ports.register_run_history_provider(legacy)
+        support.register_run_history_provider(legacy)
     else:
-        host_ports.register_run_checkpoint_provider(select)
+        support.register_run_checkpoint_provider(select)
         if case == "empty_with_legacy":
-            host_ports.register_run_history_provider(legacy)
+            support.register_run_history_provider(legacy)
     lineage = (
         None if case == "missing_lineage" else LineageBinding("run", "root", "root")
     )
     result = await run_rlm(
-        "task", config=RLMConfig(model=FunctionModel(model)), lineage=lineage
+        "task",
+        config=RLMConfig(model=FunctionModel(model)),
+        lineage=lineage,
+        ports=support.PORTS,
     )
     if case in {"empty", "empty_with_legacy"}:
         assert result["ok"] is True

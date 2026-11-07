@@ -6,8 +6,8 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Literal, Protocol
 
-from meristem import host_ports
 from meristem.harness.edit_engine import Edit
+from meristem.host_ports import HostPorts
 from meristem.runtime.events import CmdOutputObservation
 from meristem.runtime.workspace import DevWorkspace
 
@@ -251,6 +251,7 @@ async def run_changeset_cycle(
     submitter: ChangesetSubmitter | None,
     gate_runner: SandboxGateRunner | None = None,
     max_rebases: int = 3,
+    ports: HostPorts | None = None,
 ) -> CycleResult:
     """Apply edits to a host-provided snapshot and submit after sandbox gates.
 
@@ -281,6 +282,7 @@ async def run_changeset_cycle(
         return CycleResult("invalid_edit_path")
     if gate_runner is None:
         return CycleResult("sandbox_unavailable")
+    ports = ports if ports is not None else HostPorts()
     await workspace.start()
     head = base_head
     for attempt in range(max_rebases + 1):
@@ -304,7 +306,7 @@ async def run_changeset_cycle(
                 return CycleResult("gate_failed")
             verdict = GateVerdict(index, observation.exit_code)
             verdicts.append(verdict)
-            host_ports.emit_run_event(
+            ports.emit_run_event(
                 {
                     "kind": "changeset_gate",
                     "run_ref": run_ref,
@@ -329,7 +331,7 @@ async def run_changeset_cycle(
         if isinstance(outcome, Submitted):
             if not _nonblank(outcome.changeset_id):
                 return CycleResult("submit_refused")
-            host_ports.emit_run_event(
+            ports.emit_run_event(
                 {
                     "kind": "changeset_submitted",
                     "run_ref": run_ref,
@@ -345,7 +347,7 @@ async def run_changeset_cycle(
             or not all(_nonblank(path) for path in outcome.paths)
         ):
             return CycleResult("submit_refused")
-        host_ports.emit_run_event(
+        ports.emit_run_event(
             {
                 "kind": "changeset_conflict",
                 "run_ref": run_ref,

@@ -4,7 +4,7 @@ Governing spec: [spec.md](spec.md). Rows: [requirements.md](requirements.md).
 
 ## Summary
 
-The harness improves itself while a task runs. One module, `meristem/harness/harness_cycle.py`, owns the loop. A tick proposes candidate component versions, probes each under identical conditions, composes the adopted harness from the measured contrast, persists the result and reflects the lesson. Each step is one function with one refusal path.
+The harness improves itself while a task runs. One module, `meristem/graph/harness_cycle.py`, owns the loop. A tick proposes candidate component versions, probes each under identical conditions, composes the adopted harness from the measured contrast, persists the result and reflects the lesson. Each step is one function with one refusal path.
 
 Medulla owns the program optimization, ablation, evaluation-loop and parallel-engine substrate. It also owns the versioned components, the improvement library (MEDULLA-ORCH-VOCAB-R801, MEDULLA-ORCH-VOCAB-R802) and the contrastive composition decision (MEDULLA-DECISION-ENGINE-R803). Arbora owns the served operations (ARBORA-OPS-R068) and drives the tick. The harness package keeps the constraint engine, contract validator, edit engine, plan, plan runtime and quality gates. The consumer rows R003 onward file the in-run obligations of the medulla decision engine: run loop behavior, context assembly, fan-out, sandbox limits and trace emission. The harness decides nothing in them. Each threshold is a received value with a fallback default.
 
@@ -30,8 +30,8 @@ Medulla owns the program optimization, ablation, evaluation-loop and parallel-en
 ## Project Structure
 
 ```text
-meristem/harness/harness_cycle.py  existing: HarnessCandidate, CycleOutcome, propose, probe_candidates, compose, persist, reflect, run_cycle_tick, drive_cycle_tick
-meristem/host_ports.py              existing: HarnessCycleProvider, register_harness_cycle_provider, harness_cycle_provider
+meristem/graph/harness_cycle.py  existing: HarnessCandidate, CycleOutcome, propose, probe_candidates, compose, persist, reflect, run_cycle_tick, drive_cycle_tick
+meristem/host_ports.py              existing: HarnessCycleProvider, HostPorts.cycle, harness_cycle_provider
 meristem/graph/runner.py            existing: execute_graph, the probe entry
 meristem/harness/edit_engine.py     existing: apply_edits, the in-run harness switch
 meristem/rlm/runner.py              existing: run_rlm, the consumer rows R017 to R037 attach here
@@ -102,8 +102,8 @@ The repository pre-commit hooks apply: `ruff-format`, `ruff-check`, `secrets`, `
 
 ## Production caller chain
 
-1. `MERISTEM-HARNESS-CYCLE-R001`: arbora host (ARBORA-HOST-R035) → `meristem/host_ports.py::harness_cycle_provider` (`host_ports.py:304`) → `meristem/harness/harness_cycle.py::drive_cycle_tick` (`harness_cycle.py:610`) → `run_cycle_tick` (`harness_cycle.py:504`) → `propose`, `probe_candidates`, `compose`, `persist`, `reflect`. The probes run through `meristem/graph/runner.py::execute_graph` (`runner.py:96`).
-2. `MERISTEM-HARNESS-CYCLE-R001.11`: the arbora host binding `arbora/agent_runs.py::bind_run_ports` (arbora repository, `agent_runs.py:613`) is planned to call `register_harness_cycle_provider` (`host_ports.py:288`). Today it registers no cycle provider, so no run drives a tick.
+1. `MERISTEM-HARNESS-CYCLE-R001`: arbora host (ARBORA-HOST-R035) → `meristem/host_ports.py::harness_cycle_provider` (`host_ports.py:304`) → `meristem/graph/harness_cycle.py::drive_cycle_tick` (`harness_cycle.py:610`) → `run_cycle_tick` (`harness_cycle.py:504`) → `propose`, `probe_candidates`, `compose`, `persist`, `reflect`. The probes run through `meristem/graph/runner.py::execute_graph` (`runner.py:96`).
+2. `MERISTEM-HARNESS-CYCLE-R001.11`: the arbora host binding `arbora/agent_runs.py::bind_run_ports` (arbora repository, `agent_runs.py:613`) is planned to call `HostPorts.cycle` (`host_ports.py:288`). Today it registers no cycle provider, so no run drives a tick.
 3. `MERISTEM-HARNESS-CYCLE-R003` to `MERISTEM-HARNESS-CYCLE-R083`: each consumer row names its own chain from `meristem.graph.execute_graph` or `meristem/rlm/runner.py::run_rlm` to the stage function that applies the received decision.
 4. `MERISTEM-HARNESS-CYCLE-R084` to `MERISTEM-HARNESS-CYCLE-R087`: the in-run state machines. `meristem/graph/state.py::transition` owns the run edges and `meristem/graph/dependency.py::transition_task` owns the fan-out task edges. Every status write in `executor.py`, `dependency.py`, `checkpoint.py` and `rlm/runner.py` calls them. The persisted run record belongs to medulla; the harness keeps no store. See the section *In-run state machines* below.
 
@@ -152,7 +152,7 @@ The pack file is `meristem/ontology/run_state_machines.ttl`. `:RunMachine`, `:Ta
 
 #### Wiring and hot-path proof
 
-Entry point `meristem.graph.execute_graph` → `meristem/graph/runner.py::execute_graph_iter` → `meristem/graph/executor.py::iterate_run` → `transition` at the status writes `executor.py:273,308,344,521` → `meristem/graph/dependency.py::run_dependency_graph` → `transition_task` at `dependency.py:643,846,877,922,984` and the cancel mapping at `dependency.py:738,956,1007,1108` → `meristem/graph/checkpoint.py` save and restore at `checkpoint.py:257-269,369-379` → `meristem/rlm/runner.py::_run_drained` at `runner.py:181-198` → probe `meristem/harness/harness_cycle.py:156`. Wiring rows: R084.3, R085.3, R086.1 to R086.3. Hot-path proof: `tests/graph/test_run_state_machine.py::test_execute_graph_status_changes_all_pass_through_transition` and `tests/graph/test_task_state_machine.py::test_run_dependency_graph_status_changes_all_pass_through_transition_task`.
+Entry point `meristem.graph.execute_graph` → `meristem/graph/runner.py::execute_graph_iter` → `meristem/graph/executor.py::iterate_run` → `transition` at the status writes `executor.py:273,308,344,521` → `meristem/graph/dependency.py::run_dependency_graph` → `transition_task` at `dependency.py:643,846,877,922,984` and the cancel mapping at `dependency.py:738,956,1007,1108` → `meristem/graph/checkpoint.py` save and restore at `checkpoint.py:257-269,369-379` → `meristem/rlm/runner.py::_run_drained` at `runner.py:181-198` → probe `meristem/graph/harness_cycle.py:156`. Wiring rows: R084.3, R085.3, R086.1 to R086.3. Hot-path proof: `tests/graph/test_run_state_machine.py::test_execute_graph_status_changes_all_pass_through_transition` and `tests/graph/test_task_state_machine.py::test_run_dependency_graph_status_changes_all_pass_through_transition_task`.
 
 ## Cross-repo seams
 

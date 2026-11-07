@@ -3,7 +3,7 @@
 import pytest
 from pydantic import ValidationError
 
-from meristem.harness import PlanItem, PlanState
+from meristem.host_ports import PlanItem, PlanState
 
 
 @pytest.mark.spec("MERISTEM-RUN-R001.4.1")

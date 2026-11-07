@@ -7,16 +7,15 @@ import json
 from contextlib import asynccontextmanager
 from typing import Any
 
+import ports_support as support
 import pytest
 from pydantic_ai.messages import ModelResponse, TextPart
 from pydantic_ai.models.function import FunctionModel
 
-from meristem import host_ports
 from meristem.graph import (
     DependencyPlan,
     RunBudget,
     RunPlan,
-    RunRequest,
     RunTask,
     ToolStep,
     ToolStepResult,
@@ -70,8 +69,8 @@ def _bind(checkpoint: Checkpoint, publisher: Publisher) -> None:
     async def publisher_scope(request: Any):
         yield publisher
 
-    host_ports.register_run_checkpoint_factory(checkpoint_scope)
-    host_ports.register_durable_run_event_factory(publisher_scope)
+    support.register_run_checkpoint_factory(checkpoint_scope)
+    support.register_durable_run_event_factory(publisher_scope)
 
 
 def _plan(model: Any) -> RunPlan:
@@ -114,7 +113,7 @@ async def test_dependency_events_follow_checkpoint_ack_and_carry_tool_record() -
     checkpoint = Checkpoint(timeline)
     publisher = Publisher(timeline)
     _bind(checkpoint, publisher)
-    host_ports.register_run_event_sink(
+    support.register_run_event_sink(
         lambda event: timeline.append(
             ("run_event", event["type"], str(event.get("task_id", "")))
         )
@@ -128,9 +127,9 @@ async def test_dependency_events_follow_checkpoint_ack_and_carry_tool_record() -
         assert (server, tool, task_id) == ("host", "lookup", "tool")
         return ToolStepResult(result={"value": arguments["value"]})
 
-    host_ports.register_tool_caller(caller)
+    support.register_tool_caller(caller)
     result = await run(
-        RunRequest(task="dag", run_id="r04310-dependency-run"),
+        support.request(task="dag", run_id="r04310-dependency-run"),
         plan=_plan(FunctionModel(stream_function=stream)),
     )
 
@@ -181,7 +180,7 @@ async def test_dependency_events_follow_checkpoint_ack_and_carry_tool_record() -
 @pytest.mark.spec("MERISTEM-RUN-R001.14")
 async def test_dependency_events_keep_step_keys_and_dependency_edges_distinct() -> None:
     events: list[dict[str, Any]] = []
-    host_ports.register_run_event_sink(events.append)
+    support.register_run_event_sink(events.append)
 
     async def stream(messages, info):
         return ModelResponse(parts=[TextPart(str(messages[-1].parts[-1].content))])
@@ -199,7 +198,7 @@ async def test_dependency_events_keep_step_keys_and_dependency_edges_distinct() 
         ),
     )
     result = await run(
-        RunRequest(task="dag", run_id="r04314-run"),
+        support.request(task="dag", run_id="r04314-run"),
         plan=plan,
     )
 
@@ -230,7 +229,7 @@ async def test_dependency_failed_result_publication_effect_runs_once_and_restart
         effects.append(task_id)
         return ToolStepResult(result="done")
 
-    host_ports.register_tool_caller(caller)
+    support.register_tool_caller(caller)
     plan = RunPlan(
         model=FunctionModel(lambda messages, info: "unused"),
         dependency_plan=DependencyPlan(
@@ -241,7 +240,7 @@ async def test_dependency_failed_result_publication_effect_runs_once_and_restart
         ),
         budget=RunBudget(request_limit=2, tool_calls_limit=1),
     )
-    request = RunRequest(task="tool", run_id="r04310-failed-result-run")
+    request = support.request(task="tool", run_id="r04310-failed-result-run")
 
     first = await run(request, plan=plan)
     assert first.status == "failed"
@@ -272,7 +271,7 @@ async def test_publisher_scope_closes_when_run_is_cancelled() -> None:
         finally:
             closed.set()
 
-    host_ports.register_durable_run_event_factory(scope)
+    support.register_durable_run_event_factory(scope)
 
     async def stream(messages, info):
         await asyncio.Event().wait()
@@ -280,7 +279,7 @@ async def test_publisher_scope_closes_when_run_is_cancelled() -> None:
 
     task = asyncio.create_task(
         run(
-            RunRequest(task="wait", run_id="r04310-cancel-run"),
+            support.request(task="wait", run_id="r04310-cancel-run"),
             plan=RunPlan(model=FunctionModel(stream_function=stream), steps=("wait",)),
         )
     )
@@ -299,7 +298,7 @@ async def test_concurrent_tool_results_follow_declaration_and_checkpoint_order()
     checkpoint = Checkpoint(timeline)
     publisher = Publisher(timeline)
     _bind(checkpoint, publisher)
-    host_ports.register_run_event_sink(
+    support.register_run_event_sink(
         lambda event: timeline.append(
             ("run_event", event["type"], str(event.get("task_id", "")))
         )
@@ -321,7 +320,7 @@ async def test_concurrent_tool_results_follow_declaration_and_checkpoint_order()
             b_finished.set()
         return ToolStepResult(result=task_id)
 
-    host_ports.register_tool_caller(caller)
+    support.register_tool_caller(caller)
     plan = RunPlan(
         model=FunctionModel(stream_function=stream),
         dependency_plan=DependencyPlan(
@@ -339,7 +338,7 @@ async def test_concurrent_tool_results_follow_declaration_and_checkpoint_order()
 
     task = asyncio.create_task(
         run(
-            RunRequest(task="concurrent", run_id="r04310-concurrent-run"),
+            support.request(task="concurrent", run_id="r04310-concurrent-run"),
             plan=plan,
         )
     )
@@ -395,7 +394,7 @@ async def test_failed_tool_call_publication_suppresses_concurrent_terminals() ->
 
     publisher = FailA(timeline)
     _bind(Checkpoint(timeline), publisher)
-    host_ports.register_run_event_sink(
+    support.register_run_event_sink(
         lambda event: timeline.append(
             ("run_event", event["type"], str(event.get("task_id", "")))
         )
@@ -412,7 +411,7 @@ async def test_failed_tool_call_publication_suppresses_concurrent_terminals() ->
         b_started.set()
         await asyncio.Event().wait()
 
-    host_ports.register_tool_caller(caller)
+    support.register_tool_caller(caller)
     plan = RunPlan(
         model=FunctionModel(stream_function=stream),
         dependency_plan=DependencyPlan(
@@ -430,7 +429,9 @@ async def test_failed_tool_call_publication_suppresses_concurrent_terminals() ->
 
     result_task = asyncio.create_task(
         run(
-            RunRequest(task="publication-failure", run_id="r04310-call-failure-run"),
+            support.request(
+                task="publication-failure", run_id="r04310-call-failure-run"
+            ),
             plan=plan,
         )
     )

@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import json
 
+import ports_support as support
 import pytest
 from pydantic_ai.messages import ModelResponse, TextPart
 from pydantic_ai.models.function import FunctionModel
 from pydantic_ai.usage import RequestUsage
 
-from meristem.graph import RunPlan, RunRequest, run
+from meristem.graph import RunPlan, run
 from meristem.graph.metrics import MAX_REQUEST_SAMPLES, RunMetrics
 
 
@@ -30,7 +31,7 @@ async def test_actual_model_calls_emit_attributed_counts_and_client_time(events)
         )
 
     result = await run(
-        RunRequest(task="test", run_id="run:metrics"),
+        support.request(task="test", run_id="run:metrics"),
         plan=RunPlan(model=FunctionModel(respond), steps=("one", "two")),
     )
     assert result.status == "completed"
@@ -61,7 +62,8 @@ async def test_failed_model_call_is_observed_without_invented_usage():
         raise RuntimeError("model failed")
 
     result = await run(
-        RunRequest(task="test"), plan=RunPlan(model=FunctionModel(fail), steps=("one",))
+        support.request(task="test"),
+        plan=RunPlan(model=FunctionModel(fail), steps=("one",)),
     )
     assert result.status == "failed"
     assert result.metrics["observed_model_requests"] == 1
@@ -83,7 +85,7 @@ async def test_invalid_response_counts_do_not_become_metric_values(bad_count):
         )
 
     result = await run(
-        RunRequest(task="test"),
+        support.request(task="test"),
         plan=RunPlan(model=FunctionModel(respond), steps=("one",)),
     )
     sample = result.metrics["model_requests"][0]
@@ -93,7 +95,7 @@ async def test_invalid_response_counts_do_not_become_metric_values(bad_count):
 
 # spec: MERISTEM-RUN-R001.12
 async def test_missing_model_has_zero_observed_requests():
-    result = await run(RunRequest(task="test"))
+    result = await run(support.request(task="test"))
     assert result.status == "failed"
     assert result.metrics["model_requests"] == []
     assert result.metrics["observed_model_requests"] == 0
@@ -105,7 +107,7 @@ async def test_zero_elapsed_is_not_used_as_a_generation_denominator(monkeypatch)
 
     monkeypatch.setattr(metrics, "perf_counter_ns", lambda: 0)
     result = await run(
-        RunRequest(task="test"),
+        support.request(task="test"),
         plan=RunPlan(
             model=FunctionModel(
                 lambda messages, info: ModelResponse(parts=[TextPart("ok")])

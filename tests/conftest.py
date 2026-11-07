@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 
+import ports_support as support
 import pytest
 
 from meristem.runtime import DevWorkspace, LocalWorkspace
@@ -18,36 +19,15 @@ async def workspace(tmp_path) -> AsyncIterator[DevWorkspace]:
 
 @pytest.fixture(autouse=True)
 def _clear_host_ports():
-    """Every test starts and ends with no host provider registered."""
-    from meristem import host_ports
-
-    registrars = (
-        host_ports.register_run_decision_provider,
-        host_ports.register_run_history_provider,
-        host_ports.register_run_checkpoint_provider,
-        host_ports.register_run_checkpoint_factory,
-        host_ports.register_scaffold_publication_factory,
-        host_ports.register_model_provider,
-        host_ports.register_tool_caller,
-        host_ports.register_run_event_sink,
-        host_ports.register_durable_run_event_factory,
-        host_ports.register_harness_cycle_provider,
-        host_ports.register_harness_probe_provider,
-        host_ports.register_native_toolset_provider,
-        host_ports.register_remote_toolset_provider,
-    )
-    for clear in registrars:
-        clear(None)
+    """Every test starts and ends with no host provider bound."""
+    support.reset()
     yield
-    for clear in registrars:
-        clear(None)
+    support.reset()
 
 
 @pytest.fixture
 def events() -> list[dict]:
     """Run events captured through a fake host run event sink."""
-    from meristem import host_ports
-
     captured: list[dict] = []
-    host_ports.register_run_event_sink(lambda event: captured.append(dict(event)))
+    support.register_run_event_sink(lambda event: captured.append(dict(event)))
     return captured

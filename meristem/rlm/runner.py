@@ -19,7 +19,6 @@ from typing import Any
 from pydantic_ai import Agent, RunContext
 from pydantic_ai.usage import UsageLimits
 
-from meristem import host_ports
 from meristem.graph.budget import SharedBudget
 from meristem.graph.executor import resolve_plan
 from meristem.graph.live_events import (
@@ -29,6 +28,8 @@ from meristem.graph.live_events import (
     lineage_relationship,
 )
 from meristem.graph.state import RunBudget, RunRequest
+from meristem.harness.conversation_history import read_recursive_run_history
+from meristem.host_ports import HostPorts
 
 from .telemetry import SandboxFatalError, classify_failure
 
@@ -61,6 +62,7 @@ class _Env:
     depth: int
     config: RLMConfig
     budget: SharedBudget
+    ports: HostPorts
     lineage: LineageBinding | None = None
     child_identity_provider: (
         Callable[[LineageBinding, str], LineageBinding | None] | None
@@ -84,19 +86,26 @@ def _emit_lineage(
         kind,
         env.lineage,
         env.event_sequence,
+        ports=env.ports,
         relationships=relationships,
         **fields,
     )
 
 
-def _model(value: Any) -> Any:
-    return host_ports.resolve_model(value) if isinstance(value, str) else value
+def _model(ports: HostPorts, value: Any) -> Any:
+    return ports.resolve_model(value) if isinstance(value, str) else value
 
 
 def _agent(
-    config: RLMConfig, depth: int, output_type: Any, budget: SharedBudget
+    config: RLMConfig,
+    depth: int,
+    output_type: Any,
+    budget: SharedBudget,
+    ports: HostPorts,
 ) -> Agent[_Env, Any]:
-    model = _model(config.model if depth == 0 else (config.sub_model or config.model))
+    model = _model(
+        ports, config.model if depth == 0 else (config.sub_model or config.model)
+    )
     agent: Agent[_Env, Any] = Agent(
         model,
         output_type=output_type,
@@ -149,6 +158,7 @@ def _agent(
             depth=ctx.deps.depth + 1,
             config=ctx.deps.config,
             budget=ctx.deps.budget,
+            ports=ctx.deps.ports,
             lineage=child_lineage,
             child_identity_provider=ctx.deps.child_identity_provider,
         )
@@ -169,9 +179,9 @@ async def _run_level(task: str, env: _Env, output_type: Any) -> Any:
         request_limit=None,
         tool_calls_limit=env.budget.limits.tool_calls_limit,
     )
-    result = await _agent(env.config, env.depth, output_type, env.budget).run(
-        _prompt(task, env), deps=env, usage_limits=limits
-    )
+    result = await _agent(
+        env.config, env.depth, output_type, env.budget, env.ports
+    ).run(_prompt(task, env), deps=env, usage_limits=limits)
     return result.output
 
 
@@ -200,8 +210,8 @@ async def _run_drained(task: str, env: _Env, output_type: Any) -> Any:
     return value
 
 
-async def _config_from_host(task: str) -> RLMConfig:
-    plan = await resolve_plan(RunRequest(task=task, agent_name="rlm"), {})
+async def _config_from_host(task: str, ports: HostPorts) -> RLMConfig:
+    plan = await resolve_plan(RunRequest(task=task, agent_name="rlm", ports=ports), {})
     return RLMConfig(
         model=plan.model,
         request_limit=50
@@ -225,6 +235,7 @@ async def run_rlm(
     lineage: LineageBinding | None = None,
     child_identity_provider: Callable[[LineageBinding, str], LineageBinding | None]
     | None = None,
+    ports: HostPorts | None = None,
 ) -> dict[str, Any]:
     """Run one recursive task over ``input_text``.
 
@@ -235,17 +246,18 @@ async def run_rlm(
     try:
         if lineage is not None and not isinstance(lineage, LineageBinding):
             raise TypeError("lineage must be a LineageBinding when supplied")
-        if host_ports.run_checkpoint_factory_bound():
+        ports = ports if ports is not None else HostPorts()
+        if ports.run_checkpoint_factory_bound():
             raise ValueError("recursive checkpoint restore is unavailable")
         history_request = (
-            RunRequest(task=task, agent_name="rlm", run_id=lineage.run_id)
+            RunRequest(task=task, agent_name="rlm", run_id=lineage.run_id, ports=ports)
             if lineage is not None
             else None
         )
-        if await host_ports.read_recursive_run_history(history_request) is not None:
+        if await read_recursive_run_history(ports, history_request) is not None:
             raise ValueError("recursive conversation history is unavailable")
         cfg = config if config is not None and config.model else None
-        cfg = cfg or await _config_from_host(task)
+        cfg = cfg or await _config_from_host(task, ports)
         for name in ("max_concurrent_requests",):
             value = getattr(cfg, name)
             if type(value) is not int or value < 1:
@@ -274,6 +286,7 @@ async def run_rlm(
             depth=0,
             config=cfg,
             budget=budget,
+            ports=ports,
             lineage=lineage,
             child_identity_provider=child_identity_provider,
         )

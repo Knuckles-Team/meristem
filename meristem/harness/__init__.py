@@ -20,13 +20,6 @@ from .edit_engine import (
     apply_with_reflection,
     parse_edits,
 )
-from .harness_cycle import (
-    ABSTAIN_REASONS,
-    CycleOutcome,
-    CycleRefusal,
-    HarnessCandidate,
-)
-from .plan import PlanItem, PlanState
 from .quality_gates import (
     Antipattern,
     AntipatternRegistry,
@@ -36,23 +29,17 @@ from .quality_gates import (
 )
 
 __all__ = [
-    "ABSTAIN_REASONS",
     "Antipattern",
     "AntipatternRegistry",
     "ConstraintEngine",
     "ConstraintLevel",
     "ConstraintViolation",
     "ContractValidator",
-    "CycleOutcome",
-    "CycleRefusal",
     "Edit",
     "EditOutcome",
     "EditResult",
-    "HarnessCandidate",
     "HierarchicalConstraint",
     "MultiDimensionalCritique",
-    "PlanItem",
-    "PlanState",
     "PreEmitGate",
     "PreflightGate",
     "ToolContract",

@@ -7,6 +7,7 @@ import json
 import uuid
 from dataclasses import replace
 
+import ports_support as support
 import pytest
 from pydantic_ai.messages import ModelResponse, TextPart, ToolCallPart
 from pydantic_ai.models.function import FunctionModel
@@ -18,7 +19,6 @@ from meristem.graph import (
     DependencyPlan,
     RunBudget,
     RunPlan,
-    RunRequest,
     RunTask,
     StopRule,
     ToolStep,
@@ -113,7 +113,7 @@ async def test_freed_slot_starts_dependent_before_slow_peer_and_join_waits(
         else RunUsage()
     )
     plan = graph_plan(model.model, initial_usage=initial)
-    parent = asyncio.create_task(run(RunRequest(task="complex query"), plan=plan))
+    parent = asyncio.create_task(run(support.request(task="complex query"), plan=plan))
     try:
         await reached(model.started["C"])
         assert not model.ended["A"].is_set()
@@ -179,7 +179,7 @@ async def test_active_limit_and_ready_order(capacity):
             max_concurrency=capacity,
         ),
     )
-    parent = asyncio.create_task(run(RunRequest(task="t"), plan=plan))
+    parent = asyncio.create_task(run(support.request(task="t"), plan=plan))
     try:
         for index, name in enumerate(names[:-1]):
             if index < capacity:
@@ -217,7 +217,7 @@ async def test_failure_stop_and_cancel_drain_siblings_and_block_dependents(
         stop=StopRule(stop_markers=("result:B",) if failure == "stop" else ()),
         initial_usage=initial,
     )
-    parent = asyncio.create_task(run(RunRequest(task="t"), plan=plan))
+    parent = asyncio.create_task(run(support.request(task="t"), plan=plan))
     await reached(model.started["A"])
     await reached(model.started["B"])
     if failure == "cancel":
@@ -270,7 +270,7 @@ async def test_failure_stop_and_cancel_drain_siblings_and_block_dependents(
 
 async def test_iterator_close_drains_children(events):
     model = ControlledModel("A", "B", "C", "join")
-    stream = iterate_run(RunRequest(task="t"), plan=graph_plan(model.model))
+    stream = iterate_run(support.request(task="t"), plan=graph_plan(model.model))
     assert (await anext(stream))["type"] == "run_started"
     assert (await anext(stream))["type"] == "task_started"
     await reached(model.started["A"])
@@ -297,10 +297,10 @@ async def test_iterator_close_drains_children(events):
     ],
 )
 async def test_invalid_plan_fails_before_model_binding(change, events):
-    host_ports.register_model_provider(lambda _: pytest.fail("must not bind model"))
+    support.register_model_provider(lambda _: pytest.fail("must not bind model"))
     base = graph_plan("unbound")
     plan = replace(base, dependency_plan=replace(base.dependency_plan, **change))
-    result = await run(RunRequest(task="t"), plan=plan)
+    result = await run(support.request(task="t"), plan=plan)
     assert result.status == "failed"
     assert [e["type"] for e in events] == ["error"]
 
@@ -315,9 +315,9 @@ async def test_invalid_plan_fails_before_model_binding(change, events):
     ],
 )
 async def test_over_budget_or_ambiguous_plan_fails_before_binding(change, events):
-    host_ports.register_model_provider(lambda _: pytest.fail("must not bind model"))
+    support.register_model_provider(lambda _: pytest.fail("must not bind model"))
     result = await run(
-        RunRequest(task="t"), plan=replace(graph_plan("unbound"), **change)
+        support.request(task="t"), plan=replace(graph_plan("unbound"), **change)
     )
     assert result.status == "failed"
     assert [e["type"] for e in events] == ["error"]
@@ -329,7 +329,7 @@ async def test_shared_request_limit_never_overshoots(limit, events):
     for gate in model.release.values():
         gate.set()
     result = await run(
-        RunRequest(task="t"),
+        support.request(task="t"),
         plan=graph_plan(model.model, budget=RunBudget(request_limit=limit)),
     )
     assert result.status == "stopped"
@@ -343,7 +343,7 @@ async def test_shared_token_limit_stops_after_reported_usage():
     for gate in model.release.values():
         gate.set()
     result = await run(
-        RunRequest(task="t"),
+        support.request(task="t"),
         plan=graph_plan(
             model.model, capacity=1, budget=RunBudget(total_tokens_limit=3)
         ),
@@ -372,7 +372,7 @@ async def test_tool_reservations_are_shared_across_parallel_children(
         return ModelResponse(parts=[ToolCallPart("effect", {})])
 
     result = await run(
-        RunRequest(task="t"),
+        support.request(task="t"),
         plan=graph_plan(
             FunctionModel(model),
             toolsets=(toolset,),
@@ -418,13 +418,13 @@ async def test_host_scope_stays_live_until_children_are_drained(mode, events):
             active -= 1
 
     token = identity.set("admitted-caller")
-    host_ports.register_authority_keepalive(scope)
+    support.register_authority_keepalive(scope)
     try:
         plan = graph_plan(
             FunctionModel(model),
             budget=RunBudget(timeout_seconds=0 if mode == "timeout" else 600),
         )
-        parent = asyncio.create_task(run(RunRequest(task="t"), plan=plan))
+        parent = asyncio.create_task(run(support.request(task="t"), plan=plan))
         if mode == "cancel":
             await reached(entered)
             parent.cancel()
@@ -436,7 +436,7 @@ async def test_host_scope_stays_live_until_children_are_drained(mode, events):
         assert scope_log == ["open", "close"] and active == 0
         assert events[-1]["type"] in ("graph_complete", "run_cancelled", "error")
     finally:
-        host_ports.register_authority_keepalive(None)
+        support.register_authority_keepalive(None)
         identity.reset(token)
 
 
@@ -447,7 +447,7 @@ async def test_normal_error_iteration_returns_same_cleanup_events_as_sink(events
     yielded = [
         event
         async for event in iterate_run(
-            RunRequest(task="t"), plan=graph_plan(FunctionModel(fail))
+            support.request(task="t"), plan=graph_plan(FunctionModel(fail))
         )
     ]
     assert yielded == events
@@ -472,7 +472,7 @@ async def test_independent_runs_do_not_share_budget_or_task_state():
         for _ in range(2)
     ]
     results = await asyncio.gather(
-        *(run(RunRequest(task="t"), plan=plan) for plan in plans)
+        *(run(support.request(task="t"), plan=plan) for plan in plans)
     )
     assert all(
         result.status == "completed" and result.usage["requests"] == 1
@@ -494,7 +494,9 @@ async def test_repeated_cancellation_cannot_detach_child_cleanup(events):
             cleaned.set()
 
     parent = asyncio.create_task(
-        run(RunRequest(task="t"), plan=graph_plan(FunctionModel(model), capacity=1))
+        run(
+            support.request(task="t"), plan=graph_plan(FunctionModel(model), capacity=1)
+        )
     )
     await reached(entered)
     parent.cancel()
@@ -530,7 +532,7 @@ async def test_reported_fallback_tokens_are_not_lost_from_shared_budget():
         )
 
     result = await run(
-        RunRequest(task="t"),
+        support.request(task="t"),
         plan=graph_plan(
             FunctionModel(model), capacity=1, budget=RunBudget(total_tokens_limit=3)
         ),
@@ -542,7 +544,7 @@ async def test_reported_fallback_tokens_are_not_lost_from_shared_budget():
 async def test_slow_event_consumer_does_not_block_ready_child_dispatch():
     model = ControlledModel("A", "B", "C", "join")
     model.release["B"].set()
-    stream = iterate_run(RunRequest(task="t"), plan=graph_plan(model.model))
+    stream = iterate_run(support.request(task="t"), plan=graph_plan(model.model))
     try:
         async for event in stream:
             if event["type"] == "task_completed" and event["task_id"] == "B":
@@ -569,7 +571,7 @@ async def test_model_outputs_cannot_change_admitted_tasks_or_limits(events):
         return ModelResponse(parts=[TextPart(malicious if key == "B" else "ok")])
 
     result = await run(
-        RunRequest(task="t"), plan=graph_plan(FunctionModel(model), capacity=1)
+        support.request(task="t"), plan=graph_plan(FunctionModel(model), capacity=1)
     )
     assert result.status == "completed" and result.steps == 4
     assert list(inputs) == ["A", "B", "C", "join"]
@@ -586,7 +588,7 @@ async def test_model_request_cap_can_be_lower_than_active_task_cap():
     for gate in model.release.values():
         gate.set()
     result = await run(
-        RunRequest(task="t"),
+        support.request(task="t"),
         plan=graph_plan(model.model, budget=RunBudget(max_concurrent_requests=1)),
     )
     assert result.status == "completed" and model.peak == 1
@@ -621,7 +623,7 @@ async def test_output_validation_retries_share_request_reservations(
         budget=RunBudget(request_limit=request_limit),
         harness=HarnessConfig(response_format="json", retries=1),
     )
-    result = await run(RunRequest(task="t"), plan=plan)
+    result = await run(support.request(task="t"), plan=plan)
     assert result.status == expected
     assert calls == request_limit and result.usage["requests"] == request_limit
 
@@ -681,7 +683,7 @@ async def test_tool_step_without_caller_refuses_before_any_task(events):
         ),
         output_task_id="dependent",
     )
-    result = await run(RunRequest(task="t"), plan=plan)
+    result = await run(support.request(task="t"), plan=plan)
     assert result.status == "failed"
     assert "ToolCallerUnavailable" in (result.error or "")
     assert model_calls == 0
@@ -761,10 +763,9 @@ async def test_unresolved_binding_is_a_typed_failure(prompt_output, reference, e
         ),
         output_task_id="dependent",
     )
-    from meristem import host_ports
 
-    host_ports.register_tool_caller(caller)
-    result = await run(RunRequest(task="t"), plan=plan)
+    support.register_tool_caller(caller)
+    result = await run(support.request(task="t"), plan=plan)
     assert result.status == "failed" and result.output == ""
     assert "BindingUnresolved" in (result.error or "")
     assert model_calls == 1
@@ -799,9 +800,7 @@ async def test_failed_tool_step_does_not_start_dependents_and_makes_no_model_req
             result={"reason": "denied"}, outcome="failed", error="remote failure"
         )
 
-    from meristem import host_ports
-
-    host_ports.register_tool_caller(caller)
+    support.register_tool_caller(caller)
     plan = _tool_plan(
         FunctionModel(model),
         (
@@ -810,7 +809,7 @@ async def test_failed_tool_step_does_not_start_dependents_and_makes_no_model_req
         ),
         output_task_id="dependent",
     )
-    result = await run(RunRequest(task="t"), plan=plan)
+    result = await run(support.request(task="t"), plan=plan)
     assert result.status == "failed" and result.output == ""
     assert "ToolCallFailed" in (result.error or "")
     assert caller_calls == 1 and model_calls == 0
@@ -835,9 +834,7 @@ async def test_tool_step_records_resolved_arguments_and_result(events):
         assert (server, tool, task_id) == ("server", "lookup", "tool")
         return ToolStepResult(result={"ticket": {"id": "INC-7"}, "closed": True})
 
-    from meristem import host_ports
-
-    host_ports.register_tool_caller(caller)
+    support.register_tool_caller(caller)
     plan = _tool_plan(
         FunctionModel(model),
         (
@@ -846,7 +843,7 @@ async def test_tool_step_records_resolved_arguments_and_result(events):
         ),
         output_task_id="final",
     )
-    result = await run(RunRequest(task="t"), plan=plan)
+    result = await run(support.request(task="t"), plan=plan)
     assert result.status == "completed"
     assert result.usage["requests"] == 1 and result.usage["tool_calls"] == 1
     completed = next(
@@ -876,15 +873,13 @@ async def test_tool_step_refusal_and_failure_records_are_typed(
     async def caller(server, tool, arguments, task_id):
         return ToolStepResult(outcome=outcome, error=f"{outcome} by host")
 
-    from meristem import host_ports
-
-    host_ports.register_tool_caller(caller)
+    support.register_tool_caller(caller)
     plan = _tool_plan(
         FunctionModel(model),
         (RunTask("tool", call=ToolStep("server", "action", {"x": 1})),),
         output_task_id="tool",
     )
-    result = await run(RunRequest(task="t"), plan=plan)
+    result = await run(support.request(task="t"), plan=plan)
     assert result.status == "failed"
     assert error_type in (result.error or "")
     failed = next(event for event in events if event["type"] == "task_failed")
@@ -900,15 +895,13 @@ async def test_tool_step_host_exception_records_typed_failure(events):
     async def caller(server, tool, arguments, task_id):
         raise RuntimeError("host transport failed")
 
-    from meristem import host_ports
-
-    host_ports.register_tool_caller(caller)
+    support.register_tool_caller(caller)
     plan = _tool_plan(
         FunctionModel(model),
         (RunTask("tool", call=ToolStep("server", "action", {})),),
         output_task_id="tool",
     )
-    result = await run(RunRequest(task="t"), plan=plan)
+    result = await run(support.request(task="t"), plan=plan)
     assert result.status == "failed" and "ToolCallFailed" in (result.error or "")
     failed = next(event for event in events if event["type"] == "task_failed")
     assert failed["error_type"] == "ToolCallFailed"
@@ -927,16 +920,14 @@ async def test_tool_step_budget_zero_refuses_before_caller(events):
         caller_calls += 1
         return ToolStepResult(result={"unexpected": True})
 
-    from meristem import host_ports
-
-    host_ports.register_tool_caller(caller)
+    support.register_tool_caller(caller)
     plan = _tool_plan(
         FunctionModel(model),
         (RunTask("tool", call=ToolStep("server", "action", {})),),
         output_task_id="tool",
         budget=RunBudget(tool_calls_limit=0),
     )
-    result = await run(RunRequest(task="t"), plan=plan)
+    result = await run(support.request(task="t"), plan=plan)
     assert result.status == "stopped"
     assert caller_calls == 0 and result.usage["tool_calls"] == 0
     failed = next(event for event in events if event["type"] == "task_failed")
@@ -955,9 +946,7 @@ async def test_tool_step_budget_one_allows_one_parallel_call(events):
         calls.append(task_id)
         return ToolStepResult(result={"task": task_id})
 
-    from meristem import host_ports
-
-    host_ports.register_tool_caller(caller)
+    support.register_tool_caller(caller)
     plan = _tool_plan(
         FunctionModel(model),
         (
@@ -969,7 +958,7 @@ async def test_tool_step_budget_one_allows_one_parallel_call(events):
         capacity=2,
         budget=RunBudget(tool_calls_limit=1),
     )
-    result = await run(RunRequest(task="t"), plan=plan)
+    result = await run(support.request(task="t"), plan=plan)
     assert result.status == "stopped"
     assert len(calls) == 1 and result.usage["tool_calls"] == 1
     assert any(event["type"] == "task_blocked" for event in events)
@@ -991,9 +980,7 @@ async def test_tool_step_terminal_records_follow_declaration_order(events):
             second_completed.set()
         return ToolStepResult(result={"task": task_id})
 
-    from meristem import host_ports
-
-    host_ports.register_tool_caller(caller)
+    support.register_tool_caller(caller)
     plan = _tool_plan(
         FunctionModel(model),
         (
@@ -1004,7 +991,7 @@ async def test_tool_step_terminal_records_follow_declaration_order(events):
         output_task_id="join",
         capacity=2,
     )
-    parent = asyncio.create_task(run(RunRequest(task="t"), plan=plan))
+    parent = asyncio.create_task(run(support.request(task="t"), plan=plan))
     await reached(first_started)
     await reached(second_completed)
     assert not any(
@@ -1032,9 +1019,7 @@ async def test_oversized_arguments_are_replaced_by_digest(events):
         captured.append(arguments)
         return ToolStepResult(result={"ok": True})
 
-    from meristem import host_ports
-
-    host_ports.register_tool_caller(caller)
+    support.register_tool_caller(caller)
     plan = _tool_plan(
         FunctionModel(model),
         (
@@ -1045,7 +1030,7 @@ async def test_oversized_arguments_are_replaced_by_digest(events):
         ),
         output_task_id="tool",
     )
-    result = await run(RunRequest(task="t"), plan=plan)
+    result = await run(support.request(task="t"), plan=plan)
     assert result.status == "completed" and captured
     completed = next(event for event in events if event["type"] == "task_completed")
     record = completed["tool_step"]["arguments"]
@@ -1064,15 +1049,13 @@ async def test_oversized_result_is_replaced_by_digest(events):
     async def caller(server, tool, arguments, task_id):
         return ToolStepResult(result=oversized)
 
-    from meristem import host_ports
-
-    host_ports.register_tool_caller(caller)
+    support.register_tool_caller(caller)
     plan = _tool_plan(
         FunctionModel(model),
         (RunTask("tool", call=ToolStep("server", "large", {"x": 1})),),
         output_task_id="tool",
     )
-    result = await run(RunRequest(task="t"), plan=plan)
+    result = await run(support.request(task="t"), plan=plan)
     assert result.status == "completed"
     completed = next(event for event in events if event["type"] == "task_completed")
     record = completed["tool_step"]["result"]
@@ -1123,9 +1106,7 @@ async def test_mixed_dag_refills_slots_in_order(events):
         finally:
             active -= 1
 
-    from meristem import host_ports
-
-    host_ports.register_tool_caller(caller)
+    support.register_tool_caller(caller)
     plan = _tool_plan(
         FunctionModel(model),
         (
@@ -1137,7 +1118,7 @@ async def test_mixed_dag_refills_slots_in_order(events):
         output_task_id="join",
         capacity=2,
     )
-    parent = asyncio.create_task(run(RunRequest(task="t"), plan=plan))
+    parent = asyncio.create_task(run(support.request(task="t"), plan=plan))
     try:
         await reached(a_started)
         await reached(c_started)
@@ -1171,16 +1152,14 @@ async def test_execute_graph_routes_tool_steps_through_the_bound_caller():
         calls.append((server, tool, dict(arguments), task_id))
         return ToolStepResult(result={"ok": True})
 
-    from meristem import host_ports
-
     plan = _tool_plan(
         FunctionModel(model),
         (RunTask("tool", call=ToolStep("server", "lookup", {"x": 1})),),
         output_task_id="tool",
     )
-    host_ports.register_run_decision_provider(lambda request: plan)
-    host_ports.register_tool_caller(caller)
-    result = await execute_graph(None, None, "query")
+    support.register_run_decision_provider(lambda request: plan)
+    support.register_tool_caller(caller)
+    result = await execute_graph(None, None, "query", ports=support.PORTS)
     assert result["status"] == "completed"
     assert calls == [("server", "lookup", {"x": 1}, "tool")]
 
@@ -1200,15 +1179,13 @@ async def test_cancel_cancels_inflight_tool_call(events):
         finally:
             cancelled.set()
 
-    from meristem import host_ports
-
-    host_ports.register_tool_caller(caller)
+    support.register_tool_caller(caller)
     plan = _tool_plan(
         FunctionModel(model),
         (RunTask("tool", call=ToolStep("server", "wait", {})),),
         output_task_id="tool",
     )
-    parent = asyncio.create_task(run(RunRequest(task="t"), plan=plan))
+    parent = asyncio.create_task(run(support.request(task="t"), plan=plan))
     await reached(started)
     parent.cancel()
     with pytest.raises(asyncio.CancelledError):
@@ -1238,7 +1215,7 @@ async def test_tool_deadline_drains_caller_before_terminal_event(monkeypatch):
     monkeypatch.setattr(asyncio, "timeout", setup_timeout)
     monkeypatch.setattr(asyncio, "timeout_at", driver_timeout)
     events = []
-    host_ports.register_run_event_sink(events.append)
+    support.register_run_event_sink(events.append)
 
     async def model(messages, info):
         pytest.fail("deadline tool plan must not call the model")
@@ -1250,7 +1227,7 @@ async def test_tool_deadline_drains_caller_before_terminal_event(monkeypatch):
         finally:
             drained.set()
 
-    host_ports.register_tool_caller(caller)
+    support.register_tool_caller(caller)
     plan = _tool_plan(
         FunctionModel(model),
         (
@@ -1261,7 +1238,7 @@ async def test_tool_deadline_drains_caller_before_terminal_event(monkeypatch):
         capacity=1,
         budget=RunBudget(timeout_seconds=600),
     )
-    stream = iterate_run(RunRequest(task="t"), plan=plan)
+    stream = iterate_run(support.request(task="t"), plan=plan)
     try:
         assert (await anext(stream))["type"] == "run_started"
         assert (await anext(stream))["type"] == "task_started"
@@ -1299,13 +1276,13 @@ async def test_repeated_cancellation_cannot_detach_tool_caller(events):
             await finish.wait()
             cleaned.set()
 
-    host_ports.register_tool_caller(caller)
+    support.register_tool_caller(caller)
     plan = _tool_plan(
         FunctionModel(model),
         (RunTask("tool", call=ToolStep("server", "wait", {})),),
         output_task_id="tool",
     )
-    parent = asyncio.create_task(run(RunRequest(task="t"), plan=plan))
+    parent = asyncio.create_task(run(support.request(task="t"), plan=plan))
     await reached(entered)
     parent.cancel()
     await reached(cleaning)
@@ -1336,9 +1313,7 @@ async def test_tool_step_end_to_end_through_run_api(events):
         calls.append((server, tool, dict(arguments), task_id))
         return ToolStepResult(result={"status": "closed", "incident": arguments["id"]})
 
-    from meristem import host_ports
-
-    host_ports.register_tool_caller(caller)
+    support.register_tool_caller(caller)
     plan = _tool_plan(
         FunctionModel(model),
         (
@@ -1357,7 +1332,7 @@ async def test_tool_step_end_to_end_through_run_api(events):
         output_task_id="final",
         capacity=2,
     )
-    result = await run(RunRequest(task="t"), plan=plan)
+    result = await run(support.request(task="t"), plan=plan)
     assert result.status == "completed" and result.output == "finished"
     assert calls == [("incident-server", "close", {"id": "INC-7"}, "tool")]
     assert len(model_inputs) == 2
@@ -1399,7 +1374,7 @@ async def test_tool_validation_retry_cannot_reset_shared_tool_limit():
         budget=RunBudget(tool_calls_limit=1),
         toolsets=(toolset,),
     )
-    result = await run(RunRequest(task="t"), plan=plan)
+    result = await run(support.request(task="t"), plan=plan)
     assert result.status == "stopped" and calls == 1
     assert result.usage["tool_calls"] == 1
 
@@ -1407,7 +1382,7 @@ async def test_tool_validation_retry_cannot_reset_shared_tool_limit():
 @pytest.mark.parametrize("dag", [False, True])
 async def test_close_immediately_after_run_started_emits_cancelled(dag):
     events = []
-    host_ports.register_run_event_sink(events.append)
+    support.register_run_event_sink(events.append)
     plan = RunPlan(
         model=FunctionModel(lambda m, i: ModelResponse(parts=[TextPart("ok")])),
         dependency_plan=DependencyPlan(
@@ -1416,7 +1391,7 @@ async def test_close_immediately_after_run_started_emits_cancelled(dag):
     )
     if not dag:
         plan = replace(plan, dependency_plan=None, steps=("serial",))
-    stream = iterate_run(RunRequest(task="t"), plan=plan)
+    stream = iterate_run(support.request(task="t"), plan=plan)
     assert (await anext(stream))["type"] == "run_started"
     await stream.aclose()
     assert [event["type"] for event in events] == ["run_started", "run_cancelled"]
@@ -1436,7 +1411,7 @@ async def test_unspecified_parallel_tool_limit_refuses_oversized_batch_before_fa
         return ModelResponse(parts=[ToolCallPart("effect", {}) for _ in range(51)])
 
     result = await run(
-        RunRequest(task="t"),
+        support.request(task="t"),
         plan=RunPlan(
             model=FunctionModel(model),
             toolsets=(toolset,),
@@ -1468,7 +1443,7 @@ async def test_dependency_deadline_drains_work_while_reader_is_paused(monkeypatc
     monkeypatch.setattr(asyncio, "timeout", setup_timeout)
     monkeypatch.setattr(asyncio, "timeout_at", driver_timeout)
     events = []
-    host_ports.register_run_event_sink(events.append)
+    support.register_run_event_sink(events.append)
 
     async def model(messages, info):
         entered.set()
@@ -1485,7 +1460,7 @@ async def test_dependency_deadline_drains_work_while_reader_is_paused(monkeypatc
         ),
         budget=RunBudget(timeout_seconds=600),
     )
-    stream = iterate_run(RunRequest(task="t"), plan=plan)
+    stream = iterate_run(support.request(task="t"), plan=plan)
     try:
         assert (await anext(stream))["type"] == "run_started"
         assert (await anext(stream))["type"] == "task_started"
@@ -1546,10 +1521,10 @@ async def test_dependency_deadline_includes_scaffold_setup(stage, monkeypatch):
         calls += 1
         return ModelResponse(parts=[TextPart("never")])
 
-    host_ports.register_scaffold_publication_factory(scope)
+    support.register_scaffold_publication_factory(scope)
     parent = asyncio.create_task(
         run(
-            RunRequest(task="t"),
+            support.request(task="t"),
             plan=RunPlan(
                 model=FunctionModel(model),
                 dependency_plan=DependencyPlan(
@@ -1588,15 +1563,15 @@ async def test_dependency_deadline_includes_scaffold_setup(stage, monkeypatch):
 async def test_initial_dependency_budget_refuses_before_binding_or_child_dispatch(
     initial, budget, elapsed, events
 ):
-    host_ports.register_model_provider(lambda _: pytest.fail("model resolved"))
-    host_ports.register_native_toolset_provider(
+    support.register_model_provider(lambda _: pytest.fail("model resolved"))
+    support.register_native_toolset_provider(
         host_ports.NativeToolsetProvider(
             available_tools=lambda: pytest.fail("tools discovered"),
             build_toolset=lambda *_: pytest.fail("tools bound"),
         )
     )
     result = await run(
-        RunRequest(task="t"),
+        support.request(task="t"),
         plan=graph_plan(
             "unbound",
             tool_names=("effect",),
@@ -1638,7 +1613,7 @@ async def test_exact_initial_dependency_tool_limit_allows_only_model_work(
 
     initial = RunUsage(requests=1, tool_calls=limit, input_tokens=3, output_tokens=4)
     result = await run(
-        RunRequest(task="t"),
+        support.request(task="t"),
         plan=graph_plan(
             FunctionModel(reply),
             capacity=1 if attempt_tool else 2,
@@ -1704,7 +1679,7 @@ async def test_initial_dependency_usage_leaves_only_the_aggregate_remainder(
     for gate in model.release.values():
         gate.set()
     result = await run(
-        RunRequest(task="t"),
+        support.request(task="t"),
         plan=graph_plan(model.model, capacity=1, initial_usage=initial, budget=budget),
     )
     assert result.status == "stopped"
@@ -1725,7 +1700,7 @@ async def test_reusing_one_seeded_dependency_plan_does_not_share_mutable_usage()
     initial = RunUsage(requests=2, tool_calls=1, input_tokens=3, output_tokens=4)
     plan = graph_plan(FunctionModel(reply), initial_usage=initial)
     results = await asyncio.gather(
-        *(run(RunRequest(task="t"), plan=plan) for _ in range(2))
+        *(run(support.request(task="t"), plan=plan) for _ in range(2))
     )
     expected = {
         "requests": 6,

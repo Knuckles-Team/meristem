@@ -22,7 +22,7 @@ from pydantic_ai.messages import (
 )
 from pydantic_core import to_jsonable_python
 
-from meristem.host_ports import DurableRunEventPublisher
+from meristem.host_ports import DurableRunEventPublisher, HostPorts
 
 
 class LineageIdentityError(ValueError):
@@ -151,6 +151,7 @@ def emit_lineage_event(
     sequence: int,
     *,
     relationships: tuple[Mapping[str, Any], ...] = (),
+    ports: HostPorts,
     publish: bool = True,
     **fields: Any,
 ) -> dict[str, Any]:
@@ -179,9 +180,7 @@ def emit_lineage_event(
         **fields,
     }
     if publish:
-        from meristem import host_ports
-
-        host_ports.emit_run_event(event)
+        ports.emit_run_event(event)
     return event
 
 

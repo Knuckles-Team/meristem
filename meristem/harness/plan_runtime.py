@@ -22,9 +22,7 @@ from pydantic_ai.models import ModelRequestContext
 from pydantic_ai.run import AgentRunResult
 from pydantic_ai.toolsets import FunctionToolset
 
-from meristem.host_ports import ScaffoldPublisher
-
-from .plan import PlanItem, PlanState
+from meristem.host_ports import PlanItem, PlanState, ScaffoldPublisher
 
 _ITEMS = TypeAdapter(list[PlanItem])
 

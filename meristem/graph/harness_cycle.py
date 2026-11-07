@@ -29,8 +29,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final
 
-from meristem import host_ports
-from meristem.graph.state import RunBudget, RunPlan, RunRequest
+from meristem.host_ports import HostPorts
+
+from .state import RunBudget, RunPlan, RunRequest
 
 #: The closed refusal codes of one tick. Anything else is not a refusal.
 ABSTAIN_REASONS: Final[tuple[str, ...]] = (
@@ -184,6 +185,7 @@ async def probe_candidates(
     run_id: str,
     current_version_ref: str,
     candidates: Sequence[HarnessCandidate],
+    ports: HostPorts,
     mode: str = "ask",
     agent_name: str = "",
 ) -> tuple[ProbeTrace, ...]:
@@ -199,7 +201,7 @@ async def probe_candidates(
         for candidate in candidates
     ):
         raise CycleRefusal("probe_trace_missing")
-    provider = host_ports.harness_probe_provider()
+    provider = ports.harness_probe_provider()
     if provider is None:
         raise CycleRefusal("probe_trace_missing")
     digest = conditions_digest(
@@ -430,6 +432,7 @@ def persist(
 def reflect(
     outcome: CycleOutcome,
     *,
+    ports: HostPorts,
     evidence_run_ids: Sequence[str] = (),
 ) -> None:
     """Report one tick's outcome through the existing run event sink.
@@ -439,7 +442,7 @@ def reflect(
     refusal code and submits no lesson. A no-op without a registered
     host sink.
     """
-    host_ports.emit_run_event(
+    ports.emit_run_event(
         {
             "type": "harness_cycle_outcome",
             "task_ref": outcome.task_ref,
@@ -487,7 +490,7 @@ def _budget_ref(budget: RunBudget) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
-def _refused(task_ref: str, k: int, code: str) -> CycleOutcome:
+def _refused(ports: HostPorts, task_ref: str, k: int, code: str) -> CycleOutcome:
     """The abstained outcome: the current harness is kept, nothing persisted."""
     outcome = CycleOutcome(
         task_ref=task_ref,
@@ -497,7 +500,7 @@ def _refused(task_ref: str, k: int, code: str) -> CycleOutcome:
         contrast_ref=None,
         lesson_ref=None,
     )
-    reflect(outcome)
+    reflect(outcome, ports=ports)
     return outcome
 
 
@@ -526,7 +529,7 @@ async def run_cycle_tick(
     task_ref = request.run_id
     k = plan.budget.candidate_slots
     if k is None or k < MIN_CANDIDATE_SLOTS:
-        return _refused(task_ref, k or 0, "budget_below_contrast")
+        return _refused(request.ports, task_ref, k or 0, "budget_below_contrast")
     seed = str(request.metadata.get("harness_seed") or "")
     current_version_ref = str(request.metadata.get("harness_current_version_ref") or "")
     model_ref = _model_ref(plan.model)
@@ -551,6 +554,7 @@ async def run_cycle_tick(
             run_id=task_ref,
             current_version_ref=current_version_ref,
             candidates=candidates,
+            ports=request.ports,
             mode=mode,
             agent_name=agent_name,
         )
@@ -600,11 +604,13 @@ async def run_cycle_tick(
             lesson_ref=lesson_ref,
         )
         reflect(
-            outcome, evidence_run_ids=(contrast.run_a_trace_id, contrast.run_b_trace_id)
+            outcome,
+            ports=request.ports,
+            evidence_run_ids=(contrast.run_a_trace_id, contrast.run_b_trace_id),
         )
         return outcome
     except CycleRefusal as refusal:
-        return _refused(task_ref, k, refusal.code)
+        return _refused(request.ports, task_ref, k, refusal.code)
 
 
 async def drive_cycle_tick(
@@ -623,7 +629,7 @@ async def drive_cycle_tick(
     decision and graph ports and the tick reports through the existing run
     event sink. Without a registered provider the port fails closed.
     """
-    provider = host_ports.harness_cycle_provider()
+    provider = request.ports.harness_cycle_provider()
     if provider is None:
         raise RuntimeError(
             "the harness cycle requires the arbora host to register a provider"

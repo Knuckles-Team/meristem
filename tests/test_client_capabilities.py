@@ -4,12 +4,13 @@ import asyncio
 import json
 from dataclasses import replace
 
+import ports_support as support
 import pytest
 from pydantic_ai.messages import ModelResponse, TextPart, ToolCallPart
 from pydantic_ai.models.function import FunctionModel
 
 from meristem import host_ports
-from meristem.graph import RunPlan, RunRequest, run
+from meristem.graph import RunPlan, run
 from meristem.graph.state import HarnessConfig
 from meristem.harness.client_capabilities import (
     ClientCapabilityToolset,
@@ -66,8 +67,8 @@ async def test_real_run_binds_only_selected_tool(
         harness=HarnessConfig(client_tools=(tool,)),
         client_transport=transport,
     )
-    host_ports.register_run_decision_provider(lambda request: plan)
-    result = await run(RunRequest(task="do it"))
+    support.register_run_decision_provider(lambda request: plan)
+    result = await run(support.request(task="do it"))
     assert result.output == "client reply"
     assert observed == [{tool}, {tool}]
     assert len(transport.calls) == 1
@@ -92,7 +93,9 @@ async def test_real_run_binds_only_selected_tool(
 )
 async def test_refusal_never_approves_or_retries(reason, events):
     transport = Transport(refusal=reason)
-    tools = ClientCapabilityToolset(transport, ("write_file",), run_id="run")
+    tools = ClientCapabilityToolset(
+        transport, ("write_file",), run_id="run", ports=support.PORTS
+    )
     assert json.loads(await tools.write_file("path", "content"))["reason"] == reason
     assert len(transport.calls) == 1
     assert events[-1]["outcome"] == reason
@@ -110,7 +113,7 @@ async def test_refusal_never_approves_or_retries(reason, events):
 async def test_byte_limits_and_invalid_response(limits, response, reason, calls):
     transport = Transport(response)
     tools = ClientCapabilityToolset(
-        transport, ("read_file",), limits=limits, run_id="r"
+        transport, ("read_file",), limits=limits, run_id="r", ports=support.PORTS
     )
     assert json.loads(await tools.read_file("x"))["reason"] == reason
     assert len(transport.calls) == calls
@@ -124,7 +127,9 @@ async def test_transport_timeout_does_not_retry():
             raise TimeoutError
 
     transport = TimedOut()
-    tools = ClientCapabilityToolset(transport, ("run_command",), run_id="r")
+    tools = ClientCapabilityToolset(
+        transport, ("run_command",), run_id="r", ports=support.PORTS
+    )
     assert json.loads(await tools.run_command("command"))["reason"] == "timeout"
     assert len(transport.calls) == 1
 
@@ -146,8 +151,8 @@ async def test_missing_transport_fails_real_run(events):
         steps=("q",),
         harness=HarnessConfig(client_tools=("read_file",)),
     )
-    host_ports.register_run_decision_provider(lambda request: plan)
-    result = await run(RunRequest(task="q"))
+    support.register_run_decision_provider(lambda request: plan)
+    result = await run(support.request(task="q"))
     assert result.status == "failed"
     assert "client_disconnected" in result.error
 
@@ -156,7 +161,7 @@ async def test_missing_transport_fails_real_run(events):
 @pytest.mark.parametrize("selected", [("unknown",), ("read_file", "read_file")])
 def test_unknown_or_duplicate_selection(selected):
     with pytest.raises(ValueError):
-        ClientCapabilityToolset(Transport(), selected, run_id="r")
+        ClientCapabilityToolset(Transport(), selected, run_id="r", ports=support.PORTS)
 
 
 @pytest.mark.spec("MERISTEM-RUN-R001.11")
@@ -177,6 +182,7 @@ async def test_wait_limit_cancels_request_without_retry():
         ("read_file",),
         run_id="r",
         limits=ClientToolLimits(timeout_seconds=0.001),
+        ports=support.PORTS,
     )
     assert json.loads(await tools.read_file("x"))["reason"] == "timeout"
     assert cancelled.is_set() and len(transport.calls) == 1
@@ -188,7 +194,9 @@ async def test_transport_exception_has_no_private_detail(events):
         async def call(self, method, params):
             raise RuntimeError("private transport credential")
 
-    tools = ClientCapabilityToolset(Broken(), ("read_file",), run_id="r")
+    tools = ClientCapabilityToolset(
+        Broken(), ("read_file",), run_id="r", ports=support.PORTS
+    )
     result = await tools.read_file("private path")
     assert json.loads(result)["reason"] == "transport_error"
     assert "private" not in result + json.dumps(events)

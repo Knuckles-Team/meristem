@@ -12,7 +12,7 @@ The `harness-evolution` spec was re-homed out of agent-utilities (MERISTEM-HARNE
 
 ## Scope and interfaces
 
-Owned: the cycle loop and its models (`meristem/harness/harness_cycle.py`). Also owned: the consumer rows R003 onward, where the in-run harness applies received medulla decisions. The probe entry runs through `execute_graph` (`meristem/graph/runner.py:96`). The harness switch runs through `apply_edits` (`meristem/harness/edit_engine.py:457`). Arbora drives the host port. The candidate budget k comes from the stage allocation of MEDULLA-DECISION-ENGINE-R136.3.
+Owned: the cycle loop and its models (`meristem/graph/harness_cycle.py`). Also owned: the consumer rows R003 onward, where the in-run harness applies received medulla decisions. The probe entry runs through `execute_graph` (`meristem/graph/runner.py:96`). The harness switch runs through `apply_edits` (`meristem/harness/edit_engine.py:457`). Arbora drives the host port. The candidate budget k comes from the stage allocation of MEDULLA-DECISION-ENGINE-R136.3.
 
 Non-goals: versioned component storage and lesson storage (medulla), the served operations (arbora), and any local ranking of candidates. The measured contrast is the authority.
 
