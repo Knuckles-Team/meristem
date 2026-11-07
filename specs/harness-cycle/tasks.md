@@ -142,3 +142,7 @@ Each task line reads `- [ ] T001 [P] [US1] <ID>-R012.4 description`. The task nu
 - [ ] T135 [US1] MERISTEM-HARNESS-CYCLE-R086.3 Wiring: the recursive runner cancel uses the transition.
 - [ ] T136 [US1] MERISTEM-HARNESS-CYCLE-R087 Harness cycle probe status uses the run status enum.
 - [ ] T137 [US1] MERISTEM-HARNESS-CYCLE-R088 Harness units are acyclic and hold no module-level state.
+- [ ] T138 [US1] MERISTEM-HARNESS-CYCLE-R089 Release 6.0.0 carries the unit order and HostPorts (rollup). Size: M, 3 PRs, half a day.
+- [ ] T139 [US1] MERISTEM-HARNESS-CYCLE-R089.1 Removed-name map with an absence test. Size: S, 1 PR, 2 hours.
+- [ ] T140 [US1] MERISTEM-HARNESS-CYCLE-R089.2 Version 6.0.0 and the changelog entry. Size: S, 1 PR, 1 hour.
+- [ ] T141 [US1] MERISTEM-HARNESS-CYCLE-R089.3 Fresh-venv import check after publication. Size: S, 1 PR, 1 hour.
