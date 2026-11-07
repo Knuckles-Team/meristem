@@ -67,6 +67,16 @@
       "owner": "meristem"
     },
     {
+      "path": "meristem/graph/harness_cycle.py",
+      "disposition": "keep",
+      "owner": "meristem"
+    },
+    {
+      "path": "meristem/graph/hosted_run.py",
+      "disposition": "keep",
+      "owner": "meristem"
+    },
+    {
       "path": "meristem/graph/live_events.py",
       "disposition": "keep",
       "owner": "meristem"
@@ -128,21 +138,6 @@
     },
     {
       "path": "meristem/harness/edit_engine.py",
-      "disposition": "keep",
-      "owner": "meristem"
-    },
-    {
-      "path": "meristem/harness/harness_cycle.py",
-      "disposition": "keep",
-      "owner": "meristem"
-    },
-    {
-      "path": "meristem/harness/hosted_run.py",
-      "disposition": "keep",
-      "owner": "meristem"
-    },
-    {
-      "path": "meristem/harness/plan.py",
       "disposition": "keep",
       "owner": "meristem"
     },
