@@ -141,3 +141,4 @@ Each task line reads `- [ ] T001 [P] [US1] <ID>-R012.4 description`. The task nu
 - [ ] T134 [US1] MERISTEM-HARNESS-CYCLE-R086.2 Wiring: the dependency scheduler cancel uses the transitions.
 - [ ] T135 [US1] MERISTEM-HARNESS-CYCLE-R086.3 Wiring: the recursive runner cancel uses the transition.
 - [ ] T136 [US1] MERISTEM-HARNESS-CYCLE-R087 Harness cycle probe status uses the run status enum.
+- [ ] T137 [US1] MERISTEM-HARNESS-CYCLE-R088 Harness units are acyclic and hold no module-level state.

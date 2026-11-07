@@ -162,3 +162,4 @@ acceptance.
 | T-134 | `MERISTEM-HARNESS-CYCLE-R086.2` | Planned | The test the row names | Tests: `tests/graph/test_run_cancelling.py::test_cancel_cancels_active_tasks_and_skips_pending_ones` and `tests/graph/test_run_cancelling.py::test_drain_complete_waits_for_the_last_active_task` (L3). |  |
 | T-135 | `MERISTEM-HARNESS-CYCLE-R086.3` | Planned | The test the row names | Test: `tests/rlm/test_run_cancelling.py::test_rlm_cancel_drains_through_cancelling_and_propagates` (L3). |  |
 | T-136 | `MERISTEM-HARNESS-CYCLE-R087` | Planned | The test the row names | Tests: `tests/harness/test_cycle_probe_state.py::test_probe_status_is_the_run_status_enum` and `tests/harness/test_cycle_probe_state.py::test_unknown_probe_status_is_refused_with_run_state_unknown` (L2). |  |
+| T-137 | `MERISTEM-HARNESS-CYCLE-R088` | Planned | The test the row names | Test: `tests/test_unit_layers.py::test_units_import_downward_and_hold_no_module_state` (L2). |  |
