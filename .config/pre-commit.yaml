@@ -54,6 +54,10 @@ repos:
 - repo: https://github.com/Knuckles-Team/pipelines
   rev: main
   hooks:
+  - id: state-machine-shape
+    stages: [pre-commit, pre-push]
+  - id: state-machine-census
+    stages: [manual]
   - id: secrets
   - id: spec
     stages: [pre-commit, pre-push, manual]
