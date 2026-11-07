@@ -5,20 +5,20 @@ import json
 from dataclasses import replace
 
 import httpx
+import ports_support as support
 import pytest
 from openai import AsyncOpenAI
 from pydantic_ai.models.openai import OpenAIChatModel, OpenAIResponsesModel
 from pydantic_ai.providers.openai import OpenAIProvider
 
 from meristem import host_ports
-from meristem.graph.state import HarnessConfig
-from meristem.runtime import (
+from meristem.graph import (
     AgentRunExecutor,
     RunBudget,
     RunPlan,
-    RunRequest,
     StopRule,
 )
+from meristem.graph.state import HarnessConfig
 
 pytestmark = pytest.mark.spec("MERISTEM-RUN-R001.13.1")
 
@@ -97,17 +97,17 @@ async def test_real_text_loop_without_inherited_hooks(monkeypatch):
     def forbidden(*args, **kwargs):
         raise AssertionError("inherited authority hook")
 
+    monkeypatch.setattr("meristem.graph.executor.read_run_history", forbidden)
     for name in (
-        "read_run_history",
         "authority_keepalive_scope",
         "scaffold_publication_scope",
         "emit_run_event",
         "resolve_model",
     ):
-        monkeypatch.setattr(host_ports, name, forbidden)
+        monkeypatch.setattr(host_ports.HostPorts, name, forbidden)
     try:
-        result = await AgentRunExecutor().execute_text_only(
-            RunRequest(task="hello"), plan=plan
+        result = await AgentRunExecutor(ports=support.PORTS).execute_text_only(
+            support.request(task="hello"), plan=plan
         )
         assert result.status == "completed" and result.output == "hello"
         assert result.usage["requests"] == 1 and result.usage["total_tokens"] == 3
@@ -140,12 +140,12 @@ async def test_provider_effect_configuration_refuses(options):
     try:
         if options.get("responses"):
             with pytest.raises(ValueError):
-                await AgentRunExecutor().execute_text_only(
-                    RunRequest(task="hello"), plan=plan
+                await AgentRunExecutor(ports=support.PORTS).execute_text_only(
+                    support.request(task="hello"), plan=plan
                 )
         else:
-            result = await AgentRunExecutor().execute_text_only(
-                RunRequest(task="hello"), plan=plan
+            result = await AgentRunExecutor(ports=support.PORTS).execute_text_only(
+                support.request(task="hello"), plan=plan
             )
             assert result.status == "failed"
         assert calls == []
@@ -180,8 +180,8 @@ async def test_tool_reply_never_executes_or_retries():
     }
     client, calls, plan = fixture(response)
     try:
-        result = await AgentRunExecutor().execute_text_only(
-            RunRequest(task="hello"), plan=plan
+        result = await AgentRunExecutor(ports=support.PORTS).execute_text_only(
+            support.request(task="hello"), plan=plan
         )
         assert result.status == "failed" and len(calls) == 1
     finally:
@@ -201,8 +201,8 @@ async def test_widened_plan_refuses_before_provider(field, value):
     client, calls, plan = fixture()
     try:
         with pytest.raises(ValueError):
-            await AgentRunExecutor().execute_text_only(
-                RunRequest(task="hello"), plan=replace(plan, **{field: value})
+            await AgentRunExecutor(ports=support.PORTS).execute_text_only(
+                support.request(task="hello"), plan=replace(plan, **{field: value})
             )
         assert calls == []
     finally:
@@ -224,8 +224,8 @@ async def test_over_budget_reply_retains_reported_consumption():
         harness=replace(plan.harness, model_settings={"max_tokens": 1}),
     )
     try:
-        result = await AgentRunExecutor().execute_text_only(
-            RunRequest(task="hello"), plan=plan
+        result = await AgentRunExecutor(ports=support.PORTS).execute_text_only(
+            support.request(task="hello"), plan=plan
         )
         assert result.status == "stopped" and len(calls) == 1
         assert result.usage["requests"] == 1 and result.usage["total_tokens"] == 3
@@ -244,8 +244,8 @@ async def test_retryable_http_error_is_one_attempt():
 
     client, _, plan = fixture(handler_override=failure)
     try:
-        result = await AgentRunExecutor().execute_text_only(
-            RunRequest(task="hello"), plan=plan
+        result = await AgentRunExecutor(ports=support.PORTS).execute_text_only(
+            support.request(task="hello"), plan=plan
         )
         assert result.status == "failed" and len(calls) == 1
         assert "synthetic failure" not in (result.error or "")
@@ -267,7 +267,9 @@ async def test_cancel_drains_provider_before_finishing():
 
     client, _, plan = fixture(handler_override=blocked)
     task = asyncio.create_task(
-        AgentRunExecutor().execute_text_only(RunRequest(task="hello"), plan=plan)
+        AgentRunExecutor(ports=support.PORTS).execute_text_only(
+            support.request(task="hello"), plan=plan
+        )
     )
     try:
         await entered.wait()
@@ -283,15 +285,17 @@ async def test_cancel_drains_provider_before_finishing():
 @pytest.mark.parametrize(
     "received",
     [
-        RunRequest(task="hello", context="private"),
-        RunRequest(task="hello", metadata={"session": "forged"}),
-        RunRequest(task="different"),
+        support.request(task="hello", context="private"),
+        support.request(task="hello", metadata={"session": "forged"}),
+        support.request(task="different"),
     ],
 )
 async def test_received_request_cannot_inherit_or_substitute(received):
     client, calls, plan = fixture()
     try:
-        result = await AgentRunExecutor().execute_text_only(received, plan=plan)
+        result = await AgentRunExecutor(ports=support.PORTS).execute_text_only(
+            received, plan=plan
+        )
         assert result.status == "failed" and calls == []
     finally:
         await client.close()
@@ -304,8 +308,8 @@ async def test_timeout_subclass_keeps_existing_acceptance():
 
     client, calls, plan = fixture(timeout=DerivedTimeout(2))
     try:
-        result = await AgentRunExecutor().execute_text_only(
-            RunRequest(task="hello"), plan=plan
+        result = await AgentRunExecutor(ports=support.PORTS).execute_text_only(
+            support.request(task="hello"), plan=plan
         )
         assert result.status == "completed" and len(calls) == 1
     finally:

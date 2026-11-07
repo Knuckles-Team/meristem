@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
+import ports_support as support
 import pytest
 from pydantic_ai.messages import ModelResponse, TextPart
 from pydantic_ai.models.function import FunctionModel
 
-from meristem import host_ports
-from meristem.graph import RunPlan, RunRequest, run
+from meristem.graph import RunPlan, run
 from meristem.graph.render_receipt import (
     CALL_SITE,
     CurrentRevisions,
@@ -91,7 +91,7 @@ def test_consumer_model() -> None:
 async def test_dispatch_behavior() -> None:
     transport = Transport()
     result = await run(
-        RunRequest(task="hello", run_id="r"), plan=_plan(transport, _check())
+        support.request(task="hello", run_id="r"), plan=_plan(transport, _check())
     )
     assert result.status == "completed", result.error
     assert transport.requests == 1
@@ -107,8 +107,8 @@ async def test_producer_wiring() -> None:
         seen.append(request.run_id)
         return _plan(transport, _check(_receipt(scope="tenant-b")))
 
-    host_ports.register_run_decision_provider(decide)
-    result = await run(RunRequest(task="hello", run_id="w"))
+    support.register_run_decision_provider(decide)
+    result = await run(support.request(task="hello", run_id="w"))
     assert seen == ["w"]
     assert result.status == "failed"
     assert "receipt_wrong_scope" in (result.error or "")
@@ -127,7 +127,7 @@ async def test_partial_refusal() -> None:
     for code, check in cases.items():
         transport = Transport()
         result = await run(
-            RunRequest(task="hello", run_id=code), plan=_plan(transport, check)
+            support.request(task="hello", run_id=code), plan=_plan(transport, check)
         )
         assert result.status == "failed", code
         assert code in (result.error or ""), code
@@ -154,7 +154,7 @@ async def test_location_evidence() -> None:
     from meristem.graph import iterate_run
 
     async for event in iterate_run(
-        RunRequest(task="hello", run_id="e"), plan=_plan(Transport(), _check())
+        support.request(task="hello", run_id="e"), plan=_plan(Transport(), _check())
     ):
         events.append(event)
     checked = [e for e in events if e["type"] == "render_receipt_checked"]

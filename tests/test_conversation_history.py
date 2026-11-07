@@ -3,6 +3,7 @@
 import asyncio
 import json
 
+import ports_support as support
 import pytest
 from pydantic_ai.messages import ModelResponse, TextPart
 from pydantic_ai.models.function import FunctionModel
@@ -13,7 +14,6 @@ from meristem.graph import (
     DependencyPlan,
     RunBudget,
     RunPlan,
-    RunRequest,
     RunTask,
     run,
 )
@@ -38,7 +38,7 @@ def bind(value):
     async def provider(request):
         return value
 
-    host_ports.register_run_history_provider(provider)
+    support.register_run_history_provider(provider)
 
 
 @pytest.mark.parametrize("bound", [False, True, None])
@@ -57,7 +57,7 @@ async def test_first_request_uses_only_bound_history_with_fresh_budget(bound):
     elif bound:
         bind(json.dumps(envelope()))
     result = await run(
-        RunRequest(task="new question", run_id="current"),
+        support.request(task="new question", run_id="current"),
         plan=RunPlan(
             model=FunctionModel(respond),
             steps=("new question",),
@@ -97,7 +97,7 @@ async def test_bad_history_refuses_before_model_effect(change):
     value = envelope() | change
     bind(json.dumps(value))
     result = await run(
-        RunRequest(task="new", run_id="current"),
+        support.request(task="new", run_id="current"),
         plan=RunPlan(model=FunctionModel(respond), steps=("new",)),
     )
     assert result.status == "failed"
@@ -120,7 +120,7 @@ async def test_dependency_history_refuses_before_model_effect():
 
     bind(json.dumps(envelope()))
     result = await run(
-        RunRequest(task="new", run_id="current"),
+        support.request(task="new", run_id="current"),
         plan=RunPlan(
             model=FunctionModel(respond),
             dependency_plan=DependencyPlan(
@@ -145,9 +145,9 @@ async def test_provider_failure_is_not_empty_history_or_private_error():
         calls.append(messages)
         return ModelResponse(parts=[TextPart("unexpected")])
 
-    host_ports.register_run_history_provider(denied)
+    support.register_run_history_provider(denied)
     result = await run(
-        RunRequest(task="new"),
+        support.request(task="new"),
         plan=RunPlan(model=FunctionModel(respond), steps=("new",)),
     )
     assert calls == []
@@ -196,7 +196,7 @@ async def test_nested_model_authority_refuses_before_effects(field, value):
     data["messages"][1][field] = value
     bind(json.dumps(data))
     result = await run(
-        RunRequest(task="new", run_id="current"),
+        support.request(task="new", run_id="current"),
         plan=RunPlan(model=FunctionModel(respond), steps=("new",)),
     )
     assert result.status == "failed"
@@ -239,7 +239,7 @@ async def test_checkpoint_selection_is_one_read_without_legacy_fallback(prior):
         reads.append(request.run_id)
         selected = host_ports.RunCheckpointSelection(request.run_id, None, value)
         # A later host change cannot cause a second, mixed selection read.
-        host_ports.register_run_checkpoint_provider(None)
+        support.register_run_checkpoint_provider(None)
         return selected
 
     async def old_history(request):
@@ -253,10 +253,10 @@ async def test_checkpoint_selection_is_one_read_without_legacy_fallback(prior):
             usage=RequestUsage(input_tokens=2, output_tokens=3),
         )
 
-    host_ports.register_run_checkpoint_provider(checkpoints)
-    host_ports.register_run_history_provider(old_history)
+    support.register_run_checkpoint_provider(checkpoints)
+    support.register_run_history_provider(old_history)
     result = await run(
-        RunRequest(task="new question", run_id="current"),
+        support.request(task="new question", run_id="current"),
         plan=RunPlan(
             model=FunctionModel(respond),
             steps=("new question",),
@@ -287,11 +287,11 @@ async def test_current_checkpoint_precedes_history_before_planning_or_model(curr
         effects.append("planning")
         return RunPlan(model="unused", steps=("new",))
 
-    host_ports.register_run_checkpoint_provider(checkpoints)
-    host_ports.register_run_history_provider(old_history)
-    host_ports.register_run_decision_provider(decide)
-    host_ports.register_model_provider(lambda name: effects.append("model"))
-    result = await run(RunRequest(task="new", run_id="current"))
+    support.register_run_checkpoint_provider(checkpoints)
+    support.register_run_history_provider(old_history)
+    support.register_run_decision_provider(decide)
+    support.register_model_provider(lambda name: effects.append("model"))
+    result = await run(support.request(task="new", run_id="current"))
     assert result.status == "failed"
     assert effects == []
     assert "current-run checkpoint restore is unavailable" in result.error
@@ -329,10 +329,10 @@ async def test_partial_or_malformed_selection_refuses_without_fallback(selection
         effects.append("planning")
         return RunPlan(model=FunctionModel(respond), steps=("new",))
 
-    host_ports.register_run_checkpoint_provider(checkpoints)
-    host_ports.register_run_history_provider(old_history)
-    host_ports.register_run_decision_provider(decide)
-    result = await run(RunRequest(task="new", run_id="current"))
+    support.register_run_checkpoint_provider(checkpoints)
+    support.register_run_history_provider(old_history)
+    support.register_run_decision_provider(decide)
+    result = await run(support.request(task="new", run_id="current"))
     assert result.status == "failed" and effects == []
     assert "private" not in result.error
 
@@ -357,19 +357,19 @@ async def test_checkpoint_provider_failure_is_private_and_does_not_plan(
         effects.append("planning")
         raise AssertionError("must not plan")
 
-    host_ports.register_run_checkpoint_provider(checkpoints)
-    host_ports.register_run_decision_provider(decide)
-    host_ports.register_run_history_provider(old_history)
-    host_ports.register_model_provider(lambda name: effects.append("model"))
+    support.register_run_checkpoint_provider(checkpoints)
+    support.register_run_decision_provider(decide)
+    support.register_run_history_provider(old_history)
+    support.register_model_provider(lambda name: effects.append("model"))
     if cancelled:
         with pytest.raises(asyncio.CancelledError):
-            await run(RunRequest(task="new", run_id="current"))
+            await run(support.request(task="new", run_id="current"))
         assert effects == []
         assert not any(
             event.get("type") in {"error", "graph_complete"} for event in events
         )
         return
-    result = await run(RunRequest(task="new", run_id="current"))
+    result = await run(support.request(task="new", run_id="current"))
     assert result.status == "failed" and effects == []
     assert "run checkpoint provider failed" in result.error
     assert "private" not in result.error
@@ -396,9 +396,9 @@ async def test_supplied_plan_usage_survives_history_refusal_exactly_once(case, e
             usage=RequestUsage(input_tokens=2, output_tokens=3),
         )
 
-    host_ports.register_run_checkpoint_provider(checkpoints)
+    support.register_run_checkpoint_provider(checkpoints)
     result = await run(
-        RunRequest(task="new", run_id="current"),
+        support.request(task="new", run_id="current"),
         plan=RunPlan(
             model=FunctionModel(respond),
             steps=("new",),
@@ -454,9 +454,9 @@ async def test_selected_child_history_is_bound_before_model(mismatch):
         calls.append(messages)
         return ModelResponse(parts=[TextPart("answer")])
 
-    host_ports.register_run_checkpoint_provider(select)
+    support.register_run_checkpoint_provider(select)
     result = await run(
-        RunRequest(task="new question", run_id="current"),
+        support.request(task="new question", run_id="current"),
         plan=RunPlan(model=FunctionModel(respond), steps=("new question",)),
     )
     if mismatch:
@@ -490,9 +490,9 @@ async def test_missing_child_history_and_current_checkpoint_fail_closed(current)
         calls.append(messages)
         return ModelResponse(parts=[TextPart("unexpected")])
 
-    host_ports.register_run_checkpoint_provider(select)
+    support.register_run_checkpoint_provider(select)
     result = await run(
-        RunRequest(task="new", run_id="current"),
+        support.request(task="new", run_id="current"),
         plan=RunPlan(model=FunctionModel(respond), steps=("new",)),
     )
     assert result.status == "failed"
@@ -535,9 +535,9 @@ async def test_oversized_child_binding_refuses_before_model(field):
         calls.append(messages)
         return ModelResponse(parts=[TextPart("unexpected")])
 
-    host_ports.register_run_checkpoint_provider(select)
+    support.register_run_checkpoint_provider(select)
     result = await run(
-        RunRequest(task="new", run_id="current"),
+        support.request(task="new", run_id="current"),
         plan=RunPlan(model=FunctionModel(respond), steps=("new",)),
     )
     assert result.status == "failed"
@@ -575,20 +575,24 @@ async def test_selected_child_history_preserves_shared_limit_and_fresh_run_usage
             usage=RequestUsage(input_tokens=2, output_tokens=1),
         )
 
-    host_ports.register_run_checkpoint_provider(select)
+    support.register_run_checkpoint_provider(select)
     budget = RunBudget(request_limit=2)
     shared = LiveSharedBudget(budget, deadline=asyncio.get_running_loop().time() + 10)
     plan = RunPlan(model=FunctionModel(respond), steps=("new question",), budget=budget)
     parent = await run(
-        RunRequest(task="parent", run_id="parent"), plan=plan, shared_execution=shared
+        support.request(task="parent", run_id="parent"),
+        plan=plan,
+        shared_execution=shared,
     )
     child = await run(
-        RunRequest(task="new question", run_id="child"),
+        support.request(task="new question", run_id="child"),
         plan=plan,
         shared_execution=shared,
     )
     refused = await run(
-        RunRequest(task="another", run_id="third"), plan=plan, shared_execution=shared
+        support.request(task="another", run_id="third"),
+        plan=plan,
+        shared_execution=shared,
     )
     assert (parent.status, child.status, refused.status) == (
         "completed",
@@ -654,7 +658,7 @@ async def test_selected_child_refusal_does_not_spend_enclosing_budget(case):
         calls.append(messages)
         return ModelResponse(parts=[TextPart("unexpected")])
 
-    host_ports.register_run_checkpoint_provider(select)
+    support.register_run_checkpoint_provider(select)
     budget = RunBudget(request_limit=1)
     shared = LiveSharedBudget(budget, deadline=asyncio.get_running_loop().time() + 10)
     dependency = (
@@ -665,7 +669,7 @@ async def test_selected_child_refusal_does_not_spend_enclosing_budget(case):
         else None
     )
     result = await run(
-        RunRequest(task="new", run_id="child"),
+        support.request(task="new", run_id="child"),
         plan=RunPlan(
             model=FunctionModel(respond),
             steps=("new",),

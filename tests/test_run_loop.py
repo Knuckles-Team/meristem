@@ -10,6 +10,7 @@ from dataclasses import asdict, replace
 from types import MappingProxyType, SimpleNamespace
 from unittest.mock import ANY
 
+import ports_support as support
 import pytest
 from pydantic_ai.messages import ModelResponse, TextPart, ToolCallPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
@@ -121,7 +122,7 @@ def plan_of(model, **kw) -> RunPlan:
 
 # spec: MERISTEM-RUN-R001.2
 async def test_no_model_fails_closed(events):
-    result = await run(RunRequest(task="hi"))
+    result = await run(support.request(task="hi"))
     assert result.status == "failed"
     assert "RunPlanUnavailable" in (result.error or "")
     assert [e["type"] for e in events] == ["error"]
@@ -146,7 +147,7 @@ async def test_no_model_fails_closed(events):
 )
 def test_default_plan_reads_only_request_and_config(request_kw, config, check):
     plan = default_run_plan(
-        RunRequest(task="t", **request_kw), {"agent_model": "m", **config}
+        support.request(task="t", **request_kw), {"agent_model": "m", **config}
     )
     assert check(plan)
 
@@ -167,16 +168,16 @@ async def test_host_decision_provider_supplies_the_plan(is_async):
             return later()
         return plan
 
-    host_ports.register_run_decision_provider(provide)
-    result = await run(RunRequest(task="t", agent_name="n"))
+    support.register_run_decision_provider(provide)
+    result = await run(support.request(task="t", agent_name="n"))
     assert (result.status, result.output) == ("completed", "from-host")
     assert seen[0].agent_name == "n"
 
 
 # spec: MERISTEM-RUN-R001.2
 async def test_provider_returning_non_plan_fails():
-    host_ports.register_run_decision_provider(lambda request: {"model": "x"})
-    result = await run(RunRequest(task="t"))
+    support.register_run_decision_provider(lambda request: {"model": "x"})
+    result = await run(support.request(task="t"))
     assert result.status == "failed" and "RunPlan" in (result.error or "")
 
 
@@ -184,7 +185,7 @@ async def test_provider_returning_non_plan_fails():
 async def test_steps_share_one_history_and_emit_events(events):
     log: list[int] = []
     result = await run(
-        RunRequest(task="t"), plan=plan_of(echo_model(log), steps=("a", "b", "c"))
+        support.request(task="t"), plan=plan_of(echo_model(log), steps=("a", "b", "c"))
     )
     assert result.output == "echo:c" and result.steps == 3
     assert log == sorted(log) and log[0] < log[-1]
@@ -210,7 +211,7 @@ async def test_steps_share_one_history_and_emit_events(events):
 )
 async def test_stop_rules_and_budgets_are_enforced(stop, budget, status, steps):
     plan = plan_of(echo_model(), steps=("a", "b", "c"), stop=stop, budget=budget)
-    result = await run(RunRequest(task="t"), plan=plan)
+    result = await run(support.request(task="t"), plan=plan)
     assert (result.status, result.steps) == (status, steps)
     if budget != RunBudget():
         assert (result.error or "").startswith("budget:")
@@ -224,8 +225,8 @@ async def test_model_ids_resolve_through_the_host():
         asked.append(model_id)
         return TestModel(custom_output_text="ok")
 
-    host_ports.register_model_provider(models)
-    result = await run(RunRequest(task="t"), plan=plan_of("host:model"))
+    support.register_model_provider(models)
+    result = await run(support.request(task="t"), plan=plan_of("host:model"))
     assert (result.output, asked) == ("ok", ["host:model"])
 
 
@@ -243,13 +244,13 @@ async def test_granted_tools_bind_through_the_native_provider():
         bound.append((names, toolset_id))
         return toolset
 
-    host_ports.register_native_toolset_provider(
+    support.register_native_toolset_provider(
         host_ports.NativeToolsetProvider(
             available_tools=lambda: ["lookup"], build_toolset=build
         )
     )
     plan = plan_of(tool_model("lookup"), tool_names=("lookup",))
-    result = await run(RunRequest(task="t", run_id="r1"), plan=plan)
+    result = await run(support.request(task="t", run_id="r1"), plan=plan)
     assert result.output == "tool-value"
     assert bound == [(["lookup"], "run-r1")]
 
@@ -257,7 +258,7 @@ async def test_granted_tools_bind_through_the_native_provider():
 # spec: MERISTEM-RUN-R001.2
 async def test_granted_tools_without_a_host_fail_closed():
     result = await run(
-        RunRequest(task="t"), plan=plan_of(TestModel(), tool_names=("x",))
+        support.request(task="t"), plan=plan_of(TestModel(), tool_names=("x",))
     )
     assert result.status == "failed"
 
@@ -269,7 +270,7 @@ async def test_json_response_format_returns_json_text():
         TestModel(custom_output_args={"a": 1}),
         harness=HarnessConfig(response_format="json"),
     )
-    result = await run(RunRequest(task="t"), plan=plan)
+    result = await run(support.request(task="t"), plan=plan)
     assert result.output == '{"a": 1}'
 
 
@@ -277,7 +278,7 @@ async def test_model_error_is_a_failed_terminal_event():
     def boom(messages, info):
         raise ValueError("model down")
 
-    result = await run(RunRequest(task="t"), plan=plan_of(FunctionModel(boom)))
+    result = await run(support.request(task="t"), plan=plan_of(FunctionModel(boom)))
     assert result.status == "failed" and "model down" in (result.error or "")
 
 
@@ -316,17 +317,19 @@ async def test_shared_budget_preserves_failed_handler_exception_and_reserves_onc
 # spec: MERISTEM-RUN-R001.1
 async def test_bundle_runs_through_execute_graph():
     graph, config = create_graph_agent(
-        tag_prompts={"ops": "be ops"}, agent_model="m", name="Ops"
+        tag_prompts={"ops": "be ops"}, agent_model="m", name="Ops", ports=support.PORTS
     )
-    host_ports.register_model_provider(lambda _id: echo_model())
-    result = await execute_graph(graph, config, "hello", run_id="r9", agent_name="ops")
+    support.register_model_provider(lambda _id: echo_model())
+    result = await execute_graph(
+        graph, config, "hello", run_id="r9", agent_name="ops", ports=support.PORTS
+    )
     assert (result["run_id"], result["output"]) == ("r9", "echo:hello")
     assert config["routing"] == {"router_model": None, "min_confidence": 0.0}
 
 
 async def test_execute_graph_iter_calls_the_handler():
-    graph, config = create_graph_agent(agent_model="m")
-    host_ports.register_model_provider(lambda _id: echo_model())
+    graph, config = create_graph_agent(agent_model="m", ports=support.PORTS)
+    support.register_model_provider(lambda _id: echo_model())
     seen: list[str] = []
 
     class Handler(GraphEventHandler):
@@ -335,7 +338,9 @@ async def test_execute_graph_iter_calls_the_handler():
 
     out = [
         e["type"]
-        async for e in execute_graph_iter(graph, config, "q", handler=Handler())
+        async for e in execute_graph_iter(
+            graph, config, "q", handler=Handler(), ports=support.PORTS
+        )
     ]
     assert seen == out and out[-1] == "graph_complete"
 
@@ -343,18 +348,18 @@ async def test_execute_graph_iter_calls_the_handler():
 # spec: MERISTEM-RUN-R001.2
 def test_tool_endpoints_fail_closed_without_a_host():
     with pytest.raises(RuntimeError, match="arbora host"):
-        create_graph_agent(mcp_url="http://x")
+        create_graph_agent(mcp_url="http://x", ports=support.PORTS)
 
 
 def test_tool_endpoints_bind_through_the_remote_provider(tmp_path):
-    host_ports.register_remote_toolset_provider(
+    support.register_remote_toolset_provider(
         host_ports.RemoteToolsetProvider(
             build_url_toolset=lambda url, tid, timeout: f"url:{url}",
             load_config_toolsets=lambda path: [f"cfg:{path.name}"],
         )
     )
     graph, config = create_graph_agent(
-        mcp_url="http://x", mcp_config=str(tmp_path / "c.json")
+        mcp_url="http://x", mcp_config=str(tmp_path / "c.json"), ports=support.PORTS
     )
     assert graph.toolsets == ("url:http://x", "cfg:c.json")
     assert config["toolsets"] == list(graph.toolsets)
@@ -364,14 +369,16 @@ def test_tool_endpoints_bind_through_the_remote_provider(tmp_path):
 def test_workspace_prompt_becomes_instructions(tmp_path, has_file):
     if has_file:
         (tmp_path / "AGENTS.md").write_text("ws prompt")
-    _, config = initialize_graph_from_workspace(workspace=tmp_path, agent_model="m")
+    _, config = initialize_graph_from_workspace(
+        workspace=tmp_path, agent_model="m", ports=support.PORTS
+    )
     assert config["system_prompt"] == ("ws prompt" if has_file else "")
 
 
 # spec: MERISTEM-RUN-R001.1
 async def test_agent_run_executor_maps_a_host_request():
-    host_ports.register_model_provider(lambda _id: echo_model())
-    executor = AgentRunExecutor({"agent_model": "m"})
+    support.register_model_provider(lambda _id: echo_model())
+    executor = AgentRunExecutor({"agent_model": "m"}, ports=support.PORTS)
     request = SimpleNamespace(
         task="do",
         agent_name="a",
@@ -385,7 +392,7 @@ async def test_agent_run_executor_maps_a_host_request():
     result = await executor.execute_agent(request, session=object())
     assert (result.run_id, result.output) == ("r2", "echo:do")
     with pytest.raises(RuntimeError):
-        await AgentRunExecutor().execute_agent(request)
+        await AgentRunExecutor(ports=support.PORTS).execute_agent(request)
 
 
 def test_top_level_exports_are_lazy():
@@ -412,10 +419,10 @@ async def test_admitted_attachments_reach_only_first_model_input(through_port):
         steps=("inspect", "continue"),
         input_media_types=("image/png", "text/plain"),
     )
-    request = RunRequest(task="inspect", attachments=(png, text))
+    request = support.request(task="inspect", attachments=(png, text))
     if through_port:
-        host_ports.register_run_decision_provider(lambda request: plan)
-        result = await AgentRunExecutor().execute_agent(request)
+        support.register_run_decision_provider(lambda request: plan)
+        result = await AgentRunExecutor(ports=support.PORTS).execute_agent(request)
     else:
         result = await run(request, plan=plan)
     assert result.status == "completed"
@@ -440,9 +447,9 @@ async def test_attachment_refusal_precedes_model_construction(
 ):
     from pydantic_ai import BinaryContent
 
-    host_ports.register_model_provider(lambda model: pytest.fail("model constructed"))
+    support.register_model_provider(lambda model: pytest.fail("model constructed"))
     result = await run(
-        RunRequest(
+        support.request(
             task="inspect",
             attachments=(BinaryContent(data=parts[0], media_type=parts[1]),),
         ),
@@ -458,7 +465,7 @@ async def test_attachment_refusal_precedes_model_construction(
 async def test_attachment_budget_is_aggregate_and_urls_are_not_fetched(events):
     from pydantic_ai import BinaryContent, ImageUrl
 
-    host_ports.register_model_provider(lambda model: pytest.fail("model constructed"))
+    support.register_model_provider(lambda model: pytest.fail("model constructed"))
     plan = plan_of(
         "must-not-resolve",
         input_media_types=("image/png",),
@@ -468,7 +475,9 @@ async def test_attachment_budget_is_aggregate_and_urls_are_not_fetched(events):
         (BinaryContent(data=b"xx", media_type="image/png"),) * 2,
         (ImageUrl(url="https://example.invalid/image.png"),),
     ]:
-        result = await run(RunRequest(task="inspect", attachments=parts), plan=plan)
+        result = await run(
+            support.request(task="inspect", attachments=parts), plan=plan
+        )
         assert result.status == "failed"
     assert [event["type"] for event in events] == ["error", "error"]
 
@@ -482,7 +491,7 @@ async def test_zero_initial_usage_preserves_legacy_serial_step_budgets():
     assert plan.initial_usage == RunUsage()
     assert plan.initial_usage is not another.initial_usage
     assert plan.initial_elapsed_seconds == 0.0
-    result = await run(RunRequest(task="t"), plan=plan)
+    result = await run(support.request(task="t"), plan=plan)
     assert (result.status, result.steps, result.usage["requests"]) == (
         "completed",
         3,
@@ -508,7 +517,7 @@ async def test_initial_usage_is_counted_once_and_reusable(through_port, events):
         FunctionModel(reply), steps=("a", "b"), initial_usage=initial, budget=budget
     )
     if through_port:
-        host_ports.register_run_decision_provider(lambda request: plan)
+        support.register_run_decision_provider(lambda request: plan)
     expected = {
         "requests": 4,
         "tool_calls": 3,
@@ -518,7 +527,9 @@ async def test_initial_usage_is_counted_once_and_reusable(through_port, events):
     }
     for _ in range(2):
         events.clear()
-        result = await run(RunRequest(task="t"), plan=None if through_port else plan)
+        result = await run(
+            support.request(task="t"), plan=None if through_port else plan
+        )
         assert (result.status, result.steps) == ("completed", 2)
         assert result.usage == expected
         assert events[-1]["result"]["usage"] == expected
@@ -544,8 +555,8 @@ async def test_initial_usage_is_counted_once_and_reusable(through_port, events):
 async def test_exhausted_initial_usage_refuses_before_any_binding(
     initial, budget, elapsed, events
 ):
-    host_ports.register_model_provider(lambda _: pytest.fail("model resolved"))
-    host_ports.register_native_toolset_provider(
+    support.register_model_provider(lambda _: pytest.fail("model resolved"))
+    support.register_native_toolset_provider(
         host_ports.NativeToolsetProvider(
             available_tools=lambda: pytest.fail("tools discovered"),
             build_toolset=lambda *_: pytest.fail("tools bound"),
@@ -558,7 +569,7 @@ async def test_exhausted_initial_usage_refuses_before_any_binding(
         initial_elapsed_seconds=elapsed,
         budget=budget,
     )
-    result = await run(RunRequest(task="t"), plan=plan)
+    result = await run(support.request(task="t"), plan=plan)
     assert result.status == "stopped" and result.steps == 0
     assert (result.error or "").startswith("budget:")
     assert result.usage == {
@@ -596,7 +607,7 @@ async def test_exact_initial_tool_limit_allows_only_model_work(
 
     initial = RunUsage(requests=1, tool_calls=limit, input_tokens=3, output_tokens=4)
     result = await run(
-        RunRequest(task="t"),
+        support.request(task="t"),
         plan=plan_of(
             FunctionModel(reply),
             steps=("a", "b"),
@@ -644,10 +655,10 @@ async def test_exact_initial_tool_limit_allows_only_model_work(
 async def test_invalid_initial_counters_fail_before_model_resolution(
     field, value, events
 ):
-    host_ports.register_model_provider(lambda _: pytest.fail("model resolved"))
+    support.register_model_provider(lambda _: pytest.fail("model resolved"))
     initial = RunUsage(**{field: value})
     result = await run(
-        RunRequest(task="t"), plan=plan_of("unbound", initial_usage=initial)
+        support.request(task="t"), plan=plan_of("unbound", initial_usage=initial)
     )
     assert result.status == "failed" and result.steps == 0
     assert [event["type"] for event in events] == ["error"]
@@ -658,9 +669,9 @@ async def test_invalid_initial_counters_fail_before_model_resolution(
     "elapsed", [-1, True, float("nan"), float("inf"), float("-inf")]
 )
 async def test_invalid_initial_elapsed_fails_before_model_resolution(elapsed, events):
-    host_ports.register_model_provider(lambda _: pytest.fail("model resolved"))
+    support.register_model_provider(lambda _: pytest.fail("model resolved"))
     result = await run(
-        RunRequest(task="t"),
+        support.request(task="t"),
         plan=plan_of("unbound", initial_elapsed_seconds=elapsed),
     )
     assert result.status == "failed" and result.steps == 0
@@ -690,7 +701,7 @@ async def test_initial_usage_shares_remaining_limits_across_serial_steps(
         )
 
     result = await run(
-        RunRequest(task="t"),
+        support.request(task="t"),
         plan=plan_of(
             FunctionModel(reply),
             steps=("a", "b", "c"),
@@ -716,7 +727,7 @@ async def test_initial_tool_usage_is_shared_across_serial_steps(events):
         return "done"
 
     result = await run(
-        RunRequest(task="t"),
+        support.request(task="t"),
         plan=plan_of(
             tool_model("effect"),
             steps=("a", "b"),
@@ -745,9 +756,9 @@ async def test_initial_usage_snapshot_precedes_host_model_resolution():
         initial.input_tokens = 999
         return FunctionModel(reply)
 
-    host_ports.register_model_provider(resolve)
+    support.register_model_provider(resolve)
     result = await run(
-        RunRequest(task="t"), plan=plan_of("host:model", initial_usage=initial)
+        support.request(task="t"), plan=plan_of("host:model", initial_usage=initial)
     )
     assert result.status == "completed"
     assert result.usage == {
@@ -766,7 +777,7 @@ async def test_unreported_tokens_are_not_estimated_by_the_harness():
             return ModelResponse(parts=[TextPart("not a token measurement")])
 
     result = await run(
-        RunRequest(task="a long prompt is not a usage measurement"),
+        support.request(task="a long prompt is not a usage measurement"),
         plan=plan_of(UnreportedUsageModel(), initial_usage=RunUsage(requests=1)),
     )
     assert result.status == "completed"
@@ -792,9 +803,9 @@ async def test_request_metadata_and_model_output_cannot_replace_host_initial_usa
     plan = plan_of(
         FunctionModel(reply), steps=("a", "b"), initial_usage=RunUsage(requests=2)
     )
-    host_ports.register_run_decision_provider(lambda request: plan)
+    support.register_run_decision_provider(lambda request: plan)
     result = await run(
-        RunRequest(
+        support.request(
             task="t",
             metadata={
                 "initial_usage": {"requests": 999},
@@ -820,7 +831,7 @@ async def test_initial_elapsed_reduces_timeout_without_changing_received_budget(
     monkeypatch.setattr(asyncio, "timeout", capture_timeout)
     budget = RunBudget(timeout_seconds=10)
     plan = plan_of(echo_model(), budget=budget, initial_elapsed_seconds=2.5)
-    result = await run(RunRequest(task="t"), plan=plan)
+    result = await run(support.request(task="t"), plan=plan)
     assert result.status == "completed" and delays == [7.5]
     assert plan.budget is budget and budget.timeout_seconds == 10
 
@@ -836,19 +847,19 @@ async def test_initial_usage_survives_serial_early_exit(exit_kind, events):
     def resolve(model_id):
         raise ValueError("setup failed")
 
-    host_ports.register_model_provider(resolve)
+    support.register_model_provider(resolve)
     plan = plan_of(
         "host:model" if exit_kind == "setup_failure" else FunctionModel(fail),
         initial_usage=initial,
     )
     if exit_kind == "close":
-        stream = iterate_run(RunRequest(task="t"), plan=plan)
+        stream = iterate_run(support.request(task="t"), plan=plan)
         assert (await anext(stream))["type"] == "run_started"
         await stream.aclose()
         assert events[-1]["type"] == "run_cancelled"
         usage = events[-1]["result"]["usage"]
     else:
-        result = await run(RunRequest(task="t"), plan=plan)
+        result = await run(support.request(task="t"), plan=plan)
         assert result.status == "failed"
         usage = result.usage
         assert events[-1]["result"]["usage"] == usage
@@ -867,9 +878,9 @@ async def test_initial_usage_survives_serial_early_exit(exit_kind, events):
 @pytest.mark.spec("MERISTEM-RUN-R001.7")
 @pytest.mark.parametrize("initial", [None, {"requests": 1}])
 async def test_initial_usage_requires_a_typed_host_ledger(initial, events):
-    host_ports.register_model_provider(lambda _: pytest.fail("model resolved"))
+    support.register_model_provider(lambda _: pytest.fail("model resolved"))
     result = await run(
-        RunRequest(task="t"), plan=plan_of("unbound", initial_usage=initial)
+        support.request(task="t"), plan=plan_of("unbound", initial_usage=initial)
     )
     assert result.status == "failed" and result.steps == 0
     assert "initial_usage" in result.error
@@ -883,9 +894,9 @@ async def test_incoherent_initial_token_total_fails_before_model_resolution(even
         def total_tokens(self):
             return super().total_tokens + 1
 
-    host_ports.register_model_provider(lambda _: pytest.fail("model resolved"))
+    support.register_model_provider(lambda _: pytest.fail("model resolved"))
     result = await run(
-        RunRequest(task="t"),
+        support.request(task="t"),
         plan=plan_of("unbound", initial_usage=IncoherentUsage(input_tokens=1)),
     )
     assert result.status == "failed" and result.steps == 0
@@ -896,14 +907,14 @@ async def test_incoherent_initial_token_total_fails_before_model_resolution(even
 @pytest.fixture
 def no_planning_failure_execution():
     """Fail immediately if a rejected host decision reaches an execution port."""
-    host_ports.register_model_provider(lambda _: pytest.fail("model resolved"))
-    host_ports.register_native_toolset_provider(
+    support.register_model_provider(lambda _: pytest.fail("model resolved"))
+    support.register_native_toolset_provider(
         host_ports.NativeToolsetProvider(
             available_tools=lambda: pytest.fail("tools discovered"),
             build_toolset=lambda *_: pytest.fail("tools bound"),
         )
     )
-    host_ports.register_scaffold_publication_factory(
+    support.register_scaffold_publication_factory(
         lambda _: pytest.fail("execution scaffold bound")
     )
 
@@ -922,7 +933,7 @@ def register_failing_decision(error: BaseException, *, is_async: bool = False):
             return later()
         raise error
 
-    host_ports.register_run_decision_provider(provide)
+    support.register_run_decision_provider(provide)
     return seen
 
 
@@ -961,7 +972,7 @@ async def test_measured_planning_failure_is_a_single_reusable_terminal_result(
     error = error_type(message)
     failure = RunPlanFailure(error, initial_usage=initial, initial_elapsed_seconds=2.5)
     seen = register_failing_decision(failure, is_async=is_async)
-    request = RunRequest(
+    request = support.request(
         task="t", model_id="unbound", allowed_tools=("effect",), budget_tokens=1
     )
     expected = {
@@ -1009,7 +1020,7 @@ async def test_measured_planning_limit_failure_preserves_original_error_and_usag
     register_failing_decision(
         RunPlanFailure(error, initial_usage=RunUsage(requests=3, input_tokens=15))
     )
-    result = await run(RunRequest(task="t", budget_tokens=2))
+    result = await run(support.request(task="t", budget_tokens=2))
     assert (result.status, result.steps, result.error) == (
         "failed",
         0,
@@ -1044,7 +1055,7 @@ async def test_measured_planning_cancellation_keeps_ledger_and_original_exceptio
         RunPlanFailure(error, initial_usage=initial, initial_elapsed_seconds=0.25),
         is_async=is_async,
     )
-    request = RunRequest(task="t", model_id="unbound", allowed_tools=("effect",))
+    request = support.request(task="t", model_id="unbound", allowed_tools=("effect",))
     with pytest.raises(error_type) as caught:
         if through_iterator:
             async for _ in iterate_run(request):
@@ -1087,7 +1098,7 @@ async def test_raw_planning_failures_cannot_claim_unmeasured_usage(
     error.initial_usage = RunUsage(requests=999, input_tokens=999)
     error.initial_elapsed_seconds = 999.0
     register_failing_decision(error, is_async=is_async)
-    request = RunRequest(
+    request = support.request(
         task="t",
         metadata={
             "initial_usage": {"requests": 888, "input_tokens": 888},
@@ -1128,8 +1139,8 @@ async def test_invalid_planning_failure_counters_reject_the_whole_ledger(
     def provide(request):
         raise RunPlanFailure(ValueError("original failure"), initial_usage=initial)
 
-    host_ports.register_run_decision_provider(provide)
-    result = await run(RunRequest(task="t"))
+    support.register_run_decision_provider(provide)
+    result = await run(support.request(task="t"))
     assert (result.status, result.steps, result.usage) == ("failed", 0, {})
     assert "initial_usage" in result.error
     assert "nonnegative integers" in result.error
@@ -1156,8 +1167,8 @@ async def test_invalid_planning_failure_elapsed_rejects_the_whole_ledger(
             initial_elapsed_seconds=elapsed,
         )
 
-    host_ports.register_run_decision_provider(provide)
-    result = await run(RunRequest(task="t"))
+    support.register_run_decision_provider(provide)
+    result = await run(support.request(task="t"))
     assert (result.status, result.steps, result.usage) == ("failed", 0, {})
     assert "initial_elapsed_seconds" in result.error
     assert [event["type"] for event in events] == ["error"]
@@ -1178,8 +1189,8 @@ async def test_planning_failure_requires_a_typed_host_ledger(
     def provide(request):
         raise RunPlanFailure(RuntimeError("original failure"), initial_usage=initial)
 
-    host_ports.register_run_decision_provider(provide)
-    result = await run(RunRequest(task="t"))
+    support.register_run_decision_provider(provide)
+    result = await run(support.request(task="t"))
     assert (result.status, result.steps, result.usage) == ("failed", 0, {})
     assert "initial_usage must be RunUsage" in result.error
     assert [event["type"] for event in events] == ["error"]
@@ -1203,8 +1214,8 @@ async def test_planning_failure_rejects_an_incoherent_host_token_total(
             initial_usage=IncoherentUsage(requests=2, input_tokens=9, output_tokens=3),
         )
 
-    host_ports.register_run_decision_provider(provide)
-    result = await run(RunRequest(task="t"))
+    support.register_run_decision_provider(provide)
+    result = await run(support.request(task="t"))
     assert (result.status, result.steps, result.usage) == ("failed", 0, {})
     assert "initial_usage total_tokens" in result.error
     assert [event["type"] for event in events] == ["error"]
@@ -1224,7 +1235,7 @@ async def test_model_cannot_inject_a_second_planning_failure_ledger(events):
 
     plan = plan_of(FunctionModel(fail), initial_usage=RunUsage(requests=2))
     result = await run(
-        RunRequest(
+        support.request(
             task="t",
             metadata={
                 "initial_usage": {"requests": 888, "input_tokens": 888},
@@ -1264,7 +1275,7 @@ async def test_invalid_planning_cancellation_ledger_fails_before_cancellation(
             initial_elapsed_seconds=float("nan") if invalid_part == "elapsed" else 0,
         )
     )
-    result = await run(RunRequest(task="t"))
+    result = await run(support.request(task="t"))
     assert (result.status, result.steps, result.usage) == ("failed", 0, {})
     assert result.error.startswith("ValueError: initial_")
     assert [event["type"] for event in events] == ["error"]
@@ -1285,7 +1296,9 @@ async def test_planning_failure_does_not_estimate_unreported_tokens(
         )
     )
     result = await run(
-        RunRequest(task="Prompt and output text must not become token measurements")
+        support.request(
+            task="Prompt and output text must not become token measurements"
+        )
     )
     assert (result.status, result.steps) == ("failed", 0)
     assert result.usage == {
@@ -1329,8 +1342,8 @@ async def test_task_cancellation_after_planner_consumption_reports_actual_usage(
             raise RunPlanFailure(error, initial_usage=initial) from error
         pytest.fail("publication unexpectedly completed")
 
-    host_ports.register_run_decision_provider(provide)
-    request = RunRequest(task="t", model_id="unbound", allowed_tools=("effect",))
+    support.register_run_decision_provider(provide)
+    request = support.request(task="t", model_id="unbound", allowed_tools=("effect",))
     execution = asyncio.create_task(run(request))
     try:
         await asyncio.wait_for(consumed.wait(), timeout=0.5)
@@ -1612,7 +1625,7 @@ def register_measured_run_failure(phase, initial):
             RunPlanFailure(ValueError("planner failed"), initial_usage=initial)
         )
         return calls
-    host_ports.register_model_provider(resolve)
+    support.register_model_provider(resolve)
     dependency_plan = None
     if phase == "dag":
         dependency_plan = DependencyPlan(
@@ -1625,7 +1638,7 @@ def register_measured_run_failure(phase, initial):
         initial_usage=initial,
         dependency_plan=dependency_plan,
     )
-    host_ports.register_run_decision_provider(lambda request: plan)
+    support.register_run_decision_provider(lambda request: plan)
     return calls
 
 
@@ -1635,7 +1648,7 @@ async def failed_result_from_entrypoint(entrypoint, request, events):
 
     if entrypoint == "executor":
         with pytest.raises(RunFailed) as caught:
-            await AgentRunExecutor().execute_agent(request)
+            await AgentRunExecutor(ports=support.PORTS).execute_agent(request)
         result = caught.value.result.as_dict()
         assert caught.value.run_id == request.run_id
         assert caught.value.usage == result["usage"]
@@ -1674,7 +1687,7 @@ async def test_failed_run_receipt_matches_the_single_terminal_aggregate(
     initial = RunUsage(requests=2, tool_calls=1, input_tokens=3, output_tokens=4)
     original = asdict(initial)
     calls = register_measured_run_failure(phase, initial)
-    request = RunRequest(task="t", run_id="actual-run")
+    request = support.request(task="t", run_id="actual-run")
     result = await failed_result_from_entrypoint(entrypoint, request, events)
     assert result == {
         "run_id": request.run_id,
@@ -1713,13 +1726,13 @@ async def test_executor_failure_preserves_missing_usage_as_empty(phase, events):
         raise ValueError("no measured usage")
 
     if phase == "planner":
-        host_ports.register_run_decision_provider(fail)
+        support.register_run_decision_provider(fail)
     elif phase == "setup":
-        host_ports.register_model_provider(fail)
-        host_ports.register_run_decision_provider(lambda request: plan_of("host:model"))
-    request = RunRequest(task="unreported tokens must not be estimated")
+        support.register_model_provider(fail)
+        support.register_run_decision_provider(lambda request: plan_of("host:model"))
+    request = support.request(task="unreported tokens must not be estimated")
     with pytest.raises(RunFailed) as caught:
-        await AgentRunExecutor().execute_agent(request)
+        await AgentRunExecutor(ports=support.PORTS).execute_agent(request)
     assert caught.value.run_id == request.run_id
     assert caught.value.usage == {}
     assert caught.value.result.steps == 0
@@ -1740,17 +1753,17 @@ async def test_executor_uses_its_own_aggregate_not_a_foreign_failure_receipt(
         raise forged
 
     if phase == "planner":
-        host_ports.register_run_decision_provider(fail)
+        support.register_run_decision_provider(fail)
     else:
-        host_ports.register_model_provider(fail)
+        support.register_model_provider(fail)
         plan = plan_of(
             "host:model" if phase == "setup" else FunctionModel(fail),
             initial_usage=RunUsage(requests=2, input_tokens=3, output_tokens=4),
         )
-        host_ports.register_run_decision_provider(lambda request: plan)
-    request = RunRequest(task="t", run_id="actual-run")
+        support.register_run_decision_provider(lambda request: plan)
+    request = support.request(task="t", run_id="actual-run")
     with pytest.raises(RunFailed) as caught:
-        await AgentRunExecutor().execute_agent(request)
+        await AgentRunExecutor(ports=support.PORTS).execute_agent(request)
     assert caught.value is not forged
     assert caught.value.run_id == request.run_id
     assert caught.value.result.output == ""
@@ -1786,8 +1799,10 @@ async def test_executor_keeps_successful_and_stopped_return_contract(kind, event
         stop=StopRule(stop_markers=("ok",)) if kind == "stop_marker" else StopRule(),
         budget=RunBudget(request_limit=2) if kind == "budget" else RunBudget(),
     )
-    host_ports.register_run_decision_provider(lambda request: plan)
-    result = await AgentRunExecutor().execute_agent(RunRequest(task="t"))
+    support.register_run_decision_provider(lambda request: plan)
+    result = await AgentRunExecutor(ports=support.PORTS).execute_agent(
+        support.request(task="t")
+    )
     assert isinstance(result, RunResult)
     assert result.status == ("completed" if kind == "completed" else "stopped")
     assert result.steps == (0 if kind == "budget" else 1)
@@ -1813,9 +1828,9 @@ async def test_executor_preserves_raw_and_measured_planner_cancellation(
         RunPlanFailure(error, initial_usage=initial) if measured else error,
         is_async=is_async,
     )
-    request = RunRequest(task="t")
+    request = support.request(task="t")
     with pytest.raises(error_type) as caught:
-        await AgentRunExecutor().execute_agent(request)
+        await AgentRunExecutor(ports=support.PORTS).execute_agent(request)
     assert caught.value is error and caught.value.__cause__ is cause
     if measured:
         assert [event["type"] for event in events] == ["run_cancelled"]
@@ -1859,9 +1874,11 @@ async def test_executor_task_cancellation_remains_cancelled_with_measured_usage(
         FunctionModel(respond),
         initial_usage=RunUsage(requests=2, input_tokens=3, output_tokens=4),
     )
-    host_ports.register_run_decision_provider(lambda request: plan)
-    request = RunRequest(task="t")
-    execution = asyncio.create_task(AgentRunExecutor().execute_agent(request))
+    support.register_run_decision_provider(lambda request: plan)
+    request = support.request(task="t")
+    execution = asyncio.create_task(
+        AgentRunExecutor(ports=support.PORTS).execute_agent(request)
+    )
     try:
         await asyncio.wait_for(started.wait(), timeout=0.5)
         execution.cancel("stop model execution")
@@ -1918,7 +1935,7 @@ async def test_terminal_observer_preserves_host_mapping_tools_and_privacy(
         else:
             yield {0: DeltaToolCall(name="native_read", json_args="{}")}
 
-    request = RunRequest(
+    request = support.request(
         task="inspect",
         agent_name="native",
         run_id="admitted-id",
@@ -1940,9 +1957,9 @@ async def test_terminal_observer_preserves_host_mapping_tools_and_privacy(
     async def observe(event):
         native.append(event)
 
-    host_ports.register_run_decision_provider(decide)
+    support.register_run_decision_provider(decide)
     if through_port:
-        result = await AgentRunExecutor().execute_agent(
+        result = await AgentRunExecutor(ports=support.PORTS).execute_agent(
             request, session=session, stream_observer=observe
         )
     else:
@@ -1979,16 +1996,18 @@ async def test_terminal_observer_keeps_failure_cancel_and_budget(
             raise asyncio.CancelledError
         raise RuntimeError("secret observer detail")
 
-    host_ports.register_run_decision_provider(
+    support.register_run_decision_provider(
         lambda request: RunPlan(
             model=FunctionModel(stream_function=stream),
             steps=(request.task,),
             budget=RunBudget(request_limit=0 if outcome == "budget" else 2),
         )
     )
-    request = RunRequest(task="inspect")
+    request = support.request(task="inspect")
     execution = (
-        AgentRunExecutor().execute_agent(request, stream_observer=observe)
+        AgentRunExecutor(ports=support.PORTS).execute_agent(
+            request, stream_observer=observe
+        )
         if through_port
         else run(request, stream_observer=observe)
     )
@@ -2022,13 +2041,13 @@ async def test_native_executor_observers_are_per_invocation():
         await both_entered.wait()
         yield label
 
-    host_ports.register_run_decision_provider(
+    support.register_run_decision_provider(
         lambda request: RunPlan(
             model=FunctionModel(stream_function=stream),
             steps=(request.task,),
         )
     )
-    executor = AgentRunExecutor()
+    executor = AgentRunExecutor(ports=support.PORTS)
 
     async def execute(label):
         async def observe(event):
@@ -2036,7 +2055,7 @@ async def test_native_executor_observers_are_per_invocation():
                 outputs[label].append(event.part.content)
 
         return await executor.execute_agent(
-            RunRequest(task=label), stream_observer=observe
+            support.request(task=label), stream_observer=observe
         )
 
     first, second = await asyncio.gather(execute("one"), execute("two"))
@@ -2051,8 +2070,12 @@ async def test_live_shared_budget_charges_parent_and_child_once():
     budget = RunBudget(request_limit=1)
     shared = LiveSharedBudget(budget, deadline=asyncio.get_running_loop().time() + 10)
     plan = plan_of(echo_model(calls), budget=budget)
-    first = await run(RunRequest(task="parent"), plan=plan, shared_execution=shared)
-    second = await run(RunRequest(task="child"), plan=plan, shared_execution=shared)
+    first = await run(
+        support.request(task="parent"), plan=plan, shared_execution=shared
+    )
+    second = await run(
+        support.request(task="child"), plan=plan, shared_execution=shared
+    )
     assert first.status == "completed"
     assert second.status == "stopped"
     assert len(calls) == 1
@@ -2067,12 +2090,12 @@ async def test_live_shared_budget_refuses_changed_plan_and_closed_scope():
     shared = LiveSharedBudget(budget, deadline=asyncio.get_running_loop().time() + 10)
     widened = plan_of(echo_model(calls), budget=RunBudget(request_limit=3))
     assert (
-        await run(RunRequest(task="child"), plan=widened, shared_execution=shared)
+        await run(support.request(task="child"), plan=widened, shared_execution=shared)
     ).status == "failed"
     shared.close()
     original = plan_of(echo_model(calls), budget=budget)
     assert (
-        await run(RunRequest(task="child"), plan=original, shared_execution=shared)
+        await run(support.request(task="child"), plan=original, shared_execution=shared)
     ).status == "failed"
     assert calls == []
 
@@ -2094,11 +2117,13 @@ async def test_live_shared_budget_reserves_before_parallel_child_dispatch():
     shared = LiveSharedBudget(budget, deadline=asyncio.get_running_loop().time() + 10)
     plan = plan_of(FunctionModel(respond), budget=budget)
     parent = asyncio.create_task(
-        run(RunRequest(task="parent"), plan=plan, shared_execution=shared)
+        run(support.request(task="parent"), plan=plan, shared_execution=shared)
     )
     try:
         await asyncio.wait_for(started.wait(), 0.5)
-        child = await run(RunRequest(task="child"), plan=plan, shared_execution=shared)
+        child = await run(
+            support.request(task="child"), plan=plan, shared_execution=shared
+        )
         assert child.status == "stopped"
         assert calls == ["model"]
     finally:
@@ -2112,8 +2137,10 @@ async def test_live_shared_budget_keeps_run_usage_separate():
     budget = RunBudget(request_limit=2)
     shared = LiveSharedBudget(budget, deadline=asyncio.get_running_loop().time() + 10)
     plan = plan_of(echo_model(), budget=budget)
-    parent = await run(RunRequest(task="parent"), plan=plan, shared_execution=shared)
-    child = await run(RunRequest(task="child"), plan=plan, shared_execution=shared)
+    parent = await run(
+        support.request(task="parent"), plan=plan, shared_execution=shared
+    )
+    child = await run(support.request(task="child"), plan=plan, shared_execution=shared)
     assert parent.usage["requests"] == child.usage["requests"] == 1
     assert shared.usage.requests == 2
 
@@ -2136,13 +2163,13 @@ async def test_live_shared_budget_serializes_finite_token_allowance():
         if event["type"] == "run_started" and event["run_id"] == "child":
             child_started.set()
 
-    host_ports.register_run_event_sink(observe)
+    support.register_run_event_sink(observe)
     budget = RunBudget(request_limit=5, total_tokens_limit=1)
     shared = LiveSharedBudget(budget, deadline=asyncio.get_running_loop().time() + 10)
     plan = plan_of(FunctionModel(respond), budget=budget)
     parent = asyncio.create_task(
         run(
-            RunRequest(task="parent", run_id="parent"),
+            support.request(task="parent", run_id="parent"),
             plan=plan,
             shared_execution=shared,
         )
@@ -2152,7 +2179,7 @@ async def test_live_shared_budget_serializes_finite_token_allowance():
         await asyncio.wait_for(started.wait(), 0.5)
         child = asyncio.create_task(
             run(
-                RunRequest(task="child", run_id="child"),
+                support.request(task="child", run_id="child"),
                 plan=plan,
                 shared_execution=shared,
             )
@@ -2169,7 +2196,7 @@ async def test_live_shared_budget_serializes_finite_token_allowance():
             *(task for task in (parent, child) if task is not None),
             return_exceptions=True,
         )
-        host_ports.register_run_event_sink(None)
+        support.register_run_event_sink(None)
 
 
 async def test_live_shared_budget_charges_tool_effects_across_runs():
@@ -2186,8 +2213,10 @@ async def test_live_shared_budget_charges_tool_effects_across_runs():
     budget = RunBudget(request_limit=5, tool_calls_limit=1)
     shared = LiveSharedBudget(budget, deadline=asyncio.get_running_loop().time() + 10)
     plan = plan_of(tool_model("effect"), toolsets=(toolset,), budget=budget)
-    parent = await run(RunRequest(task="parent"), plan=plan, shared_execution=shared)
-    child = await run(RunRequest(task="child"), plan=plan, shared_execution=shared)
+    parent = await run(
+        support.request(task="parent"), plan=plan, shared_execution=shared
+    )
+    child = await run(support.request(task="child"), plan=plan, shared_execution=shared)
     assert parent.status == "completed"
     assert child.status == "stopped"
     assert effects == ["effect"]
@@ -2207,16 +2236,20 @@ async def test_live_shared_budget_refuses_checkpoint_and_seeded_usage():
     seeded = plan_of(
         echo_model(calls), budget=budget, initial_usage=RunUsage(requests=1)
     )
-    result = await run(RunRequest(task="child"), plan=seeded, shared_execution=shared)
+    result = await run(
+        support.request(task="child"), plan=seeded, shared_execution=shared
+    )
     assert result.status == "failed"
 
     @contextlib.asynccontextmanager
     async def checkpoint(_request, _plan):
         yield object()
 
-    host_ports.register_run_checkpoint_factory(checkpoint)
+    support.register_run_checkpoint_factory(checkpoint)
     plan = plan_of(echo_model(calls), budget=budget)
-    result = await run(RunRequest(task="child"), plan=plan, shared_execution=shared)
+    result = await run(
+        support.request(task="child"), plan=plan, shared_execution=shared
+    )
     assert result.status == "failed"
     assert "cannot use a durable checkpoint" in result.error
     assert calls == []
@@ -2224,18 +2257,18 @@ async def test_live_shared_budget_refuses_checkpoint_and_seeded_usage():
 
 
 async def test_native_executor_consumes_the_host_shared_budget():
-    from meristem.runtime import LiveSharedBudget
+    from meristem.graph import LiveSharedBudget
 
     calls: list[int] = []
     budget = RunBudget(request_limit=1)
     shared = LiveSharedBudget(budget, deadline=asyncio.get_running_loop().time() + 10)
     plan = plan_of(echo_model(calls), budget=budget)
-    executor = AgentRunExecutor()
+    executor = AgentRunExecutor(ports=support.PORTS)
     parent = await executor.execute_agent(
-        RunRequest(task="parent"), shared_execution=shared, plan=plan
+        support.request(task="parent"), shared_execution=shared, plan=plan
     )
     child = await executor.execute_agent(
-        RunRequest(task="child"), shared_execution=shared, plan=plan
+        support.request(task="child"), shared_execution=shared, plan=plan
     )
     assert parent.status == "completed"
     assert child.status == "stopped"
@@ -2260,7 +2293,7 @@ async def test_live_shared_budget_keeps_concurrent_child_usage_local():
     plan = plan_of(FunctionModel(respond), budget=budget)
     executions = [
         asyncio.create_task(
-            run(RunRequest(task=label), plan=plan, shared_execution=shared)
+            run(support.request(task=label), plan=plan, shared_execution=shared)
         )
         for label in ("parent", "child")
     ]
@@ -2277,7 +2310,7 @@ async def test_live_shared_budget_keeps_concurrent_child_usage_local():
 
 
 async def test_live_shared_budget_refuses_unaccounted_plan_provider():
-    from meristem.runtime import LiveSharedBudget
+    from meristem.graph import LiveSharedBudget
 
     provider_calls: list[str] = []
     budget = RunBudget(request_limit=2)
@@ -2287,28 +2320,28 @@ async def test_live_shared_budget_refuses_unaccounted_plan_provider():
         provider_calls.append("decision")
         return plan_of(echo_model(), budget=budget)
 
-    host_ports.register_run_decision_provider(provider)
-    result = await run(RunRequest(task="child"), shared_execution=shared)
+    support.register_run_decision_provider(provider)
+    result = await run(support.request(task="child"), shared_execution=shared)
     assert result.status == "failed"
     assert provider_calls == []
     assert shared.usage.requests == 0
 
 
 async def test_live_shared_budget_refuses_expired_and_foreign_loop():
-    from meristem.runtime import LiveSharedBudget
+    from meristem.graph import LiveSharedBudget
 
     calls: list[int] = []
     budget = RunBudget(request_limit=2)
     expired = LiveSharedBudget(budget, deadline=asyncio.get_running_loop().time() - 1)
     plan = plan_of(echo_model(calls), budget=budget)
     assert (
-        await run(RunRequest(task="child"), plan=plan, shared_execution=expired)
+        await run(support.request(task="child"), plan=plan, shared_execution=expired)
     ).status == "stopped"
 
     live = LiveSharedBudget(budget, deadline=asyncio.get_running_loop().time() + 10)
     foreign = await asyncio.to_thread(
         lambda: asyncio.run(
-            run(RunRequest(task="child"), plan=plan, shared_execution=live)
+            run(support.request(task="child"), plan=plan, shared_execution=live)
         )
     )
     assert foreign.status == "failed"
@@ -2316,7 +2349,7 @@ async def test_live_shared_budget_refuses_expired_and_foreign_loop():
 
 
 async def test_live_shared_budget_revocation_blocks_a_waiting_child():
-    from meristem.runtime import LiveSharedBudget
+    from meristem.graph import LiveSharedBudget
 
     started, release, child_started = asyncio.Event(), asyncio.Event(), asyncio.Event()
     calls: list[str] = []
@@ -2331,13 +2364,13 @@ async def test_live_shared_budget_revocation_blocks_a_waiting_child():
         if event["type"] == "run_started" and event["run_id"] == "child":
             child_started.set()
 
-    host_ports.register_run_event_sink(observe)
+    support.register_run_event_sink(observe)
     budget = RunBudget(request_limit=5, max_concurrent_requests=1)
     shared = LiveSharedBudget(budget, deadline=asyncio.get_running_loop().time() + 10)
     plan = plan_of(FunctionModel(respond), budget=budget)
     parent = asyncio.create_task(
         run(
-            RunRequest(task="parent", run_id="parent"),
+            support.request(task="parent", run_id="parent"),
             plan=plan,
             shared_execution=shared,
         )
@@ -2347,7 +2380,7 @@ async def test_live_shared_budget_revocation_blocks_a_waiting_child():
         await asyncio.wait_for(started.wait(), 0.5)
         child = asyncio.create_task(
             run(
-                RunRequest(task="child", run_id="child"),
+                support.request(task="child", run_id="child"),
                 plan=plan,
                 shared_execution=shared,
             )
@@ -2365,4 +2398,4 @@ async def test_live_shared_budget_revocation_blocks_a_waiting_child():
             *(task for task in (parent, child) if task is not None),
             return_exceptions=True,
         )
-        host_ports.register_run_event_sink(None)
+        support.register_run_event_sink(None)

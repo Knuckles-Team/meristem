@@ -3,15 +3,15 @@
 import asyncio
 import json
 
+import ports_support as support
 import pytest
 from pydantic_ai.messages import ModelResponse, TextPart, ToolCallPart
 from pydantic_ai.models.function import FunctionModel
 from pydantic_ai.toolsets import FunctionToolset
 
-from meristem import host_ports
-from meristem.graph import RunBudget, RunPlan, RunRequest
+from meristem.graph import RunBudget, RunPlan
+from meristem.graph.hosted_run import iterate_client_run
 from meristem.graph.state import HarnessConfig
-from meristem.harness.hosted_run import iterate_client_run
 
 
 class Transport:
@@ -30,7 +30,7 @@ async def collect(request, transport):
 @pytest.mark.spec("MERISTEM-RUN-R001.11")
 async def test_public_hosted_run_binds_transport_without_replacing_request(events):
     transport = Transport()
-    request = RunRequest(task="inspect", run_id="admitted-run", context="bound")
+    request = support.request(task="inspect", run_id="admitted-run", context="bound")
     observed = []
 
     def model(messages, info):
@@ -49,7 +49,7 @@ async def test_public_hosted_run_binds_transport_without_replacing_request(event
         observed.append(value)
         return plan
 
-    host_ports.register_run_decision_provider(resolve)
+    support.register_run_decision_provider(resolve)
     emitted = await collect(request, transport)
     assert observed == [request] and observed[0] is request
     assert emitted[-1]["type"] == "graph_complete"
@@ -68,9 +68,9 @@ async def test_public_hosted_run_rejects_server_tools(server_tools):
         tool_names=("server_tool",) if server_tools == "names" else (),
         toolsets=(FunctionToolset(),) if server_tools == "toolsets" else (),
     )
-    host_ports.register_run_decision_provider(lambda request: plan)
+    support.register_run_decision_provider(lambda request: plan)
     with pytest.raises(PermissionError, match="client-only"):
-        await collect(RunRequest("inspect"), transport)
+        await collect(support.request("inspect"), transport)
     assert transport.calls == []
 
 
@@ -78,7 +78,7 @@ async def test_public_hosted_run_rejects_server_tools(server_tools):
 @pytest.mark.spec("MERISTEM-RUN-R001.11")
 async def test_non_request_refuses_before_host_provider(invalid):
     calls = []
-    host_ports.register_run_decision_provider(lambda value: calls.append(value))
+    support.register_run_decision_provider(lambda value: calls.append(value))
     with pytest.raises(TypeError, match="admitted RunRequest"):
         await collect(invalid, Transport())
     assert calls == []
@@ -88,7 +88,7 @@ async def test_non_request_refuses_before_host_provider(invalid):
 @pytest.mark.parametrize("valid", [True, False])
 @pytest.mark.spec("MERISTEM-RUN-R001.11")
 async def test_original_request_reaches_history_selection(valid):
-    request = RunRequest(
+    request = support.request(
         task="next",
         run_id="current",
         context="conversation",
@@ -116,8 +116,8 @@ async def test_original_request_reaches_history_selection(valid):
         calls.append(messages)
         return ModelResponse(parts=[TextPart("fresh")])
 
-    host_ports.register_run_history_provider(history)
-    host_ports.register_run_decision_provider(
+    support.register_run_history_provider(history)
+    support.register_run_decision_provider(
         lambda value: RunPlan(model=FunctionModel(respond), steps=(value.task,))
     )
     emitted = await collect(request, Transport())
@@ -143,22 +143,24 @@ async def test_received_budget_is_not_widened():
         calls.append(messages)
         return ModelResponse(parts=[TextPart("unexpected")])
 
-    host_ports.register_run_decision_provider(
+    support.register_run_decision_provider(
         lambda request: RunPlan(
             model=FunctionModel(respond),
             steps=("inspect",),
             budget=RunBudget(request_limit=0),
         )
     )
-    emitted = await collect(RunRequest("inspect"), Transport())
+    emitted = await collect(support.request("inspect"), Transport())
     assert emitted[-1]["result"]["status"] == "stopped"
     assert calls == []
 
 
 @pytest.mark.spec("MERISTEM-RUN-R001.11")
 async def test_closing_consumer_closes_delegated_run_before_return(events):
-    host_ports.register_run_decision_provider(lambda request: RunPlan(model="unused"))
-    execution = iterate_client_run(RunRequest("inspect", run_id="closed"), Transport())
+    support.register_run_decision_provider(lambda request: RunPlan(model="unused"))
+    execution = iterate_client_run(
+        support.request("inspect", run_id="closed"), Transport()
+    )
     assert (await anext(execution))["type"] == "run_started"
     await execution.aclose()
     assert events[-1]["type"] == "run_cancelled"
@@ -176,13 +178,13 @@ async def test_cancellation_reaches_active_model_and_run_events(events):
         finally:
             cancelled.set()
 
-    host_ports.register_run_decision_provider(
+    support.register_run_decision_provider(
         lambda request: RunPlan(
             model=FunctionModel(respond),
             steps=("inspect",),
         )
     )
-    task = asyncio.create_task(collect(RunRequest("inspect"), Transport()))
+    task = asyncio.create_task(collect(support.request("inspect"), Transport()))
     await entered.wait()
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
@@ -205,7 +207,7 @@ async def test_native_stream_text_arrives_before_run_completion(events):
         native.append(event)
         order.append("native")
 
-    host_ports.register_run_decision_provider(
+    support.register_run_decision_provider(
         lambda request: RunPlan(
             model=FunctionModel(stream_function=stream),
             steps=("inspect",),
@@ -213,7 +215,7 @@ async def test_native_stream_text_arrives_before_run_completion(events):
     )
     emitted = []
     async for event in iterate_client_run(
-        RunRequest("inspect", run_id="streamed"),
+        support.request("inspect", run_id="streamed"),
         Transport(),
         stream_observer=observe,
     ):
@@ -247,7 +249,7 @@ async def test_native_stream_tool_calls_use_same_bound_transport():
     async def observe(event):
         native.append(event)
 
-    host_ports.register_run_decision_provider(
+    support.register_run_decision_provider(
         lambda request: RunPlan(
             model=FunctionModel(stream_function=stream),
             steps=("inspect",),
@@ -257,7 +259,7 @@ async def test_native_stream_tool_calls_use_same_bound_transport():
     emitted = [
         event
         async for event in iterate_client_run(
-            RunRequest("inspect"),
+            support.request("inspect"),
             transport,
             stream_observer=observe,
         )
@@ -284,7 +286,7 @@ async def test_native_observer_failure_or_cancel_never_retries(cancel, events):
             raise asyncio.CancelledError
         raise RuntimeError("private transport failure")
 
-    host_ports.register_run_decision_provider(
+    support.register_run_decision_provider(
         lambda request: RunPlan(
             model=FunctionModel(stream_function=stream),
             steps=("inspect",),
@@ -295,7 +297,7 @@ async def test_native_observer_failure_or_cancel_never_retries(cancel, events):
         return [
             event
             async for event in iterate_client_run(
-                RunRequest("inspect"),
+                support.request("inspect"),
                 Transport(),
                 stream_observer=observe,
             )
@@ -324,7 +326,7 @@ async def test_native_observer_budget_refuses_before_streaming():
     async def observe(event):
         calls.append("observer")
 
-    host_ports.register_run_decision_provider(
+    support.register_run_decision_provider(
         lambda request: RunPlan(
             model=FunctionModel(stream_function=stream),
             steps=("inspect",),
@@ -334,7 +336,7 @@ async def test_native_observer_budget_refuses_before_streaming():
     emitted = [
         event
         async for event in iterate_client_run(
-            RunRequest("inspect"),
+            support.request("inspect"),
             Transport(),
             stream_observer=observe,
         )
@@ -356,7 +358,7 @@ async def test_native_observer_dependency_plan_refuses_before_model():
     async def observe(event):
         calls.append("observer")
 
-    host_ports.register_run_decision_provider(
+    support.register_run_decision_provider(
         lambda request: RunPlan(
             model=FunctionModel(stream_function=stream),
             dependency_plan=DependencyPlan((RunTask("step", "inspect"),), "step"),
@@ -365,7 +367,7 @@ async def test_native_observer_dependency_plan_refuses_before_model():
     emitted = [
         event
         async for event in iterate_client_run(
-            RunRequest("inspect"),
+            support.request("inspect"),
             Transport(),
             stream_observer=observe,
         )
@@ -389,7 +391,7 @@ async def test_private_thinking_stays_out_of_public_run_events(events):
     async def observe(event):
         native.append(event)
 
-    host_ports.register_run_decision_provider(
+    support.register_run_decision_provider(
         lambda request: RunPlan(
             model=FunctionModel(stream_function=stream),
             steps=("inspect",),
@@ -398,7 +400,7 @@ async def test_private_thinking_stays_out_of_public_run_events(events):
     emitted = [
         event
         async for event in iterate_client_run(
-            RunRequest("inspect"),
+            support.request("inspect"),
             Transport(),
             stream_observer=observe,
         )
@@ -425,7 +427,7 @@ async def test_observer_backpressure_uses_existing_deadline(events):
         finally:
             cancelled.set()
 
-    host_ports.register_run_decision_provider(
+    support.register_run_decision_provider(
         lambda request: RunPlan(
             model=FunctionModel(stream_function=stream),
             steps=("inspect",),
@@ -435,7 +437,7 @@ async def test_observer_backpressure_uses_existing_deadline(events):
     emitted = [
         event
         async for event in iterate_client_run(
-            RunRequest("inspect"),
+            support.request("inspect"),
             Transport(),
             stream_observer=observe,
         )

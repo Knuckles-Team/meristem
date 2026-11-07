@@ -1,6 +1,7 @@
 from dataclasses import replace
 from pathlib import Path
 
+import ports_support as support
 import pytest
 
 from meristem.harness.changeset_loop import (
@@ -197,10 +198,7 @@ async def test_empty_symbol_acceptance_is_not_reported_as_success():
 @pytest.mark.asyncio
 async def test_rebases_on_conflict(tmp_path, monkeypatch):
     events = []
-    monkeypatch.setattr(
-        "meristem.harness.changeset_loop.host_ports.emit_run_event",
-        events.append,
-    )
+    support.register_run_event_sink(events.append)
     source = Source([SourceConflict(("a.txt",)), Submitted("change")])
     ws = workspace(tmp_path)
     try:
@@ -212,6 +210,7 @@ async def test_rebases_on_conflict(tmp_path, monkeypatch):
             fast_gates=("true",),
             submitter=source,
             gate_runner=source,
+            ports=support.PORTS,
         )
     finally:
         await ws.stop()
@@ -234,10 +233,7 @@ async def test_rebases_on_conflict(tmp_path, monkeypatch):
 @pytest.mark.asyncio
 async def test_failed_gate_does_not_submit(tmp_path, monkeypatch):
     events = []
-    monkeypatch.setattr(
-        "meristem.harness.changeset_loop.host_ports.emit_run_event",
-        events.append,
-    )
+    support.register_run_event_sink(events.append)
     source = Source([])
     ws = workspace(tmp_path)
     try:
@@ -249,6 +245,7 @@ async def test_failed_gate_does_not_submit(tmp_path, monkeypatch):
             fast_gates=("false",),
             submitter=source,
             gate_runner=source,
+            ports=support.PORTS,
         )
     finally:
         await ws.stop()
@@ -274,6 +271,7 @@ async def test_unbound_refuses_before_edit(tmp_path):
         run_ref="run",
         fast_gates=("true",),
         submitter=None,
+        ports=support.PORTS,
     )
     assert result.reason == "submitter_unavailable"
     assert not (tmp_path / "a.txt").exists()
@@ -289,6 +287,7 @@ async def test_missing_sandbox_runner_refuses_before_materialization(tmp_path):
         run_ref="run",
         fast_gates=("true",),
         submitter=source,
+        ports=support.PORTS,
     )
     assert result.reason == "sandbox_unavailable"
     assert source.heads == []
@@ -308,6 +307,7 @@ async def test_conflict_bound(tmp_path):
             fast_gates=("true",),
             submitter=source,
             gate_runner=source,
+            ports=support.PORTS,
         )
     finally:
         await ws.stop()
@@ -331,6 +331,7 @@ async def test_received_conflict_limit_bounds_submissions(tmp_path, limit):
             submitter=source,
             gate_runner=source,
             max_rebases=limit,
+            ports=support.PORTS,
         )
     finally:
         await ws.stop()
@@ -355,6 +356,7 @@ async def test_invalid_source_outcome_refuses_without_retry(tmp_path, outcome):
             fast_gates=("true",),
             submitter=source,
             gate_runner=source,
+            ports=support.PORTS,
         )
     finally:
         await ws.stop()
@@ -380,6 +382,7 @@ async def test_unavailable_new_head_refuses_before_retry(tmp_path):
             fast_gates=("true",),
             submitter=source,
             gate_runner=source,
+            ports=support.PORTS,
         )
     finally:
         await ws.stop()
@@ -399,6 +402,7 @@ async def test_invalid_rebase_limit_refused_before_workspace_changes(tmp_path, l
         fast_gates=("true",),
         submitter=source,
         max_rebases=limit,
+        ports=support.PORTS,
     )
     assert result.reason == "invalid_cycle"
     assert source.heads == []
@@ -414,6 +418,7 @@ async def test_invalid_gate_sequence_refused_before_workspace_changes(tmp_path):
         run_ref="run",
         fast_gates="true",
         submitter=source,
+        ports=support.PORTS,
     )
     assert result.reason == "invalid_cycle"
     assert source.heads == []
@@ -429,6 +434,7 @@ async def test_invalid_edit_refused_before_workspace_changes(tmp_path):
         run_ref="run",
         fast_gates=("true",),
         submitter=source,
+        ports=support.PORTS,
     )
     assert result.reason == "invalid_cycle"
     assert source.heads == []
@@ -447,6 +453,7 @@ async def test_gate_modifying_edit_refuses_submission(tmp_path):
             fast_gates=("printf changed > a.txt",),
             submitter=source,
             gate_runner=source,
+            ports=support.PORTS,
         )
     finally:
         await ws.stop()
@@ -472,6 +479,7 @@ async def test_sandbox_cannot_substitute_a_different_path(tmp_path):
             fast_gates=("true",),
             submitter=source,
             gate_runner=source,
+            ports=support.PORTS,
         )
     finally:
         await ws.stop()
@@ -489,6 +497,7 @@ async def test_path_escape_refused_before_materialization(tmp_path):
         run_ref="run",
         fast_gates=("true",),
         submitter=source,
+        ports=support.PORTS,
     )
     assert result.reason == "invalid_edit_path"
     assert source.heads == []
@@ -505,6 +514,7 @@ async def test_malformed_path_refused_before_materialization(tmp_path, path):
         run_ref="run",
         fast_gates=("true",),
         submitter=source,
+        ports=support.PORTS,
     )
     assert result.reason == "invalid_edit_path"
     assert source.heads == []
@@ -521,6 +531,7 @@ async def test_symlink_loop_refused_before_materialization(tmp_path):
         run_ref="run",
         fast_gates=("true",),
         submitter=source,
+        ports=support.PORTS,
     )
     assert result.reason == "invalid_edit_path"
     assert source.heads == []

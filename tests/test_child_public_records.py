@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ports_support as support
 import pytest
 from pydantic_ai import Agent
 from pydantic_ai.models.function import DeltaThinkingPart, DeltaToolCall, FunctionModel
@@ -133,8 +134,7 @@ async def test_explicit_summary_and_unbound_run() -> None:
 async def test_run_loop_builds_child_publisher_from_host_child_identity() -> None:
     from contextlib import asynccontextmanager
 
-    from meristem import host_ports
-    from meristem.graph import RunPlan, RunRequest, run
+    from meristem.graph import RunPlan, run
 
     publisher = Publisher()
     effects: list[int] = []
@@ -143,11 +143,11 @@ async def test_run_loop_builds_child_publisher_from_host_child_identity() -> Non
     async def scope(request):
         yield publisher
 
-    host_ports.register_durable_run_event_factory(scope)
+    support.register_durable_run_event_factory(scope)
     try:
         agent = _agent(effects)
         result = await run(
-            RunRequest(
+            support.request(
                 task="go",
                 run_id="run",
                 metadata={"child_id": "child-1", "conversation_id": "conv-1"},
@@ -159,7 +159,7 @@ async def test_run_loop_builds_child_publisher_from_host_child_identity() -> Non
             ),
         )
     finally:
-        host_ports.register_durable_run_event_factory(None)
+        support.register_durable_run_event_factory(None)
 
     assert result.status == "completed"
     assert effects == [7]
@@ -177,8 +177,7 @@ async def test_run_loop_builds_child_publisher_from_host_child_identity() -> Non
 async def test_run_loop_without_child_identity_keeps_ordinary_projection() -> None:
     from contextlib import asynccontextmanager
 
-    from meristem import host_ports
-    from meristem.graph import RunPlan, RunRequest, run
+    from meristem.graph import RunPlan, run
 
     publisher = Publisher()
 
@@ -189,12 +188,12 @@ async def test_run_loop_without_child_identity_keeps_ordinary_projection() -> No
     async def stream(messages, info):
         yield "answer"
 
-    host_ports.register_durable_run_event_factory(scope)
+    support.register_durable_run_event_factory(scope)
     try:
         await run(
-            RunRequest(task="go", run_id="run"),
+            support.request(task="go", run_id="run"),
             plan=RunPlan(model=FunctionModel(stream_function=stream), steps=("go",)),
         )
     finally:
-        host_ports.register_durable_run_event_factory(None)
+        support.register_durable_run_event_factory(None)
     assert [k for k, _ in publisher.records] == ["text_delta", "state"]

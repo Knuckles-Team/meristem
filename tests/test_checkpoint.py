@@ -4,6 +4,7 @@ import asyncio
 import contextlib
 import json
 
+import ports_support as support
 import pytest
 from pydantic_ai.messages import ModelResponse, TextPart
 from pydantic_ai.models.function import FunctionModel
@@ -14,7 +15,6 @@ from meristem.graph import (
     DependencyPlan,
     RunBudget,
     RunPlan,
-    RunRequest,
     RunTask,
     ToolStep,
     ToolStepResult,
@@ -47,7 +47,7 @@ def bind(port):
     async def scope(request, plan):
         yield port
 
-    host_ports.register_run_checkpoint_factory(scope)
+    support.register_run_checkpoint_factory(scope)
 
 
 def setup(port, *, limit=50):
@@ -64,7 +64,7 @@ def setup(port, *, limit=50):
         steps=("first", "second", "third"),
         budget=RunBudget(request_limit=limit),
     )
-    return RunRequest(task="task", run_id="same-run"), plan, prompts
+    return support.request(task="task", run_id="same-run"), plan, prompts
 
 
 async def stop_after_first(request, plan):
@@ -174,14 +174,14 @@ async def test_restart_does_not_repeat_completed_native_tool_effect():
             return ModelResponse(parts=[TextPart(str(last.content))])
         return ModelResponse(parts=[ToolCallPart("effect", {})])
 
-    host_ports.register_native_toolset_provider(
+    support.register_native_toolset_provider(
         host_ports.NativeToolsetProvider(
             available_tools=lambda: ["effect"], build_toolset=lambda names, key: tools
         )
     )
     port = HostCheckpoint()
     bind(port)
-    request = RunRequest(task="t", run_id="native-tool-run")
+    request = support.request(task="t", run_id="native-tool-run")
     plan = RunPlan(
         model=FunctionModel(respond),
         steps=("first", "second"),
@@ -248,7 +248,7 @@ async def test_dependency_checkpoint_restores_completed_tasks_and_shared_budget(
         tool_calls.append((task_id, dict(arguments)))
         return ToolStepResult(result="b")
 
-    host_ports.register_tool_caller(caller)
+    support.register_tool_caller(caller)
     plan = RunPlan(
         model=FunctionModel(respond),
         budget=RunBudget(request_limit=3, tool_calls_limit=1),
@@ -269,7 +269,7 @@ async def test_dependency_checkpoint_restores_completed_tasks_and_shared_budget(
             plan_id="checkpoint-dag",
         ),
     )
-    request = RunRequest(task="dag", run_id="checkpoint-dag-run")
+    request = support.request(task="dag", run_id="checkpoint-dag-run")
 
     events = iterate_run(request, plan=plan)
     async for event in events:

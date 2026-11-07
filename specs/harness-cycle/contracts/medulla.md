@@ -21,7 +21,7 @@ Meristem calls medulla only through the engine decision port the host binds. Med
 
 ## Wire shape
 
-The request is a `ContrastRequest` (`meristem/harness/harness_cycle.py:275`) with candidate and trace references and the conditions digest. The answer is a `ContrastAnswer` (`harness_cycle.py:287`) that adopts one candidate or abstains. The persist step sends the adoption, the contrast and the lesson as one `DecisionLog` entry. The decision port that carries both is not in the tree yet (rows R001.10 and R079).
+The request is a `ContrastRequest` (`meristem/graph/harness_cycle.py:275`) with candidate and trace references and the conditions digest. The answer is a `ContrastAnswer` (`harness_cycle.py:287`) that adopts one candidate or abstains. The persist step sends the adoption, the contrast and the lesson as one `DecisionLog` entry. The decision port that carries both is not in the tree yet (rows R001.10 and R079).
 
 ## Refusal codes
 
@@ -32,7 +32,7 @@ The request is a `ContrastRequest` (`meristem/harness/harness_cycle.py:275`) wit
 
 ## Authoritative types
 
-- Meristem: `meristem/harness/harness_cycle.py` (`HarnessCandidate`, `CycleOutcome`, `ContrastRequest`, `ContrastAnswer`, `CycleRefusal`).
+- Meristem: `meristem/graph/harness_cycle.py` (`HarnessCandidate`, `CycleOutcome`, `ContrastRequest`, `ContrastAnswer`, `CycleRefusal`).
 - Medulla: the generated client and the rows named here; meristem copies none of those types.
 
 ## Test vectors

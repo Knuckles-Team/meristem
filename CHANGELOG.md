@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Breaking, hard cutover (`MERISTEM-HARNESS-CYCLE-R088`): units import downward (`host_ports`, `runtime`, `harness`, `graph`, `rlm`) and hold no module-level state. The 19 `register_*` provider registrations are gone; the host builds one `meristem.host_ports.HostPorts` and sets it on `RunRequest.ports` (also `AgentRunExecutor(ports=...)`, `execute_graph(ports=...)`, `run_rlm(ports=...)`). The port functions (`emit_run_event`, `resolve_model`, `build_native_toolset`, `fleet_catalog` and the rest) are methods of `HostPorts`.
+- `PlanItem`, `PlanState`, `ToolStepResult` and `ToolOutcome` now live in `meristem.host_ports`; `read_run_history` and `read_recursive_run_history` move to `meristem.harness.conversation_history`; `harness_cycle` and `hosted_run` move to `meristem.graph`; `meristem.runtime` no longer re-exports the run contracts (import them from `meristem.graph`).
+
 ## [5.0.0] - 2026-10-30
 
 ### Changed

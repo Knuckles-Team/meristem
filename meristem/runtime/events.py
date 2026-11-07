@@ -18,6 +18,8 @@ Two design rules keep this honest:
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from types import MappingProxyType
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -275,14 +277,16 @@ OBSERVATION_ADAPTER: TypeAdapter = TypeAdapter(Observation)
 
 # Which ActionPolicy (OS-5.24) action name each action kind must be gated by.
 # Read-only actions map to ``None`` and bypass the mutating-action gate.
-_MUTATING_KIND_TO_POLICY: dict[str, str] = {
-    "cmd_run": "workspace.cmd",
-    "test_run": "workspace.cmd",
-    "file_write": "workspace.write",
-    "file_edit": "workspace.edit",
-    "browse": "workspace.browse",
-    "computer_use": "workspace.computer_use",
-}
+_MUTATING_KIND_TO_POLICY: Mapping[str, str] = MappingProxyType(
+    {
+        "cmd_run": "workspace.cmd",
+        "test_run": "workspace.cmd",
+        "file_write": "workspace.write",
+        "file_edit": "workspace.edit",
+        "browse": "workspace.browse",
+        "computer_use": "workspace.computer_use",
+    }
+)
 
 # The full set of mutating policy action names this runtime registers (used by callers that
 # pre-register them with the ActionPolicy fail-closed gate).

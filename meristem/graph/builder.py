@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from meristem import host_ports
+from meristem.host_ports import HostPorts
 
 #: Workspace file whose text becomes the default instructions.
 WORKSPACE_PROMPT_FILE = "AGENTS.md"
@@ -30,12 +30,15 @@ class RunGraph:
     toolsets: tuple[Any, ...] = ()
 
 
-def _toolsets(mcp_url: str | None, mcp_config: str | None) -> tuple[Any, ...]:
+def _toolsets(
+    ports: HostPorts | None, mcp_url: str | None, mcp_config: str | None
+) -> tuple[Any, ...]:
+    ports = ports if ports is not None else HostPorts()
     bound: list[Any] = []
     if mcp_url:
-        bound.append(host_ports.build_url_toolset(mcp_url))
+        bound.append(ports.build_url_toolset(mcp_url))
     if mcp_config:
-        bound.extend(host_ports.load_config_toolsets(mcp_config))
+        bound.extend(ports.load_config_toolsets(mcp_config))
     return tuple(bound)
 
 
@@ -70,6 +73,7 @@ def create_graph_agent(
     agent_model: str | None = None,
     min_confidence: float = 0.0,
     system_prompt: str = "",
+    ports: HostPorts | None = None,
 ) -> tuple[RunGraph, dict[str, Any]]:
     """Bind one agent from specialist prompts and the caller's tool endpoints.
 
@@ -79,7 +83,7 @@ def create_graph_agent(
     graph = RunGraph(
         name=name,
         specialists=dict(tag_prompts or {}),
-        toolsets=_toolsets(mcp_url, mcp_config),
+        toolsets=_toolsets(ports, mcp_url, mcp_config),
     )
     return _bundle(
         graph,
@@ -97,6 +101,7 @@ def initialize_graph_from_workspace(
     agent_model: str | None = None,
     workspace: str | Path | None = None,
     name: str = "GraphAgent",
+    ports: HostPorts | None = None,
 ) -> tuple[RunGraph, dict[str, Any]]:
     """Bind one agent from a workspace directory.
 
@@ -107,7 +112,7 @@ def initialize_graph_from_workspace(
         path = Path(workspace) / WORKSPACE_PROMPT_FILE
         if path.is_file():
             prompt = path.read_text(encoding="utf-8")
-    graph = RunGraph(name=name, toolsets=_toolsets(None, mcp_config))
+    graph = RunGraph(name=name, toolsets=_toolsets(ports, None, mcp_config))
     return _bundle(
         graph,
         agent_model=agent_model,

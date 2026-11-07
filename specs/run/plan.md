@@ -146,7 +146,7 @@ implementation section below records subsequent scaffold delivery.
 ### Scaffold loop implementation
 
 `HarnessConfig.plan_scaffold` is the received `on`/`off` decision, defaulting to
-`off`. `iterate_run` creates one `harness.plan.PlanState` when enabled and passes
+`off`. `iterate_run` creates one `host_ports.PlanState` when enabled and passes
 it to `build_agent`. `harness.plan_runtime.PlanScaffold` registers the sequential
 `update_plan` tool and shares that same state with `before_model_request`.
 Malformed items produce an `invalid_plan` observation without changing state.
@@ -589,7 +589,7 @@ EG implementation or native authority work is part of this change.
 
 ### 2026-10-25: preserve admitted requests through the client-run seam
 
-R001.11's `harness.hosted_run.iterate_client_run` must accept the host's existing
+R001.11's `graph.hosted_run.iterate_client_run` must accept the host's existing
 `RunRequest`, not just its text. Reuse the same request for plan resolution and
 `iterate_run`, preserving run identity, context, attachments, limits and the
 metadata consumed by R001.9's host-authorized history provider. AU does not

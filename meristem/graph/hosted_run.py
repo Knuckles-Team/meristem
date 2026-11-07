@@ -5,13 +5,10 @@ from contextlib import aclosing
 from dataclasses import replace
 from typing import Any
 
-from meristem.graph import RunRequest
-from meristem.graph.executor import (
-    ModelStreamObserver,
-    iterate_run,
-    resolve_plan,
-)
 from meristem.host_ports import ClientCapabilityTransport
+
+from .executor import ModelStreamObserver, iterate_run, resolve_plan
+from .state import RunRequest
 
 
 async def iterate_client_run(
