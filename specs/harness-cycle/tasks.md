@@ -146,3 +146,4 @@ Each task line reads `- [ ] T001 [P] [US1] <ID>-R012.4 description`. The task nu
 - [ ] T139 [US1] MERISTEM-HARNESS-CYCLE-R089.1 Removed-name map with an absence test. Size: S, 1 PR, 2 hours.
 - [ ] T140 [US1] MERISTEM-HARNESS-CYCLE-R089.2 Version 6.0.0 and the changelog entry. Size: S, 1 PR, 1 hour.
 - [ ] T141 [US1] MERISTEM-HARNESS-CYCLE-R089.3 Fresh-venv import check after publication. Size: S, 1 PR, 1 hour.
+- [ ] T142 [US1] MERISTEM-HARNESS-CYCLE-R090 The shared state-machine census runs in staged mode. Size: S, 1 PR, 1 h

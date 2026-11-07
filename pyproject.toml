@@ -85,3 +85,12 @@ mcp_server = false
 [tool.pipelines_hooks.ste]
 paths = ["README.md", "AGENTS.md", "CLAUDE.md", "CHANGELOG.md", "specs"]
 exempt = []
+
+# State-machine census (PIPE-GATES-R086.7, R086.8): adopted in mode `staged`,
+# which prints findings and exits 0; it moves to `blocking` in the PR that
+# verifies this repository's last state-machine row. No baseline, no allowance.
+[tool.pipelines_hooks.state_machine]
+paths = ["meristem"]
+exclude = ["**/fixtures/**"]
+languages = ["python"]
+mode = "staged"
