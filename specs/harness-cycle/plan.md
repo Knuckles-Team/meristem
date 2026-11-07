@@ -88,6 +88,53 @@ The extension point is an engine-owned, verifiable measurement and adoption rece
 
 Rows R003 to R053 file the in-run harness obligations of the medulla decision engine. Each rollup row names one medulla row. Each child row names the meristem file, the planned test and the received decision. Rows R054 onward add received-value consumers of later engine decisions. [contracts/medulla.md](contracts/medulla.md) lists the pairs.
 
+### Release 6.0.0 and the HostPorts map (R089)
+
+Pre-untangled design for these rows, one line per answer.
+
+- Owner. This repository, the package root and the release workflow. The only consumer is arbora.
+- Cohesion. The map, the absence test and the changelog change together. Provider behaviour stays in its unit.
+- Dependency direction. The host builds `HostPorts` and passes it down on the request. The harness never imports the host.
+- Interface depth. One record, `HostPorts`, and four entry points that take `ports=`: `RunRequest.ports`, `AgentRunExecutor(ports=)`, `execute_graph(ports=)` and `run_rlm(ports=)`.
+- Special cases. None. All 19 providers take the same route, so no provider keeps a module global.
+- State. A run holds its ports for its life. `HostPorts` is immutable after the host sets it.
+- Environment. None. The post-publish job is a published command with no host data.
+
+Sequence. `.1`, then `.2`, tag `v6.0.0`, then `.3`. Arbora adopts after the tag, in its own adoption row.
+
+**Register functions to fields.**
+
+| Old function in `meristem.host_ports` | `HostPorts` field |
+|---|---|
+| `register_run_decision_provider` | `decide` |
+| `register_tool_caller` | `caller` |
+| `register_model_provider` | `models` |
+| `register_run_event_sink` | `events` |
+| `register_durable_run_event_factory` | `durable_run_events` |
+| `register_harness_probe_provider` | `probe` |
+| `register_harness_cycle_provider` | `cycle` |
+| `register_active_child_input_factory` | `active_child_input` |
+| `register_native_toolset_provider` | `native` |
+| `register_fleet_catalog_provider` | `fleet` |
+| `register_authority_keepalive` | `keepalive` |
+| `register_remote_toolset_provider` | `remote` |
+| `register_tool_client_factory` | `tool_client` |
+| `register_outbound_credential_provider` | `credentials` |
+| `register_delegated_identity_provider` | `identity` |
+| `register_scaffold_publication_factory / register_optional_scaffold_publication_factory` | `scaffold_publication` |
+| `register_run_history_provider` | `run_history` |
+| `register_run_checkpoint_provider` | `run_checkpoints` |
+| `register_run_checkpoint_factory` | `checkpoint_factory` |
+
+**Moved types and readers.**
+
+| Old name | New home |
+|---|---|
+| `PlanItem`, `PlanState`, `ToolStepResult`, `ToolOutcome` (from `meristem.runtime`) | `meristem.host_ports` |
+| `read_run_history`, `read_recursive_run_history` | `meristem.harness.conversation_history` |
+| `meristem.harness.harness_cycle`, `meristem.harness.hosted_run` | `meristem.graph.harness_cycle`, `meristem.graph.hosted_run` |
+| run contracts re-exported by `meristem.runtime` | `meristem.graph` |
+
 ## Phase 2: Task approach
 
 `tasks.md` holds one task line per row, producer first. The cycle steps come first (R001.1 to R001.8), then the engine port and host registration (R001.10, R001.11, R077, R079), then the served journey (R001.9), then the consumer rows by run-loop stage.
