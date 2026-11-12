@@ -961,7 +961,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   correctly re-enables thinking on the wire, not just in `thinking`). Also fixes the
   graph router's own `requires_reasoning` escalation
   (`graph/_router_impl.py`), which selected a heavier model but never actually asked it to
-  think. Live-verified in the `platform/graph-os` pod against real `vllm.arpa`: routine
+  think. Live-verified in the `platform/graph-os` pod against a real local model endpoint: routine
   calls through au's own model client 22s → ~0.3–1.3s with real content; a deliberate
   `reasoning_effort="high"` call still produces genuine chain-of-thought (~13–20s),
   confirming the opt-in path is intact.
