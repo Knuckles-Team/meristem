@@ -54,15 +54,15 @@ The run-loop design is in the amendment sections below. The seams to other repos
 
 ### Provenance and migration
 
-The deletion commit [c45f277c](https://github.com/Knuckles-Team/agent-utilities/commit/c45f277c061c12e654b80fa12d1cf8f11f01d5ac)
+The deletion commit [c45f277c](https://github.com/Knuckles-Team/meristem/commit/c45f277c061c12e654b80fa12d1cf8f11f01d5ac)
 names the public pre-cut snapshot
-[5eb8d85a](https://github.com/Knuckles-Team/agent-utilities/tree/5eb8d85a3c5d0c5d07babd55e983ecd9778d6d81).
-Its [R014 requirements](https://github.com/Knuckles-Team/agent-utilities/blob/5eb8d85a3c5d0c5d07babd55e983ecd9778d6d81/specs/harness-evolution/requirements.md)
-and [current-plan design](https://github.com/Knuckles-Team/agent-utilities/blob/5eb8d85a3c5d0c5d07babd55e983ecd9778d6d81/specs/harness-evolution/plan.md#public-current-plan-snapshots-au-harness-r0146-to-r01411)
+[5eb8d85a](https://github.com/Knuckles-Team/meristem/tree/5eb8d85a3c5d0c5d07babd55e983ecd9778d6d81).
+Its [R014 requirements](https://github.com/Knuckles-Team/meristem/blob/5eb8d85a3c5d0c5d07babd55e983ecd9778d6d81/specs/harness-evolution/requirements.md)
+and [current-plan design](https://github.com/Knuckles-Team/meristem/blob/5eb8d85a3c5d0c5d07babd55e983ecd9778d6d81/specs/harness-evolution/plan.md#public-current-plan-snapshots-au-harness-r0146-to-r01411)
 are the source of this migration. That design explicitly recorded the absence of
 `layers/harness_plan.py` and the producer runtime. A historical requirement is
 not evidence of a shipped feature. Closed, unmerged
-[AU PR #302](https://github.com/Knuckles-Team/agent-utilities/pull/302) supplies no landing evidence.
+[AU PR #302](https://github.com/Knuckles-Team/meristem/pull/302) supplies no landing evidence.
 
 | Historical requirement | Current owner and acceptance |
 |---|---|
@@ -438,7 +438,7 @@ host can obtain the existing atomic approval authority.
 `MERISTEM-RUN-R002` was `pipe-pages R036` in pipelines. Checking a render receipt before model transport is in-run harness work, so the run loop owns it. The engine produces the receipt under medulla-typed-packs R002.10 and names this row as its dispatch consumer. The rows were SPECIFIED with no bindings, so no evidence moved.
 ### Amendment 2026-10-22: explicit measurement producer ownership
 
-MERISTEM-RUN-R001.12 owns the emission implemented in agent-utilities #328. It replaces the overly broad R001.1 binding on the metric tests, not the received-plan requirement itself. medulla-orch-vocab R011 is a downstream vocabulary consumer, not the producer owner. Durable aggregation remains in EG; served composition remains in Arbora. Provider timing and live/release acceptance remain unproved.
+MERISTEM-RUN-R001.12 owns the emission implemented in meristem #328. It replaces the overly broad R001.1 binding on the metric tests, not the received-plan requirement itself. medulla-orch-vocab R011 is a downstream vocabulary consumer, not the producer owner. Durable aggregation remains in EG; served composition remains in Arbora. Provider timing and live/release acceptance remain unproved.
 
 ### Completed text-history hydration
 
@@ -675,7 +675,7 @@ prove behavioral parity for earlier moves to other repositories.
 ### R015 current skill-content owner
 
 The current tree contains one skill-content directory,
-`meristem/skills/agent-utilities-development/`. It is the repository's
+`meristem/skills/meristem-development/`. It is the repository's
 development and release procedure, and remains in Meristem as recorded in
 the coverage inventory of this plan. No current skill-content directory is being relocated. The
 skill ownership test enumerates the current directories and checks each kept

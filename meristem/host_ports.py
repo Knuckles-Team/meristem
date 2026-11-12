@@ -24,11 +24,11 @@ holding these plain typed providers and hands it to each run through
   for the whole of one delegation;
 * a **run decision provider** that answers, for one run request, the run plan:
   model, tool grant, plan steps, budgets, stop rules and harness settings (the
-  decision itself comes from epistemic-graph through arbora);
+  decision itself comes from medulla through arbora);
 * a **model provider** that turns a model id from that plan into a pydantic-ai
   model with arbora's credentials attached;
 * a **run event sink** that receives every event of one run (arbora writes
-  the trace into epistemic-graph);
+  the trace into medulla);
 * a **harness cycle provider** that drives one harness-evolution tick per
   task (propose, probe, compose, persist, reflect) through the served
   decision and graph ports.

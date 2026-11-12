@@ -8,7 +8,7 @@ The harness improves itself while a task runs. For one task, the harness propose
 
 ## Why a new spec
 
-The `harness-evolution` spec was re-homed out of agent-utilities (MERISTEM-HARNESS). The substrate moved to medulla: the versioned components and the improvement library (MEDULLA-ORCH-VOCAB-R801, MEDULLA-ORCH-VOCAB-R802) and the contrastive composition decision (MEDULLA-DECISION-ENGINE-R803). The served read and adoption operations moved to arbora (ARBORA-OPS-R068). This repository keeps the in-run loop itself: the propose, probe, compose, persist and reflect steps between two served operations. `MERISTEM-BOUNDARY` owns the boundary decision. No other spec owns the cycle. The `meristem/harness/` package also holds the constraint, contract, edit, plan and quality-gate engines.
+The `harness-evolution` spec was re-homed out of meristem (MERISTEM-HARNESS). The substrate moved to medulla: the versioned components and the improvement library (MEDULLA-ORCH-VOCAB-R801, MEDULLA-ORCH-VOCAB-R802) and the contrastive composition decision (MEDULLA-DECISION-ENGINE-R803). The served read and adoption operations moved to arbora (ARBORA-OPS-R068). This repository keeps the in-run loop itself: the propose, probe, compose, persist and reflect steps between two served operations. `MERISTEM-BOUNDARY` owns the boundary decision. No other spec owns the cycle. The `meristem/harness/` package also holds the constraint, contract, edit, plan and quality-gate engines.
 
 ## Scope and interfaces
 

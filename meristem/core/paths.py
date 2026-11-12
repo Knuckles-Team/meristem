@@ -37,7 +37,7 @@ APP_AUTHOR = "knuckles-team"
 
 
 # --- Platform (Arbora) configuration directory ---------------------------
-# Mirrors agent_connector_sdk.paths.platform_config_dir (kept local so the
+# Mirrors scion_sdk.paths.platform_config_dir (kept local so the
 # harness bootstrap does not depend on an SDK release for path resolution).
 #
 # Arbora owns the platform configuration location: ``ARBORA_CONFIG_DIR``
@@ -173,7 +173,7 @@ def prompts_dir() -> Path:
 
     CONCEPT:MERISTEM-KG.compute.user-override-prompt-library — the user-override layer of the prompt library, mirroring
     :func:`skills_dir`. ``*.json`` blueprints placed here take precedence over
-    the packaged base prompts and fleet-contributed (``agent_connector_sdk.prompt_providers``)
+    the packaged base prompts and fleet-contributed (``scion_sdk.prompt_providers``)
     prompts of the same id when the KG prompt registry is ingested
     (``ingest_prompts_to_graph``). It lives under the *config* dir (not data),
     because these are operator-authored overrides, not runtime artifacts.

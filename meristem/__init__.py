@@ -6,9 +6,9 @@ workspace action/observation loop, the agent run loop
 (``meristem.graph``, ``meristem.rlm``) and the ``host_ports`` protocols through
 which the host (arbora) supplies tools, credentials, models and trace sinks.
 
-Facts, storage, retrieval, decisions and learning live in epistemic-graph;
+Facts, storage, retrieval, decisions and learning live in medulla;
 serving, admission and the registry live in arbora; connector contracts and
-transports live in agent-connector-sdk.
+transports live in scion-sdk.
 """
 
 from typing import Any
