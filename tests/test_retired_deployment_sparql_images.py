@@ -85,7 +85,7 @@ def test_legacy_sparql_backend_and_setup_path_deleted() -> None:
     acceptance: the retired paths are absent, no remaining source imports
     them, and the ``setup-databases`` console script is undeclared. The
     other half -- a typed unavailable response for the removed paths --
-    belongs to the epistemic-graph federation path after the 3.0.0 cut, so
+    belongs to the medulla federation path after the 3.0.0 cut, so
     this test deliberately carries no spec marker (GAP, not bound).
     """
     retired_paths = (

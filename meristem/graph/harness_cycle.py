@@ -12,7 +12,7 @@ The module holds no store, keeps no ranking and serves no operation. Every
 capability it reaches is a host-injected port: the improvement-library
 query, the contrast decision and the envelope writer are registered by the
 host (the component versions, the lesson library and the decision live in
-epistemic-graph). The candidate budget k is the candidate slot count of the
+medulla). The candidate budget k is the candidate slot count of the
 stage allocation the host carries on the run plan budget; below two slots
 the cycle abstains with ``budget_below_contrast`` and keeps the current
 harness. The measured contrast is the authority: the cycle never ranks

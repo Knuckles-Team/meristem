@@ -22,7 +22,7 @@ dist/
 # writes dist-primary/ and dist-reproduction/ -- 8.8 MB of wheels each. Both were
 # untracked only because that tool also drops a nested .gitignore containing `*`.
 # Delete or fail to regenerate that nested file and 17.6 MB of build output becomes
-# stageable. epistemic-graph learned this the hard way and has carried `dist-*/`
+# stageable. medulla learned this the hard way and has carried `dist-*/`
 # since; this repo had not. (CX program, BUG-CX-017 family.)
 dist-*/
 numdist-*/
@@ -274,7 +274,7 @@ knowledge_graph.db.lock
 # Registry graph database (runtime-generated)
 registry_graph.db
 .pytest_tmp/
-.test_epistemic_graph.*
+.test_medulla.*
 
 # Model-generated transient scripts at root level
 /test_*.py

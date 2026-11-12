@@ -1,7 +1,7 @@
 """Typed state of one agent run: the request, the plan it receives, the result.
 
 The harness never chooses any field of a :class:`RunPlan`. The host (arbora,
-answering from epistemic-graph) supplies the plan through
+answering from medulla) supplies the plan through
 :attr:`meristem.host_ports.HostPorts.decide`. Without a
 host, :func:`default_run_plan` builds the documented fallback plan from the
 request and the graph configuration only.

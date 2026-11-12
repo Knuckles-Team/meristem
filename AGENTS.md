@@ -33,8 +33,8 @@ Never write code for a row that is not SPECIFIED in this repository's `specs/`. 
 ## Boundaries
 
 - **Owns:** the in-run harness. That covers the run loop, context assembly, fan-out, sandbox runs, replay and trace events. It enforces a limit it receives.
-- **Never builds:** an MCP server, server, gateway, API or A2A (route them to arbora). A store, planner, selector, router, retriever or policy goes to epistemic-graph. Contracts go to agent-connector-sdk.
-- **Allowed dependencies:** agent-connector-sdk and the model client library. It imports no MCP, web server or storage package.
+- **Never builds:** an MCP server, server, gateway, API or A2A (route them to arbora). A store, planner, selector, router, retriever or policy goes to medulla. Contracts go to scion-sdk.
+- **Allowed dependencies:** scion-sdk and the model client library. It imports no MCP, web server or storage package.
 
 Route every feature with the [ecosystem boundaries standard](https://github.com/Knuckles-Team/pipelines/blob/main/reference/ecosystem-boundaries.md) before any code. A part this repository does not own goes to its owner's specs.
 

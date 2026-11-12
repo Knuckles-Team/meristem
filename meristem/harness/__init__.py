@@ -1,7 +1,7 @@
 """In-run harness mechanisms: edits, tool contracts, constraints, pre-emit gates.
 
 Each mechanism applies a rule or a limit it is given inside one run. Thresholds
-and registries come from the caller (the host passes epistemic-graph decisions);
+and registries come from the caller (the host passes medulla decisions);
 the defaults here are fallbacks only.
 """
 
