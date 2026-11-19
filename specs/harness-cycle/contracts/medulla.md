@@ -13,6 +13,7 @@ Medulla measures the contrast between probe traces and decides each adoption. Me
 | Contrast measurement and adoption decision | medulla | One served `Decide` under the `HARNESS_CONTRAST` question kind (MEDULLA-DECISION-ENGINE-R803). Meristem sends trace references only. |
 | Candidate budget k and its bounds | medulla | Received from the stage allocation (MEDULLA-DECISION-ENGINE-R136.3) and the knobs `harness_evolution.min_candidates` and `harness_evolution.max_candidates` (MEDULLA-DECISION-ENGINE-R179.7). The local minimum is a fallback default. |
 | Adoption, contrast and lesson records | medulla | One `DecisionLog` write (MEDULLA-DECISION-ENGINE-R803.8). Meristem has no other write path. |
+| Program match, bindings and demotion | medulla | One served `Decide` of kind `program_lookup` with `request_text` (MEDULLA-DECISION-ENGINE-R135.16). Meristem runs the bound steps and reports a `program_replay` run record (MEDULLA-DECISION-ENGINE-R135.17); rows MERISTEM-HARNESS-CYCLE-R022.4 to R022.8. Meristem holds no threshold and binds nothing. |
 | In-run consumer decisions | medulla | Each consumer rollup row below applies one engine decision it receives. |
 
 ## Allowed call direction

@@ -147,3 +147,8 @@ Each task line reads `- [ ] T001 [P] [US1] <ID>-R012.4 description`. The task nu
 - [ ] T140 [US1] MERISTEM-HARNESS-CYCLE-R089.2 Version 6.0.0 and the changelog entry. Size: S, 1 PR, 1 hour.
 - [ ] T141 [US1] MERISTEM-HARNESS-CYCLE-R089.3 Fresh-venv import check after publication. Size: S, 1 PR, 1 hour.
 - [ ] T142 [US1] MERISTEM-HARNESS-CYCLE-R090 The shared state-machine census runs in staged mode. Size: S, 1 PR, 1 h
+- [ ] T143 [US1] MERISTEM-HARNESS-CYCLE-R022.4 Program reuse settings and outcome types. Size: S, 1 PR, 2 hours.
+- [ ] T144 [US1] MERISTEM-HARNESS-CYCLE-R022.5 Use a received program before the planning call. Size: M, 1 PR, half a day.
+- [ ] T145 [US1] MERISTEM-HARNESS-CYCLE-R022.6 Fall back to full planning on abstain or failure. Size: S, 1 PR, 2 hours.
+- [ ] T146 [US1] MERISTEM-HARNESS-CYCLE-R022.7 Trace and report each reuse outcome. Size: S, 1 PR, 2 hours.
+- [ ] T147 [US1] MERISTEM-HARNESS-CYCLE-R022.8 Hot-path proof: a reused program skips planning against served answers. Size: S, 1 PR, 2 hours.
