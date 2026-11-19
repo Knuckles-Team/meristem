@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import ports_support as support
 import pytest
 from pydantic_ai.messages import ModelResponse, TextPart
 from pydantic_ai.models.function import FunctionModel
 
-from meristem.graph import RunPlan, run
+from meristem.graph import RunPlan, iterate_run, run
 from meristem.graph.render_receipt import (
     CALL_SITE,
     CurrentRevisions,
@@ -21,6 +24,9 @@ from meristem.graph.render_receipt import (
 
 PROMPT = "You are a careful assistant."
 DIGEST = "a" * 64
+RECEIPT_FIXTURE = (
+    Path(__file__).parents[1] / "fixtures" / "medulla" / "render_receipt.json"
+)
 
 
 def _receipt(**over) -> RenderReceipt:
@@ -33,6 +39,12 @@ def _receipt(**over) -> RenderReceipt:
         "scope": "tenant-a",
     }
     return RenderReceipt(**{**base, **over})
+
+
+def _recorded_receipt(**over) -> RenderReceipt:
+    """One recorded engine render result used by the served run-loop proof."""
+    recorded = json.loads(RECEIPT_FIXTURE.read_text())
+    return RenderReceipt(**{**recorded, **over})
 
 
 def _check(receipt=None, *, scope="tenant-a", revisions=None, consumer=...):
@@ -161,3 +173,36 @@ async def test_location_evidence() -> None:
     assert len(checked) == 1
     assert checked[0]["source_snapshot"] == "snap-1"
     assert checked[0]["call_site"] == CALL_SITE
+
+
+@pytest.mark.spec("MERISTEM-RUN-R002.6")
+async def test_consumer_binding_served() -> None:
+    """The real loop admits one recorded receipt and refuses altered receipts."""
+    transport = Transport()
+    events = [
+        event
+        async for event in iterate_run(
+            support.request(task="hello", run_id="recorded"),
+            plan=_plan(transport, _check(_recorded_receipt())),
+        )
+    ]
+    assert transport.requests == 1
+    checked = [event for event in events if event["type"] == "render_receipt_checked"]
+    assert len(checked) == 1
+
+    cases = {
+        "receipt_stale": _check(
+            _recorded_receipt(), revisions=CurrentRevisions("r8", "s3")
+        ),
+        "receipt_substituted": _check(_recorded_receipt(bytes_digest=DIGEST)),
+        "receipt_wrong_scope": _check(_recorded_receipt(scope="tenant-b")),
+    }
+    for code, check in cases.items():
+        refused_transport = Transport()
+        result = await run(
+            support.request(task="hello", run_id=code),
+            plan=_plan(refused_transport, check),
+        )
+        assert result.status == "failed", code
+        assert code in (result.error or ""), code
+        assert refused_transport.requests == 0, code
