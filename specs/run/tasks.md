@@ -33,11 +33,11 @@
 - [x] T031 [US1] MERISTEM-RUN-R015 Assign an owner to the skill-content directories under `skills/`.
 - [x] T032 [US1] MERISTEM-RUN-R001.11 Apply host-selected client tools.
 - [ ] T033 [US1] MERISTEM-RUN-R002 The run loop checks the engine render receipt before model transport.
-- [ ] T034 [US1] MERISTEM-RUN-R002.1 Model.
-- [ ] T035 [US1] MERISTEM-RUN-R002.2 Behavior.
-- [ ] T036 [US1] MERISTEM-RUN-R002.3 Wiring.
-- [ ] T037 [US1] MERISTEM-RUN-R002.4 Refusal.
-- [ ] T038 [US1] MERISTEM-RUN-R002.5 Evidence.
+- [x] T034 [US1] MERISTEM-RUN-R002.1 Model.
+- [x] T035 [US1] MERISTEM-RUN-R002.2 Behavior.
+- [x] T036 [US1] MERISTEM-RUN-R002.3 Wiring.
+- [x] T037 [US1] MERISTEM-RUN-R002.4 Refusal.
+- [x] T038 [US1] MERISTEM-RUN-R002.5 Evidence.
 - [x] T039 [US1] MERISTEM-RUN-R002.6 Hot-path proof of the render-receipt consumer.
 - [x] T040 [US1] MERISTEM-RUN-R001.12 Emit bounded run-local model measurements.
 - [x] T041 [US1] MERISTEM-RUN-R001.9.1 Hydrate a sequential fresh turn from completed text history.
