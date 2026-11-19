@@ -1,0 +1,8 @@
+{
+  "prompt_ref": "prompt:greeting",
+  "prompt_revision": "r7",
+  "schema_revision": "s3",
+  "variables_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "bytes_digest": "9c5ab41ee45930a8ce4973daee1d72bc0164db48b195d20a0f21a934ba7974c1",
+  "scope": "tenant-a"
+}
