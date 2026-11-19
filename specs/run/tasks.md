@@ -40,7 +40,7 @@
 - [ ] T038 [US1] MERISTEM-RUN-R002.5 Evidence.
 - [ ] T039 [US1] MERISTEM-RUN-R002.6 Hot-path proof of the render-receipt consumer.
 - [ ] T040 [US1] MERISTEM-RUN-R001.12 Emit bounded run-local model measurements.
-- [ ] T041 [US1] MERISTEM-RUN-R001.9.1 Hydrate a sequential fresh turn from completed text history.
+- [x] T041 [US1] MERISTEM-RUN-R001.9.1 Hydrate a sequential fresh turn from completed text history.
 - [ ] T042 [US1] MERISTEM-RUN-R001.9.2 Complete checkpoint-backed conversation history integration.
 - [ ] T043 [US1] MERISTEM-RUN-R001.9.2.1 Apply one host checkpoint selection before effects.
 - [ ] T044 [US1] MERISTEM-RUN-R001.9.2.2 Qualify genuine checkpoint restoration and served continuation.
