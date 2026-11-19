@@ -47,9 +47,9 @@
 - [ ] T045 [US1] MERISTEM-RUN-R001.13 Apply a received text-only execution constraint.
 - [ ] T046 [US1] MERISTEM-RUN-R001.13.1 Enforce the constraint at the model boundary.
 - [ ] T047 [US1] MERISTEM-RUN-R001.13.2 Qualify the installed constrained execution path.
-- [ ] T048 [US1] MERISTEM-RUN-R001.14 Emit explicit child lineage through existing run events.
-- [ ] T049 [US1] MERISTEM-RUN-R001.15 Apply host-admitted active-child input at a safe boundary.
-- [ ] T050 [US1] MERISTEM-RUN-R001.16 Consume selected completed-child history for a fresh turn.
+- [x] T048 [US1] MERISTEM-RUN-R001.14 Emit explicit child lineage through existing run events.
+- [x] T049 [US1] MERISTEM-RUN-R001.15 Apply host-admitted active-child input at a safe boundary.
+- [x] T050 [US1] MERISTEM-RUN-R001.16 Consume selected completed-child history for a fresh turn.
 - [ ] T051 [US1] MERISTEM-RUN-R001.17 Publish bounded public child records with provenance.
 - [ ] T052 [US1] MERISTEM-RUN-R003 Consumer of the graph-backed study sources decision.
 - [ ] T053 [US1] MERISTEM-RUN-R003.1 Accept graph-referenced and graph-ingested study sources.
