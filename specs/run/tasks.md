@@ -16,8 +16,8 @@
 - [x] T014 [US1] MERISTEM-RUN-R001.4.4 No planner authority.
 - [x] T015 [US1] MERISTEM-RUN-R001.4.5 End-to-end scaffold proof.
 - [ ] T016 [US1] MERISTEM-RUN-R001.5 Produce real scaffold state for an owner-composed read.
-- [ ] T017 [US1] MERISTEM-RUN-R001.5.1 Atomic scaffold revision.
-- [ ] T018 [US1] MERISTEM-RUN-R001.5.2 Publish actual scaffold revisions through a run-local host port.
+- [x] T017 [US1] MERISTEM-RUN-R001.5.1 Atomic scaffold revision.
+- [x] T018 [US1] MERISTEM-RUN-R001.5.2 Publish actual scaffold revisions through a run-local host port.
 - [x] T019 [US1] MERISTEM-RUN-R001.6 Apply a received bounded dependency plan.
 - [x] T020 [US1] MERISTEM-RUN-R001.6.1 Tool step model and caller port.
 - [x] T021 [US1] MERISTEM-RUN-R001.6.2 Deterministic binding resolution.
