@@ -31,7 +31,7 @@
 - [ ] T029 [US1] MERISTEM-RUN-R001.9 Carry completed conversation history into a fresh run.
 - [ ] T030 [US1] MERISTEM-RUN-R001.10 Publish model and tool events through a durable host port.
 - [ ] T031 [US1] MERISTEM-RUN-R015 Assign an owner to the skill-content directories under `skills/`.
-- [ ] T032 [US1] MERISTEM-RUN-R001.11 Apply host-selected client tools.
+- [x] T032 [US1] MERISTEM-RUN-R001.11 Apply host-selected client tools.
 - [ ] T033 [US1] MERISTEM-RUN-R002 The run loop checks the engine render receipt before model transport.
 - [ ] T034 [US1] MERISTEM-RUN-R002.1 Model.
 - [ ] T035 [US1] MERISTEM-RUN-R002.2 Behavior.
