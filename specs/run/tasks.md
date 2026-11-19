@@ -9,12 +9,12 @@
 - [ ] T007 [US1] MERISTEM-RUN-R001.1 The run loop applies a received run plan.
 - [ ] T008 [US1] MERISTEM-RUN-R001.2 The run loop has a documented fallback plan and fails closed.
 - [ ] T009 [US1] MERISTEM-RUN-R001.3 The recursive run loop enforces a received depth and budget.
-- [ ] T010 [US1] MERISTEM-RUN-R001.4 Restore the model-edited run scaffold.
-- [ ] T011 [US1] MERISTEM-RUN-R001.4.1 One run's scaffold state.
-- [ ] T012 [US1] MERISTEM-RUN-R001.4.2 Gated update tool.
-- [ ] T013 [US1] MERISTEM-RUN-R001.4.3 Request-only injection.
-- [ ] T014 [US1] MERISTEM-RUN-R001.4.4 No planner authority.
-- [ ] T015 [US1] MERISTEM-RUN-R001.4.5 End-to-end scaffold proof.
+- [x] T010 [US1] MERISTEM-RUN-R001.4 Restore the model-edited run scaffold.
+- [x] T011 [US1] MERISTEM-RUN-R001.4.1 One run's scaffold state.
+- [x] T012 [US1] MERISTEM-RUN-R001.4.2 Gated update tool.
+- [x] T013 [US1] MERISTEM-RUN-R001.4.3 Request-only injection.
+- [x] T014 [US1] MERISTEM-RUN-R001.4.4 No planner authority.
+- [x] T015 [US1] MERISTEM-RUN-R001.4.5 End-to-end scaffold proof.
 - [ ] T016 [US1] MERISTEM-RUN-R001.5 Produce real scaffold state for an owner-composed read.
 - [ ] T017 [US1] MERISTEM-RUN-R001.5.1 Atomic scaffold revision.
 - [ ] T018 [US1] MERISTEM-RUN-R001.5.2 Publish actual scaffold revisions through a run-local host port.
