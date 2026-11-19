@@ -62,7 +62,7 @@
 - [ ] T060 [US1] MERISTEM-RUN-R007 Resume consumes the arbora host checkpoint port.
 - [x] T061 [US1] MERISTEM-RUN-R008 Declare the host-facing public module set.
 - [ ] T062 [US1] MERISTEM-RUN-R009 Deliver an admitted child message at the step boundary.
-- [ ] T063 [US1] MERISTEM-RUN-R016 Moved capabilities stay absent from this repository.
+- [x] T063 [US1] MERISTEM-RUN-R016 Moved capabilities stay absent from this repository.
 - [ ] T064 [US1] MERISTEM-RUN-R017 The run carries image input from the request to the model.
 - [ ] T065 [US1] MERISTEM-RUN-R017.1 Carry a multimodal message through context assembly.
 - [ ] T066 [US1] MERISTEM-RUN-R017.2 Check image capability and apply the received fallback.
