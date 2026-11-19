@@ -19,6 +19,18 @@ _GRAPH_EXPORTS = frozenset(
     {"create_graph_agent", "execute_graph", "initialize_graph_from_workspace"}
 )
 
+#: Modules Arbora may import as part of the supported host/harness boundary.
+#: Keep this list explicit: adding a module changes the public host contract.
+PUBLIC_HOST_MODULES = (
+    "meristem.host_ports",
+    "meristem.runtime",
+    "meristem.graph",
+    "meristem.rlm",
+    "meristem.graph.hosted_run",
+    "meristem.harness.plan_runtime",
+    "meristem.harness.conversation_history",
+)
+
 
 def __getattr__(name: str) -> Any:
     """Load the run-loop entry points on first use (keeps ``import`` light)."""
@@ -29,4 +41,4 @@ def __getattr__(name: str) -> Any:
     raise AttributeError(f"module 'meristem' has no attribute {name!r}")
 
 
-__all__ = ["__version__", *sorted(_GRAPH_EXPORTS)]
+__all__ = ["PUBLIC_HOST_MODULES", "__version__", *sorted(_GRAPH_EXPORTS)]

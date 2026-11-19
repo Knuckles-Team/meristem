@@ -60,7 +60,7 @@
 - [ ] T058 [US1] MERISTEM-RUN-R006 Consumer of the replay decision.
 - [ ] T059 [US1] MERISTEM-RUN-R006.1 Treat the replay event source as an external producer.
 - [ ] T060 [US1] MERISTEM-RUN-R007 Resume consumes the arbora host checkpoint port.
-- [ ] T061 [US1] MERISTEM-RUN-R008 Declare the host-facing public module set.
+- [x] T061 [US1] MERISTEM-RUN-R008 Declare the host-facing public module set.
 - [ ] T062 [US1] MERISTEM-RUN-R009 Deliver an admitted child message at the step boundary.
 - [ ] T063 [US1] MERISTEM-RUN-R016 Moved capabilities stay absent from this repository.
 - [ ] T064 [US1] MERISTEM-RUN-R017 The run carries image input from the request to the model.
