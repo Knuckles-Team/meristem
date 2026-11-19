@@ -6,9 +6,9 @@
 - [x] T004 [US1] MERISTEM-RUN-R012 Add a cross-owner component registry and path guard.
 - [x] T005 [US1] MERISTEM-RUN-R013 Every package directory has one recorded disposition.
 - [ ] T006 [US1] MERISTEM-RUN-R001 The agent run loop stays in Meristem.
-- [ ] T007 [US1] MERISTEM-RUN-R001.1 The run loop applies a received run plan.
-- [ ] T008 [US1] MERISTEM-RUN-R001.2 The run loop has a documented fallback plan and fails closed.
-- [ ] T009 [US1] MERISTEM-RUN-R001.3 The recursive run loop enforces a received depth and budget.
+- [x] T007 [US1] MERISTEM-RUN-R001.1 The run loop applies a received run plan.
+- [x] T008 [US1] MERISTEM-RUN-R001.2 The run loop has a documented fallback plan and fails closed.
+- [x] T009 [US1] MERISTEM-RUN-R001.3 The recursive run loop enforces a received depth and budget.
 - [x] T010 [US1] MERISTEM-RUN-R001.4 Restore the model-edited run scaffold.
 - [x] T011 [US1] MERISTEM-RUN-R001.4.1 One run's scaffold state.
 - [x] T012 [US1] MERISTEM-RUN-R001.4.2 Gated update tool.
