@@ -1,10 +1,10 @@
 # MERISTEM-RUN tasks
 
-- [ ] T001 [US1] MERISTEM-RUN-R014 Gate the retained package against duplicate environment readers.
+- [x] T001 [US1] MERISTEM-RUN-R014 Gate the retained package against duplicate environment readers.
 - [ ] T002 [US1] MERISTEM-RUN-R010 The answer step calls the retrieval round and applies its verdicts.
 - [ ] T003 [US1] MERISTEM-RUN-R011 The retrieval step applies the Discover quality verdict.
-- [ ] T004 [US1] MERISTEM-RUN-R012 Add a cross-owner component registry and path guard.
-- [ ] T005 [US1] MERISTEM-RUN-R013 Every package directory has one recorded disposition.
+- [x] T004 [US1] MERISTEM-RUN-R012 Add a cross-owner component registry and path guard.
+- [x] T005 [US1] MERISTEM-RUN-R013 Every package directory has one recorded disposition.
 - [ ] T006 [US1] MERISTEM-RUN-R001 The agent run loop stays in Meristem.
 - [ ] T007 [US1] MERISTEM-RUN-R001.1 The run loop applies a received run plan.
 - [ ] T008 [US1] MERISTEM-RUN-R001.2 The run loop has a documented fallback plan and fails closed.
