@@ -29,7 +29,7 @@
 - [ ] T027 [US1] MERISTEM-RUN-R001.7 Account and drain parallel work.
 - [ ] T028 [US1] MERISTEM-RUN-R001.8 Resume a run from a host checkpoint.
 - [ ] T029 [US1] MERISTEM-RUN-R001.9 Carry completed conversation history into a fresh run.
-- [ ] T030 [US1] MERISTEM-RUN-R001.10 Publish model and tool events through a durable host port.
+- [x] T030 [US1] MERISTEM-RUN-R001.10 Publish model and tool events through a durable host port.
 - [x] T031 [US1] MERISTEM-RUN-R015 Assign an owner to the skill-content directories under `skills/`.
 - [x] T032 [US1] MERISTEM-RUN-R001.11 Apply host-selected client tools.
 - [ ] T033 [US1] MERISTEM-RUN-R002 The run loop checks the engine render receipt before model transport.
@@ -50,7 +50,7 @@
 - [x] T048 [US1] MERISTEM-RUN-R001.14 Emit explicit child lineage through existing run events.
 - [x] T049 [US1] MERISTEM-RUN-R001.15 Apply host-admitted active-child input at a safe boundary.
 - [x] T050 [US1] MERISTEM-RUN-R001.16 Consume selected completed-child history for a fresh turn.
-- [ ] T051 [US1] MERISTEM-RUN-R001.17 Publish bounded public child records with provenance.
+- [x] T051 [US1] MERISTEM-RUN-R001.17 Publish bounded public child records with provenance.
 - [ ] T052 [US1] MERISTEM-RUN-R003 Consumer of the graph-backed study sources decision.
 - [ ] T053 [US1] MERISTEM-RUN-R003.1 Accept graph-referenced and graph-ingested study sources.
 - [ ] T054 [US1] MERISTEM-RUN-R004 Consumer of the field shielding decision.
