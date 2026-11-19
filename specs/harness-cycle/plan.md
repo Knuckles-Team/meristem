@@ -88,6 +88,20 @@ The extension point is an engine-owned, verifiable measurement and adoption rece
 
 Rows R003 to R053 file the in-run harness obligations of the medulla decision engine. Each rollup row names one medulla row. Each child row names the meristem file, the planned test and the received decision. Rows R054 onward add received-value consumers of later engine decisions. [contracts/medulla.md](contracts/medulla.md) lists the pairs.
 
+### Program reuse before planning (R022.4 to R022.8)
+
+Pre-untangled design for these rows, one line per answer.
+
+- **Owner.** Medulla owns the match, the threshold, the bindings and the demotion (MEDULLA-DECISION-ENGINE-R135.16, R135.17). The harness runs received steps and reports the outcome.
+- **Cohesion.** One new module, `meristem/harness/program_reuse.py`, holds parsing, replay, fallback and reporting. `iterate_run` gains one call before `build_agent` and one `emit`.
+- **Dependency direction.** The module calls the engine decision port and the host tool caller. It imports nothing from `meristem/graph/executor.py`.
+- **Interface depth.** One opt-in consumer name, `program_reuse`, and one config field, `HarnessConfig.program_reuse`.
+- **Special cases.** Restricted runs, dependency plans and checkpoint restores skip reuse. An abstention or a failed step falls back to the original plan, with completed results as context.
+- **State.** None kept across runs. The outcome lives in the run event and in one engine report.
+- **Environment.** No port, no consumer name or no config means the run plans as today.
+
+Decisions. A hit replaces the plan with one answer step, so the planning call is skipped and one answer call remains. The harness never retries a program. Repeated fallbacks are the engine's signal to demote it.
+
 ### Release 6.0.0 and the HostPorts map (R089)
 
 Pre-untangled design for these rows, one line per answer.
