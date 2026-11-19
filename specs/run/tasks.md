@@ -26,7 +26,7 @@
 - [x] T024 [US1] MERISTEM-RUN-R001.6.5 Mixed plans share one scheduler.
 - [x] T025 [US1] MERISTEM-RUN-R001.6.6 Wiring.
 - [x] T026 [US1] MERISTEM-RUN-R001.6.7 Hot-path proof.
-- [ ] T027 [US1] MERISTEM-RUN-R001.7 Account and drain parallel work.
+- [x] T027 [US1] MERISTEM-RUN-R001.7 Account and drain parallel work.
 - [ ] T028 [US1] MERISTEM-RUN-R001.8 Resume a run from a host checkpoint.
 - [ ] T029 [US1] MERISTEM-RUN-R001.9 Carry completed conversation history into a fresh run.
 - [x] T030 [US1] MERISTEM-RUN-R001.10 Publish model and tool events through a durable host port.
