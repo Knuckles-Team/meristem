@@ -45,7 +45,7 @@
 - [x] T043 [US1] MERISTEM-RUN-R001.9.2.1 Apply one host checkpoint selection before effects.
 - [ ] T044 [US1] MERISTEM-RUN-R001.9.2.2 Qualify genuine checkpoint restoration and served continuation.
 - [ ] T045 [US1] MERISTEM-RUN-R001.13 Apply a received text-only execution constraint.
-- [ ] T046 [US1] MERISTEM-RUN-R001.13.1 Enforce the constraint at the model boundary.
+- [x] T046 [US1] MERISTEM-RUN-R001.13.1 Enforce the constraint at the model boundary.
 - [ ] T047 [US1] MERISTEM-RUN-R001.13.2 Qualify the installed constrained execution path.
 - [x] T048 [US1] MERISTEM-RUN-R001.14 Emit explicit child lineage through existing run events.
 - [x] T049 [US1] MERISTEM-RUN-R001.15 Apply host-admitted active-child input at a safe boundary.
