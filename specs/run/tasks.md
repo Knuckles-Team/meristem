@@ -18,14 +18,14 @@
 - [ ] T016 [US1] MERISTEM-RUN-R001.5 Produce real scaffold state for an owner-composed read.
 - [ ] T017 [US1] MERISTEM-RUN-R001.5.1 Atomic scaffold revision.
 - [ ] T018 [US1] MERISTEM-RUN-R001.5.2 Publish actual scaffold revisions through a run-local host port.
-- [ ] T019 [US1] MERISTEM-RUN-R001.6 Apply a received bounded dependency plan.
-- [ ] T020 [US1] MERISTEM-RUN-R001.6.1 Tool step model and caller port.
-- [ ] T021 [US1] MERISTEM-RUN-R001.6.2 Deterministic binding resolution.
-- [ ] T022 [US1] MERISTEM-RUN-R001.6.3 Typed step failure without model retry.
-- [ ] T023 [US1] MERISTEM-RUN-R001.6.4 Per-step record.
-- [ ] T024 [US1] MERISTEM-RUN-R001.6.5 Mixed plans share one scheduler.
-- [ ] T025 [US1] MERISTEM-RUN-R001.6.6 Wiring.
-- [ ] T026 [US1] MERISTEM-RUN-R001.6.7 Hot-path proof.
+- [x] T019 [US1] MERISTEM-RUN-R001.6 Apply a received bounded dependency plan.
+- [x] T020 [US1] MERISTEM-RUN-R001.6.1 Tool step model and caller port.
+- [x] T021 [US1] MERISTEM-RUN-R001.6.2 Deterministic binding resolution.
+- [x] T022 [US1] MERISTEM-RUN-R001.6.3 Typed step failure without model retry.
+- [x] T023 [US1] MERISTEM-RUN-R001.6.4 Per-step record.
+- [x] T024 [US1] MERISTEM-RUN-R001.6.5 Mixed plans share one scheduler.
+- [x] T025 [US1] MERISTEM-RUN-R001.6.6 Wiring.
+- [x] T026 [US1] MERISTEM-RUN-R001.6.7 Hot-path proof.
 - [ ] T027 [US1] MERISTEM-RUN-R001.7 Account and drain parallel work.
 - [ ] T028 [US1] MERISTEM-RUN-R001.8 Resume a run from a host checkpoint.
 - [ ] T029 [US1] MERISTEM-RUN-R001.9 Carry completed conversation history into a fresh run.
