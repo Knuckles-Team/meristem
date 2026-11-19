@@ -42,7 +42,7 @@
 - [ ] T040 [US1] MERISTEM-RUN-R001.12 Emit bounded run-local model measurements.
 - [ ] T041 [US1] MERISTEM-RUN-R001.9.1 Hydrate a sequential fresh turn from completed text history.
 - [ ] T042 [US1] MERISTEM-RUN-R001.9.2 Complete checkpoint-backed conversation history integration.
-- [ ] T043 [US1] MERISTEM-RUN-R001.9.2.1 Apply one host checkpoint selection before effects.
+- [x] T043 [US1] MERISTEM-RUN-R001.9.2.1 Apply one host checkpoint selection before effects.
 - [ ] T044 [US1] MERISTEM-RUN-R001.9.2.2 Qualify genuine checkpoint restoration and served continuation.
 - [ ] T045 [US1] MERISTEM-RUN-R001.13 Apply a received text-only execution constraint.
 - [ ] T046 [US1] MERISTEM-RUN-R001.13.1 Enforce the constraint at the model boundary.
