@@ -65,6 +65,7 @@ class ToolStepResult:
     result: Any = None
     outcome: ToolOutcome = "ok"
     error: str | None = None
+    routing_record_digest: str | None = None
 
     def __post_init__(self) -> None:
         # Accept the natural ``ToolStepResult("ok", value)`` positional form
