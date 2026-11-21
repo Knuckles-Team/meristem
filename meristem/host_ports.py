@@ -272,6 +272,35 @@ class EngineAnswer:
             )
 
 
+ENGINE_READ_METHODS: frozenset[str] = frozenset(
+    {
+        "MemoryRecall",
+        "ReadMemorySnapshot",
+        "ContextFacts",
+        "ReadSpan",
+        "Loops",
+        "TraceCritique",
+        "IndexlessRetrieve",
+        "UnifiedQuery",
+    }
+)
+"""The served engine read methods the harness may reach; nothing else."""
+
+ENGINE_WRITE_METHODS: frozenset[str] = frozenset(
+    {
+        "MemoryRemember",
+        "SyncMemorySnapshot",
+        "Consolidate",
+        "Reinforce",
+        "DecayMemories",
+        "DecisionEval",
+        "AgentComponent",
+        "Loops",
+    }
+)
+"""The served engine write methods the harness may reach; nothing else."""
+
+
 class EngineDecisionPort(Protocol):
     """The served engine decision surface the host binds for its runs.
 
@@ -300,6 +329,18 @@ class EngineDecisionPort(Protocol):
 
     async def put_blob(self, data: bytes, *, run_ref: str) -> EngineAnswer:
         """One served blob put; the host stores it and returns the record."""
+        ...
+
+    async def read(
+        self, method: str, params: Mapping[str, Any], *, run_ref: str
+    ) -> EngineAnswer:
+        """One served read under a method of :data:`ENGINE_READ_METHODS`."""
+        ...
+
+    async def write(
+        self, method: str, params: Mapping[str, Any], *, run_ref: str
+    ) -> EngineAnswer:
+        """One served write under a method of :data:`ENGINE_WRITE_METHODS`."""
         ...
 
 
@@ -555,6 +596,38 @@ class HostPorts:
         ``engine_decision_unavailable``; no local decision replaces it.
         """
         return self.engine_decision
+
+    async def engine_read(
+        self, method: str, params: Mapping[str, Any], *, run_ref: str
+    ) -> EngineAnswer:
+        """One served engine read through the read allowlist.
+
+        The harness holds no client and no transport: an unbound port
+        refuses ``engine_decision_unavailable`` and a method outside
+        :data:`ENGINE_READ_METHODS` refuses ``engine_method_forbidden``.
+        """
+        port = self.engine_decision_port()
+        if port is None:
+            raise EngineDecisionRefused("engine_decision_unavailable")
+        if method not in ENGINE_READ_METHODS:
+            raise EngineDecisionRefused("engine_method_forbidden", method=method)
+        return await port.read(method, params, run_ref=run_ref)
+
+    async def engine_write(
+        self, method: str, params: Mapping[str, Any], *, run_ref: str
+    ) -> EngineAnswer:
+        """One served engine write through the write allowlist.
+
+        The harness holds no client and no transport: an unbound port
+        refuses ``engine_decision_unavailable`` and a method outside
+        :data:`ENGINE_WRITE_METHODS` refuses ``engine_method_forbidden``.
+        """
+        port = self.engine_decision_port()
+        if port is None:
+            raise EngineDecisionRefused("engine_decision_unavailable")
+        if method not in ENGINE_WRITE_METHODS:
+            raise EngineDecisionRefused("engine_method_forbidden", method=method)
+        return await port.write(method, params, run_ref=run_ref)
 
     def harness_cycle_provider(self) -> HarnessCycleProvider | None:
         """The host's cycle driver, or ``None`` (the tick then fails closed)."""
