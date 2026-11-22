@@ -28,6 +28,7 @@ from .metrics import RunMetrics
 
 if TYPE_CHECKING:
     from meristem.harness.client_capabilities import ClientToolLimits
+    from meristem.harness.run_lifecycle import RunLifecycle
 
 RunStatus = Literal["pending", "running", "completed", "stopped", "failed"]
 
@@ -83,9 +84,11 @@ class RunBudget:
     total_tokens_limit: int | None = None
     timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS
     candidate_slots: int | None = None
+    candidate_slots_min: int | None = None
     max_attachment_bytes: int = 1_048_576
     max_attachments: int = 8
     max_concurrent_requests: int = 4
+    image_token_cost: int = 1000
 
 
 @dataclass(frozen=True)
@@ -101,6 +104,41 @@ class StopRule:
 
 
 @dataclass(frozen=True)
+class CodingConfig:
+    """Coding-step settings the host receives for one run.
+
+    Empty ``tasks`` and ``verifier_cases`` leave those steps off; the
+    bounds apply once the host enables the step.
+    """
+
+    agent_names: tuple[str, ...] = ("claude", "opencode", "gemini")
+    agent_capabilities: Mapping[str, Any] = field(default_factory=dict)
+    preplan_command: str | None = None
+    preplan_artifacts: tuple[str, ...] = ()
+    tasks: Mapping[str, str] = field(default_factory=dict)
+    verifier_cases: tuple[Mapping[str, Any], ...] = ()
+    regression_command: str | None = None
+    attack_policy_revision: str | None = None
+    verifier_revision: str | None = None
+
+    def __post_init__(self) -> None:
+        if not 1 <= len(self.agent_names) <= 16:
+            raise ValueError("agent_names must carry 1 to 16 names")
+        if len(self.tasks) > 256:
+            raise ValueError("tasks may carry at most 256 entries")
+        if len(self.verifier_cases) > 64:
+            raise ValueError("verifier_cases may carry at most 64 cases")
+
+
+@dataclass(frozen=True)
+class ProgramReuseConfig:
+    """The program-reuse identity the host receives for one run."""
+
+    task_signature: str
+    program_graph: str
+
+
+@dataclass(frozen=True)
 class HarnessConfig:
     """In-run settings the host passes through to the agent framework."""
 
@@ -110,6 +148,14 @@ class HarnessConfig:
     plan_scaffold: Literal["on", "off"] = "off"
     client_tools: tuple[str, ...] = ()
     client_tool_limits: ClientToolLimits | None = None
+    consumers: tuple[str, ...] = ()
+    coding: CodingConfig | None = None
+    program_reuse: ProgramReuseConfig | None = None
+    context_policy: str | None = None
+    soft_threshold: float | None = None
+    hard_threshold: float | None = None
+    recent_window_fraction: float | None = None
+    action_space: Mapping[str, Any] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -173,6 +219,7 @@ class RunRequest:
     metadata: Mapping[str, Any] = field(default_factory=dict)
     attachments: tuple[BinaryContent, ...] = ()
     ports: HostPorts = field(default_factory=HostPorts, compare=False, repr=False)
+    replay_events: tuple[Mapping[str, Any], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -183,6 +230,10 @@ class RunTask:
     prompt: str = ""
     depends_on: tuple[str, ...] = ()
     call: ToolStep | None = None
+    branch: Mapping[str, Any] | None = None
+    join: Mapping[str, Any] | None = None
+    decision: Mapping[str, Any] | None = None
+    approval: Mapping[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -238,6 +289,11 @@ class RunPlan:
     render_receipt: Any = field(default=None, repr=False, compare=False)
     """Optional ``RenderReceiptCheck`` the host supplies for an engine-rendered
     prompt; the loop validates it before the first model request."""
+    study_sources: tuple[Mapping[str, Any], ...] = ()
+    skill_transformation: Mapping[str, Any] | None = None
+    lifecycle: RunLifecycle | None = None
+    """Optional pre-configured run lifecycle the host carries; the loop
+    builds the default one from ``harness.consumers`` without it."""
 
 
 @dataclass
@@ -428,10 +484,12 @@ def default_run_plan(request: RunRequest, config: Mapping[str, Any]) -> RunPlan:
 
 __all__ = [
     "BindingUnresolved",
+    "CodingConfig",
     "DependencyPlan",
     "GraphDeps",
     "GraphState",
     "HarnessConfig",
+    "ProgramReuseConfig",
     "RunBudget",
     "RunFailed",
     "RunPlan",

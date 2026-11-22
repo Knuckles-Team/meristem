@@ -31,7 +31,9 @@ holding these plain typed providers and hands it to each run through
   the trace into medulla);
 * a **harness cycle provider** that drives one harness-evolution tick per
   task (propose, probe, compose, persist, reflect) through the served
-  decision and graph ports.
+  decision and graph ports;
+* an **engine decision port** that serves the decision engine's answers:
+  ``decide``, ``assemble``, ``log`` and ``put_blob``.
 
 Without a bound provider every binding port fails closed (raises) and
 every read port reports the empty answer, never inventing a surface of its own.
@@ -48,7 +50,7 @@ from collections.abc import (
     Mapping,
     Sequence,
 )
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from threading import Lock
 from typing import Any, Literal, Protocol
@@ -65,6 +67,7 @@ class ToolStepResult:
     result: Any = None
     outcome: ToolOutcome = "ok"
     error: str | None = None
+    routing_record_digest: str | None = None
 
     def __post_init__(self) -> None:
         # Accept the natural ``ToolStepResult("ok", value)`` positional form
@@ -243,6 +246,118 @@ ModelProvider = Callable[[str], Any]
 
 RunEventSink = Callable[[Mapping[str, Any]], None]
 """Receives one run event (a JSON-shaped mapping) in emission order."""
+
+EngineOutcome = Literal["advisory", "solved", "abstained", "committed"]
+
+
+@dataclass(frozen=True, slots=True)
+class EngineAnswer:
+    """One answered engine decision, as the host received it.
+
+    ``outcome`` is the closed set the engine reports. ``refusal_code``
+    carries a closed engine refusal when the engine refused; the harness
+    carries the answer without deciding anything.
+    """
+
+    outcome: EngineOutcome
+    option_ids: tuple[str, ...] = ()
+    refusal_code: str | None = None
+    record_digest: str | None = None
+    payload: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if self.outcome not in ("advisory", "solved", "abstained", "committed"):
+            raise ValueError(
+                "engine answer outcome must be advisory, solved, abstained or committed"
+            )
+
+
+ENGINE_READ_METHODS: frozenset[str] = frozenset(
+    {
+        "MemoryRecall",
+        "ReadMemorySnapshot",
+        "ContextFacts",
+        "ReadSpan",
+        "Loops",
+        "TraceCritique",
+        "IndexlessRetrieve",
+        "UnifiedQuery",
+    }
+)
+"""The served engine read methods the harness may reach; nothing else."""
+
+ENGINE_WRITE_METHODS: frozenset[str] = frozenset(
+    {
+        "MemoryRemember",
+        "SyncMemorySnapshot",
+        "Consolidate",
+        "Reinforce",
+        "DecayMemories",
+        "DecisionEval",
+        "AgentComponent",
+        "Loops",
+    }
+)
+"""The served engine write methods the harness may reach; nothing else."""
+
+
+class EngineDecisionPort(Protocol):
+    """The served engine decision surface the host binds for its runs.
+
+    The harness reaches the decision engine only through this one port;
+    it holds no client and no transport. The port carries no tenant or
+    principal; the host binds them. Every method returns one
+    :class:`EngineAnswer`; an absent port makes the consumer refuse
+    ``engine_decision_unavailable``, and no local decision replaces it.
+    """
+
+    async def decide(
+        self, kind: str, params: Mapping[str, Any], *, run_ref: str
+    ) -> EngineAnswer:
+        """One served decision for a closed question kind."""
+        ...
+
+    async def assemble(
+        self, request: Mapping[str, Any], *, run_ref: str
+    ) -> EngineAnswer:
+        """One served assembly answer for a received request."""
+        ...
+
+    async def log(self, op: str, *, run_ref: str) -> EngineAnswer:
+        """One served decision-log write under a closed operation."""
+        ...
+
+    async def put_blob(self, data: bytes, *, run_ref: str) -> EngineAnswer:
+        """One served blob put; the host stores it and returns the record."""
+        ...
+
+    async def read(
+        self, method: str, params: Mapping[str, Any], *, run_ref: str
+    ) -> EngineAnswer:
+        """One served read under a method of :data:`ENGINE_READ_METHODS`."""
+        ...
+
+    async def write(
+        self, method: str, params: Mapping[str, Any], *, run_ref: str
+    ) -> EngineAnswer:
+        """One served write under a method of :data:`ENGINE_WRITE_METHODS`."""
+        ...
+
+
+class EngineDecisionRefused(RuntimeError):
+    """A closed refusal at the engine decision port boundary."""
+
+    def __init__(
+        self,
+        code: Literal["engine_decision_unavailable", "engine_method_forbidden"],
+        *,
+        method: str | None = None,
+    ) -> None:
+        self.code = code
+        self.method = method
+        super().__init__(
+            f"engine_decision_refused: {code}" + (f" ({method})" if method else "")
+        )
 
 
 class DurableRunEventPublisher(Protocol):
@@ -460,6 +575,7 @@ class HostPorts:
     run_history: RunHistoryProvider | None = None
     run_checkpoints: RunCheckpointProvider | None = None
     checkpoint_factory: RunCheckpointFactory | None = None
+    engine_decision: EngineDecisionPort | None = None
 
     def harness_probe_provider(self) -> HarnessProbeProvider | None:
         """Return the host probe executor; absence cannot authorize execution."""
@@ -472,6 +588,46 @@ class HostPorts:
     def tool_caller(self) -> ToolCaller | None:
         """Return the host-bound dependency caller, or ``None`` without a host."""
         return self.caller
+
+    def engine_decision_port(self) -> EngineDecisionPort | None:
+        """The host-bound engine decision port, or ``None`` without a host.
+
+        A consumer without a bound port refuses
+        ``engine_decision_unavailable``; no local decision replaces it.
+        """
+        return self.engine_decision
+
+    async def engine_read(
+        self, method: str, params: Mapping[str, Any], *, run_ref: str
+    ) -> EngineAnswer:
+        """One served engine read through the read allowlist.
+
+        The harness holds no client and no transport: an unbound port
+        refuses ``engine_decision_unavailable`` and a method outside
+        :data:`ENGINE_READ_METHODS` refuses ``engine_method_forbidden``.
+        """
+        port = self.engine_decision_port()
+        if port is None:
+            raise EngineDecisionRefused("engine_decision_unavailable")
+        if method not in ENGINE_READ_METHODS:
+            raise EngineDecisionRefused("engine_method_forbidden", method=method)
+        return await port.read(method, params, run_ref=run_ref)
+
+    async def engine_write(
+        self, method: str, params: Mapping[str, Any], *, run_ref: str
+    ) -> EngineAnswer:
+        """One served engine write through the write allowlist.
+
+        The harness holds no client and no transport: an unbound port
+        refuses ``engine_decision_unavailable`` and a method outside
+        :data:`ENGINE_WRITE_METHODS` refuses ``engine_method_forbidden``.
+        """
+        port = self.engine_decision_port()
+        if port is None:
+            raise EngineDecisionRefused("engine_decision_unavailable")
+        if method not in ENGINE_WRITE_METHODS:
+            raise EngineDecisionRefused("engine_method_forbidden", method=method)
+        return await port.write(method, params, run_ref=run_ref)
 
     def harness_cycle_provider(self) -> HarnessCycleProvider | None:
         """The host's cycle driver, or ``None`` (the tick then fails closed)."""
