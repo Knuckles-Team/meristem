@@ -33,6 +33,7 @@
         "meristem/harness/edit_engine.py",
         "meristem/harness/plan_runtime.py",
         "meristem/harness/quality_gates.py",
+        "meristem/harness/run_lifecycle.py",
         "meristem/host_ports.py",
         "meristem/rlm/__init__.py",
         "meristem/rlm/runner.py",

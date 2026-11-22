@@ -29,6 +29,7 @@ from meristem.harness.conversation_history import (
     read_run_history,
 )
 from meristem.harness.plan_runtime import PlanScaffold
+from meristem.harness.run_lifecycle import RunLifecycle
 
 from .budget import LiveSharedBudget, SharedBudget, initial_run_usage
 from .checkpoint import RunCheckpoint
@@ -250,6 +251,7 @@ async def iterate_run(
 
     cfg = dict(config or {})
     state = GraphState(run_id=request.run_id, query=request.task, mode=request.mode)
+    lifecycle: RunLifecycle | None = None
     try:
         if shared_execution is not None and plan is None:
             raise ValueError("shared execution requires an explicit received plan")
@@ -319,10 +321,19 @@ async def iterate_run(
         attachments = _attachment_input(request, run_plan)
         if run_plan.harness.plan_scaffold == "on":
             state.scaffold = host_ports.PlanState()
+        lifecycle = (
+            run_plan.lifecycle
+            if run_plan.lifecycle is not None
+            else RunLifecycle(run_plan.harness.consumers)
+        )
+        await lifecycle.on_start(request, run_plan)
     except Exception as exc:  # noqa: BLE001 - a failed plan is a failed run
         state.status, state.error = "failed", f"{type(exc).__name__}: {exc}"
+        if lifecycle is not None:
+            await lifecycle.on_end(state)
         yield emit(state, "error", error=state.error, result=_result(state))
         return
+    assert lifecycle is not None
     deps = GraphDeps(state=state, plan=run_plan, config=cfg)
     limits = _limits(run_plan)
     steps = run_plan.steps[: max(run_plan.stop.max_steps, 0)]
@@ -519,6 +530,7 @@ async def iterate_run(
                                 model_input: str | list[str | BinaryContent] = prompt
                                 if index == 0 and attachments:
                                     model_input = [prompt, *attachments]
+                                await lifecycle.before_step(state)
 
                                 async def after_result(result: Any) -> None:
                                     nonlocal history
@@ -561,6 +573,7 @@ async def iterate_run(
                                         state.add_usage(shared_budget.usage)
                                 text = _text(result.output)
                                 yield emit(state, "node_transition", output=text)
+                                await lifecycle.after_step(state, result)
                                 if state.status == "stopped":
                                     break
     except UsageLimitExceeded as exc:
@@ -573,10 +586,18 @@ async def iterate_run(
         raise
     except Exception as exc:  # noqa: BLE001 - surfaced as the terminal event
         state.status, state.error = "failed", f"{type(exc).__name__}: {exc}"
+        await lifecycle.on_end(state)
         yield emit(state, "error", error=state.error, result=_result(state))
         return
-    if state.status == "running":
-        state.status = "completed"
+    try:
+        if state.status == "running":
+            state.status = "completed"
+            await lifecycle.on_success(state)
+        await lifecycle.on_end(state)
+    except Exception as exc:  # noqa: BLE001 - a failed lifecycle hook is a failed run
+        state.status, state.error = "failed", f"{type(exc).__name__}: {exc}"
+        yield emit(state, "error", error=state.error, result=_result(state))
+        return
     yield emit(state, "graph_complete", status=state.status, result=_result(state))
 
 

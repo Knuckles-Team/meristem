@@ -28,6 +28,7 @@ from .metrics import RunMetrics
 
 if TYPE_CHECKING:
     from meristem.harness.client_capabilities import ClientToolLimits
+    from meristem.harness.run_lifecycle import RunLifecycle
 
 RunStatus = Literal["pending", "running", "completed", "stopped", "failed"]
 
@@ -290,6 +291,9 @@ class RunPlan:
     prompt; the loop validates it before the first model request."""
     study_sources: tuple[Mapping[str, Any], ...] = ()
     skill_transformation: Mapping[str, Any] | None = None
+    lifecycle: RunLifecycle | None = None
+    """Optional pre-configured run lifecycle the host carries; the loop
+    builds the default one from ``harness.consumers`` without it."""
 
 
 @dataclass
