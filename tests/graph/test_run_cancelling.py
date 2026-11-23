@@ -85,6 +85,7 @@ def _hang(entered: asyncio.Event):
     return hang
 
 
+# spec: MERISTEM-HARNESS-CYCLE-R086.1
 @pytest.mark.spec(SPEC_1)
 async def test_cancel_moves_running_to_cancelling_then_stopped_cancelled(
     monkeypatch: pytest.MonkeyPatch, events: list[dict]
@@ -194,6 +195,7 @@ async def test_drain_error_moves_cancelling_to_failed(
     assert events[-1]["type"] == "error"
 
 
+# spec: MERISTEM-HARNESS-CYCLE-R086.2
 @pytest.mark.spec(SPEC_2)
 async def test_cancel_cancels_active_tasks_and_skips_pending_ones(
     monkeypatch: pytest.MonkeyPatch,

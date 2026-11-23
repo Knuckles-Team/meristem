@@ -103,6 +103,7 @@ async def _restore_serial(payload: dict) -> RunCheckpoint:
     return checkpoint
 
 
+# spec: MERISTEM-HARNESS-CYCLE-R084.4
 @pytest.mark.spec(SPEC_RUN)
 async def test_restore_keeps_failed() -> None:
     checkpoint = await _restore_serial(
