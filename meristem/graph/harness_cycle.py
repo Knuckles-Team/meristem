@@ -31,7 +31,8 @@ from typing import Any, Final
 
 from meristem.host_ports import HostPorts
 
-from .state import RunBudget, RunPlan, RunRequest
+from .checkpoint import RUN_STATE_UNKNOWN, CheckpointUnavailable
+from .state import RunBudget, RunPlan, RunRequest, RunStatus
 
 #: The closed refusal codes of one tick. Anything else is not a refusal.
 ABSTAIN_REASONS: Final[tuple[str, ...]] = (
@@ -154,7 +155,7 @@ class ProbeTrace:
     candidate_id: str
     trace_id: str
     conditions_digest: str
-    status: str
+    status: RunStatus
     steps: int
     usage: Mapping[str, int]
     error: str | None
@@ -239,13 +240,22 @@ async def probe_candidates(
             raise CycleRefusal("probe_trace_missing") from None
         if not isinstance(result, Mapping) or result.get("run_id") != trace_id:
             raise CycleRefusal("probe_trace_missing")
+        status = result.get("status")
+        try:
+            probe_status = RunStatus(status)
+        except (TypeError, ValueError):
+            # A value outside the closed run state machine refuses the probe
+            # with the same typed code the checkpoint restore path uses.
+            raise CheckpointUnavailable(
+                "probe run state is unknown", code=RUN_STATE_UNKNOWN
+            ) from None
         usage = result.get("usage") or {}
         traces.append(
             ProbeTrace(
                 candidate_id=candidate_id,
                 trace_id=trace_id,
                 conditions_digest=digest,
-                status=str(result.get("status") or ""),
+                status=probe_status,
                 steps=int(result.get("steps") or 0),
                 usage={str(key): int(value) for key, value in dict(usage).items()},
                 error=None if result.get("error") is None else str(result["error"]),
