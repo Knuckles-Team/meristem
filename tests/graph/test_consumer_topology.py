@@ -20,6 +20,7 @@ from meristem.graph.state import RunBudget, StopRule
 from meristem.harness import run_lifecycle
 
 SPEC = "MERISTEM-HARNESS-CYCLE-R012.1"
+# spec: MERISTEM-HARNESS-CYCLE-R012.1
 
 
 def _params(capacity: int) -> dict:

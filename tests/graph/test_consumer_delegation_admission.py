@@ -17,6 +17,7 @@ from meristem.graph import (
 from meristem.harness import run_lifecycle
 
 SPEC = "MERISTEM-HARNESS-CYCLE-R021.9"
+# spec: MERISTEM-HARNESS-CYCLE-R021.9
 
 TASK_CLASS = "code"
 

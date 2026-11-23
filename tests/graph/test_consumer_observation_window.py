@@ -12,6 +12,7 @@ from meristem.harness.run_lifecycle import ConsumerRefused
 from meristem.host_ports import EngineDecisionRefused
 
 SPEC = "MERISTEM-HARNESS-CYCLE-R071"
+# spec: MERISTEM-HARNESS-CYCLE-R071
 
 BUDGET = RunBudget(
     request_limit=3,

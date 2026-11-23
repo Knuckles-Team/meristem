@@ -17,6 +17,7 @@ from meristem.graph import (
 from meristem.harness import run_lifecycle
 
 SPEC = "MERISTEM-HARNESS-CYCLE-R010.1"
+# spec: MERISTEM-HARNESS-CYCLE-R010.1
 
 
 def _question(width: int, depth: int) -> str:

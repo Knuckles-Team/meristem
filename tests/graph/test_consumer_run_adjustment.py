@@ -18,6 +18,7 @@ from meristem.graph.state import RunBudget
 from meristem.harness import run_lifecycle
 
 SPEC = "MERISTEM-HARNESS-CYCLE-R019.1"
+# spec: MERISTEM-HARNESS-CYCLE-R019.1
 
 
 def _params(current_width: int, budget_tokens: int | None) -> dict:

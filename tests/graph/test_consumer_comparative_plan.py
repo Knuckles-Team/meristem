@@ -10,6 +10,7 @@ from meristem.graph.state import RunBudget, RunPlan
 from meristem.harness.run_lifecycle import ConsumerRefused
 
 SPEC = "MERISTEM-HARNESS-CYCLE-R023.1"
+# spec: MERISTEM-HARNESS-CYCLE-R023.1
 
 
 def _plan(sources, request_limit: int | None = None) -> RunPlan:

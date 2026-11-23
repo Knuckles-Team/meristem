@@ -12,6 +12,7 @@ from meristem.graph import budget
 from meristem.harness.run_lifecycle import ConsumerRefused
 
 SPEC = "MERISTEM-HARNESS-CYCLE-R031.1"
+# spec: MERISTEM-HARNESS-CYCLE-R031.1
 
 
 def _response(remaining: int) -> hp.EngineAnswer:
