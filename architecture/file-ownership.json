@@ -107,6 +107,11 @@
       "owner": "meristem"
     },
     {
+      "path": "meristem/ontology/run_state_machines.ttl",
+      "disposition": "keep",
+      "owner": "meristem"
+    },
+    {
       "path": "meristem/harness/__init__.py",
       "disposition": "keep",
       "owner": "meristem"

@@ -1,0 +1,278 @@
+# The meristem in-run state machines (MERISTEM-HARNESS-CYCLE-R084.5, R085.4).
+#
+# Constitution Article XXXI: the core state-machine vocabulary is defined in
+# medulla (crates/medulla-core/ontology/state-machines-v1.ttl,
+# MEDULLA-ORCH-VOCAB-R811). Every class below extends a core class by
+# rdfs:subClassOf only; this pack uses no owl:imports. Instances follow the
+# core IRI scheme: a machine :<Name>Machine, a state :<Name>Machine_<State>,
+# an event :<Name>Machine_Event_<Event>, a guard :<Name>Machine_Guard_<Guard>,
+# a transition :<Name>Machine_<EdgeId>.
+#
+# The run machine maps its terminals onto the medulla work-item vocabulary
+# (MEDULLA-ORCH-VOCAB-R812.1): Completed to Succeeded, Failed to Failed,
+# Stopped(cancelled) to Cancelled, Stopped(requested) to the same distinct
+# Cancelled (never Succeeded), Stopped(budget) to Failed. The in-run enum is
+# the authority; this pack describes it, and no module in meristem loads it.
+#
+# A guardless edge declares core:guardedBy owl:Nothing; the skip edges admit
+# any one of their two guards, declared as two core:guardedBy values.
+
+@prefix : <https://knuckles-team.github.io/ontology/meristem#> .
+@prefix core: <https://knuckles-team.github.io/ontology/core#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+# spec: MERISTEM-HARNESS-CYCLE-R084.5
+:RunMachine a owl:Class .
+:RunMachine rdfs:label "Run Machine" .
+:RunMachine rdfs:comment "The closed states and guarded transitions of one agent run." .
+:RunMachine rdfs:subClassOf core:StateMachine .
+
+:RunStatusState a owl:Class .
+:RunStatusState rdfs:label "Run Status State" .
+:RunStatusState rdfs:subClassOf core:State .
+
+:RunTerminalState a owl:Class .
+:RunTerminalState rdfs:label "Run Terminal State" .
+:RunTerminalState rdfs:subClassOf core:TerminalState .
+
+:RunEvent a owl:Class .
+:RunEvent rdfs:label "Run Event" .
+:RunEvent rdfs:subClassOf core:TransitionEvent .
+
+:RunGuard a owl:Class .
+:RunGuard rdfs:label "Run Guard" .
+:RunGuard rdfs:subClassOf core:TransitionGuard .
+
+:RunTransition a owl:Class .
+:RunTransition rdfs:label "Run Transition" .
+:RunTransition rdfs:subClassOf core:Transition .
+
+# The closed run states, in the wire form the in-run enum stores.
+:RunMachine_Pending a :RunStatusState .
+:RunMachine_Pending core:storedForm "pending" .
+:RunMachine_Running a :RunStatusState .
+:RunMachine_Running core:storedForm "running" .
+:RunMachine_Cancelling a :RunStatusState .
+:RunMachine_Cancelling core:storedForm "cancelling" .
+:RunMachine_Completed a :RunStatusState .
+:RunMachine_Completed a :RunTerminalState .
+:RunMachine_Completed core:storedForm "completed" .
+:RunMachine_Failed a :RunStatusState .
+:RunMachine_Failed a :RunTerminalState .
+:RunMachine_Failed core:storedForm "failed" .
+:RunMachine_StoppedRequested a :RunStatusState .
+:RunMachine_StoppedRequested a :RunTerminalState .
+:RunMachine_StoppedRequested core:storedForm "stopped_requested" .
+:RunMachine_StoppedBudget a :RunStatusState .
+:RunMachine_StoppedBudget a :RunTerminalState .
+:RunMachine_StoppedBudget core:storedForm "stopped_budget" .
+:RunMachine_StoppedCancelled a :RunStatusState .
+:RunMachine_StoppedCancelled a :RunTerminalState .
+:RunMachine_StoppedCancelled core:storedForm "stopped_cancelled" .
+
+:RunMachine_Event_Start a :RunEvent .
+:RunMachine_Event_Start core:storedForm "start" .
+:RunMachine_Event_Finish a :RunEvent .
+:RunMachine_Event_Finish core:storedForm "finish" .
+:RunMachine_Event_StopRequested a :RunEvent .
+:RunMachine_Event_StopRequested core:storedForm "stop_requested" .
+:RunMachine_Event_StopBudget a :RunEvent .
+:RunMachine_Event_StopBudget core:storedForm "stop_budget" .
+:RunMachine_Event_Cancel a :RunEvent .
+:RunMachine_Event_Cancel core:storedForm "cancel" .
+:RunMachine_Event_DrainComplete a :RunEvent .
+:RunMachine_Event_DrainComplete core:storedForm "drain_complete" .
+:RunMachine_Event_Fail a :RunEvent .
+:RunMachine_Event_Fail core:storedForm "fail" .
+
+:RunMachine_Guard_PlanReceived a :RunGuard .
+:RunMachine_Guard_PlanReceived rdfs:label "the run plan is received" .
+:RunMachine_Guard_OutputTaskComplete a :RunGuard .
+:RunMachine_Guard_OutputTaskComplete rdfs:label "the output task is complete" .
+:RunMachine_Guard_NoActiveTask a :RunGuard .
+:RunMachine_Guard_NoActiveTask rdfs:label "no task is Active" .
+
+:RunMachine_RE1 a :RunTransition .
+:RunMachine_RE1 core:edgeId "RE1" .
+:RunMachine_RE1 core:fromState :RunMachine_Pending .
+:RunMachine_RE1 core:toState :RunMachine_Running .
+:RunMachine_RE1 core:firedBy :RunMachine_Event_Start .
+:RunMachine_RE1 core:guardedBy :RunMachine_Guard_PlanReceived .
+
+:RunMachine_RE2 a :RunTransition .
+:RunMachine_RE2 core:edgeId "RE2" .
+:RunMachine_RE2 core:fromState :RunMachine_Pending .
+:RunMachine_RE2 core:toState :RunMachine_Failed .
+:RunMachine_RE2 core:firedBy :RunMachine_Event_Fail .
+:RunMachine_RE2 core:guardedBy owl:Nothing .
+
+:RunMachine_RE3 a :RunTransition .
+:RunMachine_RE3 core:edgeId "RE3" .
+:RunMachine_RE3 core:fromState :RunMachine_Pending .
+:RunMachine_RE3 core:toState :RunMachine_StoppedCancelled .
+:RunMachine_RE3 core:firedBy :RunMachine_Event_Cancel .
+:RunMachine_RE3 core:guardedBy owl:Nothing .
+
+:RunMachine_RE4 a :RunTransition .
+:RunMachine_RE4 core:edgeId "RE4" .
+:RunMachine_RE4 core:fromState :RunMachine_Running .
+:RunMachine_RE4 core:toState :RunMachine_Completed .
+:RunMachine_RE4 core:firedBy :RunMachine_Event_Finish .
+:RunMachine_RE4 core:guardedBy :RunMachine_Guard_OutputTaskComplete .
+
+:RunMachine_RE5 a :RunTransition .
+:RunMachine_RE5 core:edgeId "RE5" .
+:RunMachine_RE5 core:fromState :RunMachine_Running .
+:RunMachine_RE5 core:toState :RunMachine_StoppedRequested .
+:RunMachine_RE5 core:firedBy :RunMachine_Event_StopRequested .
+:RunMachine_RE5 core:guardedBy owl:Nothing .
+
+:RunMachine_RE6 a :RunTransition .
+:RunMachine_RE6 core:edgeId "RE6" .
+:RunMachine_RE6 core:fromState :RunMachine_Running .
+:RunMachine_RE6 core:toState :RunMachine_StoppedBudget .
+:RunMachine_RE6 core:firedBy :RunMachine_Event_StopBudget .
+:RunMachine_RE6 core:guardedBy owl:Nothing .
+
+:RunMachine_RE7 a :RunTransition .
+:RunMachine_RE7 core:edgeId "RE7" .
+:RunMachine_RE7 core:fromState :RunMachine_Running .
+:RunMachine_RE7 core:toState :RunMachine_Failed .
+:RunMachine_RE7 core:firedBy :RunMachine_Event_Fail .
+:RunMachine_RE7 core:guardedBy owl:Nothing .
+
+:RunMachine_RE8 a :RunTransition .
+:RunMachine_RE8 core:edgeId "RE8" .
+:RunMachine_RE8 core:fromState :RunMachine_Running .
+:RunMachine_RE8 core:toState :RunMachine_Cancelling .
+:RunMachine_RE8 core:firedBy :RunMachine_Event_Cancel .
+:RunMachine_RE8 core:guardedBy owl:Nothing .
+
+:RunMachine_RE9 a :RunTransition .
+:RunMachine_RE9 core:edgeId "RE9" .
+:RunMachine_RE9 core:fromState :RunMachine_Cancelling .
+:RunMachine_RE9 core:toState :RunMachine_StoppedCancelled .
+:RunMachine_RE9 core:firedBy :RunMachine_Event_DrainComplete .
+:RunMachine_RE9 core:guardedBy :RunMachine_Guard_NoActiveTask .
+
+:RunMachine_RE10 a :RunTransition .
+:RunMachine_RE10 core:edgeId "RE10" .
+:RunMachine_RE10 core:fromState :RunMachine_Cancelling .
+:RunMachine_RE10 core:toState :RunMachine_Failed .
+:RunMachine_RE10 core:firedBy :RunMachine_Event_Fail .
+:RunMachine_RE10 core:guardedBy owl:Nothing .
+
+# spec: MERISTEM-HARNESS-CYCLE-R085.4
+:TaskMachine a owl:Class .
+:TaskMachine rdfs:label "Fan-out Task Machine" .
+:TaskMachine rdfs:comment "The closed states and guarded transitions of one fan-out task." .
+:TaskMachine rdfs:subClassOf core:StateMachine .
+
+:TaskState a owl:Class .
+:TaskState rdfs:label "Fan-out Task State" .
+:TaskState rdfs:subClassOf core:State .
+
+:TaskTerminalState a owl:Class .
+:TaskTerminalState rdfs:label "Fan-out Task Terminal State" .
+:TaskTerminalState rdfs:subClassOf core:TerminalState .
+
+:TaskTransition a owl:Class .
+:TaskTransition rdfs:label "Fan-out Task Transition" .
+:TaskTransition rdfs:subClassOf core:Transition .
+
+# The closed task states, in the wire form the in-run enum stores.
+:TaskMachine_Blocked a :TaskState .
+:TaskMachine_Blocked core:storedForm "blocked" .
+:TaskMachine_Ready a :TaskState .
+:TaskMachine_Ready core:storedForm "ready" .
+:TaskMachine_Active a :TaskState .
+:TaskMachine_Active core:storedForm "active" .
+:TaskMachine_Done a :TaskState .
+:TaskMachine_Done a :TaskTerminalState .
+:TaskMachine_Done core:storedForm "done" .
+:TaskMachine_Failed a :TaskState .
+:TaskMachine_Failed a :TaskTerminalState .
+:TaskMachine_Failed core:storedForm "failed" .
+:TaskMachine_Cancelled a :TaskState .
+:TaskMachine_Cancelled a :TaskTerminalState .
+:TaskMachine_Cancelled core:storedForm "cancelled" .
+:TaskMachine_Skipped a :TaskState .
+:TaskMachine_Skipped a :TaskTerminalState .
+:TaskMachine_Skipped core:storedForm "skipped" .
+
+# The task events and guards reuse the run machine's event and guard classes.
+:TaskMachine_Event_DepsMet a :RunEvent .
+:TaskMachine_Event_DepsMet core:storedForm "deps_met" .
+:TaskMachine_Event_Dispatch a :RunEvent .
+:TaskMachine_Event_Dispatch core:storedForm "dispatch" .
+:TaskMachine_Event_Complete a :RunEvent .
+:TaskMachine_Event_Complete core:storedForm "complete" .
+:TaskMachine_Event_Fail a :RunEvent .
+:TaskMachine_Event_Fail core:storedForm "fail" .
+:TaskMachine_Event_Cancel a :RunEvent .
+:TaskMachine_Event_Cancel core:storedForm "cancel" .
+:TaskMachine_Event_Skip a :RunEvent .
+:TaskMachine_Event_Skip core:storedForm "skip" .
+
+:TaskMachine_Guard_AllParentsDone a :RunGuard .
+:TaskMachine_Guard_AllParentsDone rdfs:label "every parent is Done" .
+:TaskMachine_Guard_AncestorFailedOrCancelled a :RunGuard .
+:TaskMachine_Guard_AncestorFailedOrCancelled rdfs:label "an ancestor is Failed or Cancelled" .
+:TaskMachine_Guard_RunCancellingOrFailed a :RunGuard .
+:TaskMachine_Guard_RunCancellingOrFailed rdfs:label "the run is Cancelling or Failed" .
+:TaskMachine_Guard_PermitHeld a :RunGuard .
+:TaskMachine_Guard_PermitHeld rdfs:label "a model-call permit is held" .
+:TaskMachine_Guard_RunRunning a :RunGuard .
+:TaskMachine_Guard_RunRunning rdfs:label "the run status is Running" .
+
+:TaskMachine_TE1 a :TaskTransition .
+:TaskMachine_TE1 core:edgeId "TE1" .
+:TaskMachine_TE1 core:fromState :TaskMachine_Blocked .
+:TaskMachine_TE1 core:toState :TaskMachine_Ready .
+:TaskMachine_TE1 core:firedBy :TaskMachine_Event_DepsMet .
+:TaskMachine_TE1 core:guardedBy :TaskMachine_Guard_AllParentsDone .
+
+:TaskMachine_TE2 a :TaskTransition .
+:TaskMachine_TE2 core:edgeId "TE2" .
+:TaskMachine_TE2 core:fromState :TaskMachine_Blocked .
+:TaskMachine_TE2 core:toState :TaskMachine_Skipped .
+:TaskMachine_TE2 core:firedBy :TaskMachine_Event_Skip .
+:TaskMachine_TE2 core:guardedBy :TaskMachine_Guard_AncestorFailedOrCancelled .
+:TaskMachine_TE2 core:guardedBy :TaskMachine_Guard_RunCancellingOrFailed .
+
+:TaskMachine_TE3 a :TaskTransition .
+:TaskMachine_TE3 core:edgeId "TE3" .
+:TaskMachine_TE3 core:fromState :TaskMachine_Ready .
+:TaskMachine_TE3 core:toState :TaskMachine_Skipped .
+:TaskMachine_TE3 core:firedBy :TaskMachine_Event_Skip .
+:TaskMachine_TE3 core:guardedBy :TaskMachine_Guard_AncestorFailedOrCancelled .
+:TaskMachine_TE3 core:guardedBy :TaskMachine_Guard_RunCancellingOrFailed .
+
+:TaskMachine_TE4 a :TaskTransition .
+:TaskMachine_TE4 core:edgeId "TE4" .
+:TaskMachine_TE4 core:fromState :TaskMachine_Ready .
+:TaskMachine_TE4 core:toState :TaskMachine_Active .
+:TaskMachine_TE4 core:firedBy :TaskMachine_Event_Dispatch .
+:TaskMachine_TE4 core:guardedBy :TaskMachine_Guard_PermitHeld .
+
+:TaskMachine_TE5 a :TaskTransition .
+:TaskMachine_TE5 core:edgeId "TE5" .
+:TaskMachine_TE5 core:fromState :TaskMachine_Active .
+:TaskMachine_TE5 core:toState :TaskMachine_Done .
+:TaskMachine_TE5 core:firedBy :TaskMachine_Event_Complete .
+:TaskMachine_TE5 core:guardedBy :TaskMachine_Guard_RunRunning .
+
+:TaskMachine_TE6 a :TaskTransition .
+:TaskMachine_TE6 core:edgeId "TE6" .
+:TaskMachine_TE6 core:fromState :TaskMachine_Active .
+:TaskMachine_TE6 core:toState :TaskMachine_Failed .
+:TaskMachine_TE6 core:firedBy :TaskMachine_Event_Fail .
+:TaskMachine_TE6 core:guardedBy owl:Nothing .
+
+:TaskMachine_TE7 a :TaskTransition .
+:TaskMachine_TE7 core:edgeId "TE7" .
+:TaskMachine_TE7 core:fromState :TaskMachine_Active .
+:TaskMachine_TE7 core:toState :TaskMachine_Cancelled .
+:TaskMachine_TE7 core:firedBy :TaskMachine_Event_Cancel .
+:TaskMachine_TE7 core:guardedBy owl:Nothing .

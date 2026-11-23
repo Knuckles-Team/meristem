@@ -43,7 +43,7 @@ include-package-data = true
 version = {attr = "meristem._version.__version__"}
 
 [tool.setuptools.package-data]
-meristem = ["py.typed"]
+meristem = ["py.typed", "ontology/*.ttl"]
 
 [tool.setuptools.packages.find]
 where = ["."]
