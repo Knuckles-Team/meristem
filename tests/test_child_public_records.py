@@ -134,7 +134,7 @@ async def test_explicit_summary_and_unbound_run() -> None:
 async def test_run_loop_builds_child_publisher_from_host_child_identity() -> None:
     from contextlib import asynccontextmanager
 
-    from meristem.graph import RunPlan, run
+    from meristem.graph import RunPlan, RunStatus, run
 
     publisher = Publisher()
     effects: list[int] = []
@@ -161,7 +161,7 @@ async def test_run_loop_builds_child_publisher_from_host_child_identity() -> Non
     finally:
         support.register_durable_run_event_factory(None)
 
-    assert result.status == "completed"
+    assert result.status is RunStatus.COMPLETED
     assert effects == [7]
     kinds = {kind for kind, _ in publisher.records}
     assert kinds <= {"public_text", "tool_activity", "state"}

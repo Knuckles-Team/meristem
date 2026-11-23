@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import json
 import time
+from collections.abc import Mapping
 from dataclasses import asdict
 from typing import Any, Literal
 
@@ -21,13 +22,20 @@ from pydantic_ai.usage import RunUsage
 
 from meristem.host_ports import RunCheckpointPort
 
-from .state import DependencyPlan, GraphState, RunPlan
+from .state import DependencyPlan, GraphState, RunPlan, RunStatus, TaskStatus
 
 MAX_CHECKPOINT_BYTES = 1_048_576
+
+#: A stored status outside the closed enum refuses restore with this code.
+RUN_STATE_UNKNOWN = "RUN_STATE_UNKNOWN"
 
 
 class CheckpointUnavailable(RuntimeError):
     """Checkpoint content cannot safely authorize continued execution."""
+
+    def __init__(self, message: str, *, code: str | None = None) -> None:
+        super().__init__(message)
+        self.code = code
 
 
 class _Snapshot(BaseModel):
@@ -38,15 +46,14 @@ class _Snapshot(BaseModel):
     admission_identity: str
     plan_digest: str
     phase: Literal["completed", "step_inflight"]
-    inflight_tasks: list[str]
+    task_states: dict[str, TaskStatus]
     next_step: int = Field(ge=0)
     messages: list[Any]
     task_messages: dict[str, list[Any]]
-    completed_tasks: list[str]
     dependency_outputs: dict[str, Any]
     usage: dict[str, int]
     outputs: list[str]
-    status: Literal["running", "completed", "stopped"]
+    run_status: RunStatus
     elapsed_seconds: float = Field(ge=0, allow_inf_nan=False)
 
 
@@ -198,9 +205,8 @@ class RunCheckpoint:
         self.digest = _plan_digest(plan, attachments)
         self.history: list[Any] = []
         self.task_histories: dict[str, list[Any]] = {}
-        self.completed_tasks: set[str] = set()
+        self.task_states: dict[str, TaskStatus] = {}
         self.dependency_outputs: dict[str, Any] = {}
-        self.inflight_tasks: set[str] = set()
         self.elapsed = 0.0
         self.started = time.monotonic()
         self.restored = False
@@ -211,6 +217,41 @@ class RunCheckpoint:
     @property
     def admission_identity(self) -> str:
         return self.port.admission_identity
+
+    @property
+    def completed_tasks(self) -> set[str]:
+        """The view of the task map: the tasks that reached ``Done``."""
+        return {
+            key for key, state in self.task_states.items() if state is TaskStatus.DONE
+        }
+
+    @property
+    def inflight_tasks(self) -> set[str]:
+        """The view of the task map: the tasks still ``Active``."""
+        return {
+            key for key, state in self.task_states.items() if state is TaskStatus.ACTIVE
+        }
+
+    def _stored_run_status(self, stored: Any) -> None:
+        """Refuse a stored run status outside the closed enum, by its code."""
+        if not isinstance(stored, str) or stored not in {
+            state.value for state in RunStatus
+        }:
+            raise CheckpointUnavailable(
+                "stored run state is unknown", code=RUN_STATE_UNKNOWN
+            )
+
+    def _stored_task_states(self, stored: Any) -> None:
+        """Refuse a stored task state outside the closed enum, by its code."""
+        if not isinstance(stored, dict) or not all(
+            isinstance(key, str)
+            and isinstance(value, str)
+            and value in {state.value for state in TaskStatus}
+            for key, value in stored.items()
+        ):
+            raise CheckpointUnavailable(
+                "stored task state is unknown", code=RUN_STATE_UNKNOWN
+            )
 
     async def restore(self) -> None:
         raw = await self.port.restore()
@@ -223,6 +264,14 @@ class RunCheckpoint:
         ):
             raise CheckpointUnavailable("checkpoint content is invalid")
         try:
+            stored = json.loads(raw)
+        except ValueError as exc:
+            raise CheckpointUnavailable("checkpoint content is invalid") from exc
+        if not isinstance(stored, dict):
+            raise CheckpointUnavailable("checkpoint content is invalid")
+        self._stored_run_status(stored.get("run_status"))
+        self._stored_task_states(stored.get("task_states"))
+        try:
             saved = _Snapshot.model_validate_json(raw)
         except (ValidationError, ValueError) as exc:
             raise CheckpointUnavailable("checkpoint content is invalid") from exc
@@ -232,7 +281,7 @@ class RunCheckpoint:
             self.digest,
         ):
             raise CheckpointUnavailable("checkpoint run or plan binding differs")
-        if saved.phase == "step_inflight" or saved.inflight_tasks:
+        if saved.phase == "step_inflight" or self._active_view(saved.task_states):
             raise CheckpointUnavailable("interrupted step has uncertain effects")
         _usage_values(saved.usage)
         # Validate structured child outputs with the same finite JSON codec
@@ -248,40 +297,39 @@ class RunCheckpoint:
         self.task_histories = {
             key: _messages(value) for key, value in saved.task_messages.items()
         }
-        self.completed_tasks = set(saved.completed_tasks)
+        self.task_states = dict(saved.task_states)
         self.dependency_outputs = dict(saved.dependency_outputs)
-        self.inflight_tasks = set(saved.inflight_tasks)
         self.state.step = saved.next_step
         self.state.outputs = list(saved.outputs)
         self.state.usage = dict(saved.usage)
-        status = saved.status
-        if status == "running":
-            graph = self.plan.dependency_plan
-            if graph is None:
-                status = (
-                    "completed"
-                    if saved.next_step
-                    == min(len(self.plan.steps), max(self.plan.stop.max_steps, 0))
-                    else status
-                )
-            elif graph.output_task_id in self.completed_tasks:
-                status = "completed"
-        self.state.status = status
+        # The stored run state is read back exactly: no inference fills in
+        # a terminal state for a run that was still running.
+        self.state.status = saved.run_status
         self.elapsed = saved.elapsed_seconds
         self.started = time.monotonic()
         self.restored = True
+
+    @staticmethod
+    def _active_view(task_states: Mapping[str, TaskStatus]) -> bool:
+        return any(state is TaskStatus.ACTIVE for state in task_states.values())
 
     def _validate_shape(self, saved: _Snapshot) -> None:
         graph = self.plan.dependency_plan
         if graph is None:
             max_steps = min(len(self.plan.steps), max(self.plan.stop.max_steps, 0))
-            if saved.completed_tasks or saved.dependency_outputs or saved.task_messages:
+            # A serial checkpoint carries only completed step markers.
+            step_markers = {f"step:{index}" for index in range(saved.next_step)}
+            if set(saved.task_states) - step_markers or any(
+                state is not TaskStatus.DONE for state in saved.task_states.values()
+            ):
+                raise CheckpointUnavailable("checkpoint step state is invalid")
+            if saved.dependency_outputs or saved.task_messages:
                 raise CheckpointUnavailable("checkpoint dependency state is invalid")
             if saved.next_step > max_steps or len(saved.outputs) != saved.next_step:
                 raise CheckpointUnavailable("checkpoint step position is invalid")
-            if saved.status == "completed" and saved.next_step != max_steps:
+            if saved.run_status is RunStatus.COMPLETED and saved.next_step != max_steps:
                 raise CheckpointUnavailable("checkpoint completion position is invalid")
-            if saved.status == "stopped" and not (
+            if saved.run_status.stop_reason is not None and not (
                 saved.outputs
                 and any(
                     marker in saved.outputs[-1]
@@ -293,12 +341,11 @@ class RunCheckpoint:
                 raise CheckpointUnavailable("checkpoint message history is missing")
             return
         nodes = {task.task_id: task for task in graph.tasks}
-        completed = set(saved.completed_tasks)
-        if (
-            len(completed) != len(saved.completed_tasks)
-            or not completed <= nodes.keys()
-        ):
+        if set(saved.task_states) - nodes.keys():
             raise CheckpointUnavailable("checkpoint dependency task set is invalid")
+        completed = {
+            key for key, state in saved.task_states.items() if state is TaskStatus.DONE
+        }
         if set(saved.dependency_outputs) != completed:
             raise CheckpointUnavailable("checkpoint dependency outputs are incomplete")
         if set(saved.task_messages) - completed:
@@ -310,9 +357,15 @@ class RunCheckpoint:
             raise CheckpointUnavailable(
                 "checkpoint dependency step position is invalid"
             )
-        if saved.status == "completed" and graph.output_task_id not in completed:
+        if (
+            saved.run_status is RunStatus.COMPLETED
+            and graph.output_task_id not in completed
+        ):
             raise CheckpointUnavailable("checkpoint dependency completion is invalid")
-        if saved.status == "stopped" and graph.output_task_id not in completed:
+        if (
+            saved.run_status.stop_reason is not None
+            and graph.output_task_id not in completed
+        ):
             raise CheckpointUnavailable("checkpoint dependency stop state is invalid")
 
     def usage(self) -> RunUsage:
@@ -334,12 +387,25 @@ class RunCheckpoint:
     def mark_inflight(self, task_id: str) -> None:
         if not isinstance(task_id, str) or not task_id:
             raise CheckpointUnavailable("checkpoint task identity is invalid")
-        self.inflight_tasks.add(task_id)
+        from .dependency import transition_task  # local: import cycle
 
-    def complete_serial(self, history: list[Any]) -> None:
-        """Update the serial history and clear its completed effect marker."""
-        self.history = list(history)
-        self.inflight_tasks.clear()
+        current = self.task_states.get(task_id, TaskStatus.BLOCKED)
+        if current is TaskStatus.BLOCKED:
+            # The scheduler only marks a task inflight once every parent is
+            # done and a model-call permit is held for it.
+            current = transition_task(current, "deps_met", {"all_parents_done": True})
+        self.task_states[task_id] = transition_task(
+            current, "dispatch", {"permit_held": True}
+        )
+
+    def complete_step(self, step_marker: str) -> None:
+        """Accept the completion of one serial step's effect marker."""
+        from .dependency import transition_task  # local: import cycle
+
+        current = self.task_states.get(step_marker, TaskStatus.ACTIVE)
+        self.task_states[step_marker] = transition_task(
+            current, "complete", {"run_running": True}
+        )
 
     def record_completed(
         self,
@@ -347,8 +413,14 @@ class RunCheckpoint:
         output: Any,
         history: list[Any] | None = None,
     ) -> None:
-        self.inflight_tasks.discard(task_id)
-        self.completed_tasks.add(task_id)
+        from .dependency import transition_task  # local: import cycle
+
+        # The scheduler only records a completion the task machine already
+        # admitted; the snapshot mirrors that admitted state.
+        current = self.task_states.get(task_id, TaskStatus.ACTIVE)
+        self.task_states[task_id] = transition_task(
+            current, "complete", {"run_running": True}
+        )
         self.dependency_outputs[task_id] = json.loads(_canonical(output))
         if history is not None:
             self.task_histories[task_id] = list(history)
@@ -366,17 +438,16 @@ class RunCheckpoint:
             self.mark_inflight(task_id)
         elif task_id is not None and phase == "completed":
             self.record_completed(task_id, output, history)
-        status = self.state.status
-        if status not in ("running", "completed", "stopped"):
+        # The snapshot records the run state exactly as it is; no terminal
+        # state is inferred for a run that has not reached it yet.
+        if self.state.status not in (
+            RunStatus.RUNNING,
+            RunStatus.COMPLETED,
+            RunStatus.STOPPED_REQUESTED,
+            RunStatus.STOPPED_BUDGET,
+            RunStatus.STOPPED_CANCELLED,
+        ):
             raise CheckpointUnavailable("checkpoint run state is invalid")
-        if status == "running":
-            graph = self.plan.dependency_plan
-            if graph is None:
-                max_steps = min(len(self.plan.steps), max(self.plan.stop.max_steps, 0))
-                if len(self.state.outputs) == max_steps:
-                    status = "completed"
-            elif graph.output_task_id in self.completed_tasks:
-                status = "completed"
         if self.inflight_tasks and phase != "step_inflight":
             # A completed task can be published while another parallel task is
             # active.  Preserve the uncertainty marker in that snapshot.
@@ -402,18 +473,17 @@ class RunCheckpoint:
             admission_identity=self.admission_identity,
             plan_digest=self.digest,
             phase=phase,
-            inflight_tasks=sorted(self.inflight_tasks),
+            task_states=dict(self.task_states),
             next_step=next_step,
             messages=ModelMessagesTypeAdapter.dump_python(self.history, mode="json"),
             task_messages={
                 key: ModelMessagesTypeAdapter.dump_python(value, mode="json")
                 for key, value in self.task_histories.items()
             },
-            completed_tasks=sorted(self.completed_tasks),
             dependency_outputs=self.dependency_outputs,
             usage=usage,
             outputs=list(self.state.outputs),
-            status=status,
+            run_status=self.state.status,
             elapsed_seconds=self.elapsed + time.monotonic() - self.started,
         )
         content = _canonical(snapshot.model_dump(mode="json"))

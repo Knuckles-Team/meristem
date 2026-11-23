@@ -26,6 +26,7 @@ from meristem.graph import (
     RunBudget,
     RunPlan,
     RunRequest,
+    RunStatus,
     StopRule,
     create_graph_agent,
     default_run_plan,
@@ -123,7 +124,7 @@ def plan_of(model, **kw) -> RunPlan:
 # spec: MERISTEM-RUN-R001.2
 async def test_no_model_fails_closed(events):
     result = await run(support.request(task="hi"))
-    assert result.status == "failed"
+    assert result.status is RunStatus.FAILED
     assert "RunPlanUnavailable" in (result.error or "")
     assert [e["type"] for e in events] == ["error"]
 
@@ -170,7 +171,7 @@ async def test_host_decision_provider_supplies_the_plan(is_async):
 
     support.register_run_decision_provider(provide)
     result = await run(support.request(task="t", agent_name="n"))
-    assert (result.status, result.output) == ("completed", "from-host")
+    assert (result.status, result.output) == (RunStatus.COMPLETED, "from-host")
     assert seen[0].agent_name == "n"
 
 
@@ -178,7 +179,7 @@ async def test_host_decision_provider_supplies_the_plan(is_async):
 async def test_provider_returning_non_plan_fails():
     support.register_run_decision_provider(lambda request: {"model": "x"})
     result = await run(support.request(task="t"))
-    assert result.status == "failed" and "RunPlan" in (result.error or "")
+    assert result.status is RunStatus.FAILED and "RunPlan" in (result.error or "")
 
 
 # spec: MERISTEM-RUN-R001.1
@@ -203,10 +204,15 @@ async def test_steps_share_one_history_and_emit_events(events):
 @pytest.mark.parametrize(
     ("stop", "budget", "status", "steps"),
     [
-        (StopRule(stop_markers=("echo:b",)), RunBudget(), "stopped", 2),
-        (StopRule(max_steps=1), RunBudget(), "completed", 1),
-        (StopRule(), RunBudget(request_limit=0), "stopped", 1),
-        (StopRule(), RunBudget(timeout_seconds=0), "stopped", 1),
+        (
+            StopRule(stop_markers=("echo:b",)),
+            RunBudget(),
+            RunStatus.STOPPED_REQUESTED,
+            2,
+        ),
+        (StopRule(max_steps=1), RunBudget(), RunStatus.COMPLETED, 1),
+        (StopRule(), RunBudget(request_limit=0), RunStatus.STOPPED_BUDGET, 1),
+        (StopRule(), RunBudget(timeout_seconds=0), RunStatus.STOPPED_BUDGET, 1),
     ],
 )
 async def test_stop_rules_and_budgets_are_enforced(stop, budget, status, steps):
@@ -260,7 +266,7 @@ async def test_granted_tools_without_a_host_fail_closed():
     result = await run(
         support.request(task="t"), plan=plan_of(TestModel(), tool_names=("x",))
     )
-    assert result.status == "failed"
+    assert result.status is RunStatus.FAILED
 
 
 async def test_json_response_format_returns_json_text():
@@ -279,7 +285,7 @@ async def test_model_error_is_a_failed_terminal_event():
         raise ValueError("model down")
 
     result = await run(support.request(task="t"), plan=plan_of(FunctionModel(boom)))
-    assert result.status == "failed" and "model down" in (result.error or "")
+    assert result.status is RunStatus.FAILED and "model down" in (result.error or "")
 
 
 @pytest.mark.spec("MERISTEM-RUN-R001.7")
@@ -425,7 +431,7 @@ async def test_admitted_attachments_reach_only_first_model_input(through_port):
         result = await AgentRunExecutor(ports=support.PORTS).execute_agent(request)
     else:
         result = await run(request, plan=plan)
-    assert result.status == "completed"
+    assert result.status is RunStatus.COMPLETED
     assert captured == [["inspect", png, "attached text"], "continue"]
 
 
@@ -457,7 +463,7 @@ async def test_attachment_refusal_precedes_model_construction(
             "must-not-resolve", input_media_types=media, budget=RunBudget(**budget)
         ),
     )
-    assert result.status == "failed"
+    assert result.status is RunStatus.FAILED
     assert [event["type"] for event in events] == ["error"]
 
 
@@ -478,7 +484,7 @@ async def test_attachment_budget_is_aggregate_and_urls_are_not_fetched(events):
         result = await run(
             support.request(task="inspect", attachments=parts), plan=plan
         )
-        assert result.status == "failed"
+        assert result.status is RunStatus.FAILED
     assert [event["type"] for event in events] == ["error", "error"]
 
 
@@ -493,7 +499,7 @@ async def test_zero_initial_usage_preserves_legacy_serial_step_budgets():
     assert plan.initial_elapsed_seconds == 0.0
     result = await run(support.request(task="t"), plan=plan)
     assert (result.status, result.steps, result.usage["requests"]) == (
-        "completed",
+        RunStatus.COMPLETED,
         3,
         3,
     )
@@ -530,7 +536,7 @@ async def test_initial_usage_is_counted_once_and_reusable(through_port, events):
         result = await run(
             support.request(task="t"), plan=None if through_port else plan
         )
-        assert (result.status, result.steps) == ("completed", 2)
+        assert (result.status, result.steps) == (RunStatus.COMPLETED, 2)
         assert result.usage == expected
         assert events[-1]["result"]["usage"] == expected
         assert sum(event["type"] == "graph_complete" for event in events) == 1
@@ -570,7 +576,7 @@ async def test_exhausted_initial_usage_refuses_before_any_binding(
         budget=budget,
     )
     result = await run(support.request(task="t"), plan=plan)
-    assert result.status == "stopped" and result.steps == 0
+    assert result.status is RunStatus.STOPPED_BUDGET and result.steps == 0
     assert (result.error or "").startswith("budget:")
     assert result.usage == {
         "requests": initial.requests,
@@ -619,7 +625,7 @@ async def test_exact_initial_tool_limit_allows_only_model_work(
     calls = 1 if attempt_tool else 2
     assert prompts == ["a", "b"][:calls]
     assert (result.status, result.steps, result.output) == (
-        "stopped" if attempt_tool else "completed",
+        RunStatus.STOPPED_BUDGET if attempt_tool else RunStatus.COMPLETED,
         calls,
         "" if attempt_tool else "ok",
     )
@@ -660,7 +666,7 @@ async def test_invalid_initial_counters_fail_before_model_resolution(
     result = await run(
         support.request(task="t"), plan=plan_of("unbound", initial_usage=initial)
     )
-    assert result.status == "failed" and result.steps == 0
+    assert result.status is RunStatus.FAILED and result.steps == 0
     assert [event["type"] for event in events] == ["error"]
 
 
@@ -674,7 +680,7 @@ async def test_invalid_initial_elapsed_fails_before_model_resolution(elapsed, ev
         support.request(task="t"),
         plan=plan_of("unbound", initial_elapsed_seconds=elapsed),
     )
-    assert result.status == "failed" and result.steps == 0
+    assert result.status is RunStatus.FAILED and result.steps == 0
     assert [event["type"] for event in events] == ["error"]
 
 
@@ -710,7 +716,7 @@ async def test_initial_usage_shares_remaining_limits_across_serial_steps(
             budget=budget,
         ),
     )
-    assert result.status == "stopped" and len(prompts) == calls
+    assert result.status is RunStatus.STOPPED_BUDGET and len(prompts) == calls
     assert result.usage["requests"] == initial.requests + calls
     assert result.usage["total_tokens"] == tokens
     assert events[-1]["result"]["usage"] == result.usage
@@ -736,7 +742,7 @@ async def test_initial_tool_usage_is_shared_across_serial_steps(events):
             budget=RunBudget(tool_calls_limit=2),
         ),
     )
-    assert result.status == "stopped" and effects == ["effect"]
+    assert result.status is RunStatus.STOPPED_BUDGET and effects == ["effect"]
     assert result.usage["tool_calls"] == 2
     assert events[-1]["result"]["usage"] == result.usage
 
@@ -760,7 +766,7 @@ async def test_initial_usage_snapshot_precedes_host_model_resolution():
     result = await run(
         support.request(task="t"), plan=plan_of("host:model", initial_usage=initial)
     )
-    assert result.status == "completed"
+    assert result.status is RunStatus.COMPLETED
     assert result.usage == {
         "requests": 3,
         "tool_calls": 0,
@@ -780,7 +786,7 @@ async def test_unreported_tokens_are_not_estimated_by_the_harness():
         support.request(task="a long prompt is not a usage measurement"),
         plan=plan_of(UnreportedUsageModel(), initial_usage=RunUsage(requests=1)),
     )
-    assert result.status == "completed"
+    assert result.status is RunStatus.COMPLETED
     assert result.usage == {
         "requests": 2,
         "tool_calls": 0,
@@ -813,7 +819,7 @@ async def test_request_metadata_and_model_output_cannot_replace_host_initial_usa
             },
         )
     )
-    assert result.status == "completed" and result.output == spoof
+    assert result.status is RunStatus.COMPLETED and result.output == spoof
     assert result.usage["requests"] == 4 and result.usage["total_tokens"] == 4
 
 
@@ -832,7 +838,7 @@ async def test_initial_elapsed_reduces_timeout_without_changing_received_budget(
     budget = RunBudget(timeout_seconds=10)
     plan = plan_of(echo_model(), budget=budget, initial_elapsed_seconds=2.5)
     result = await run(support.request(task="t"), plan=plan)
-    assert result.status == "completed" and delays == [7.5]
+    assert result.status is RunStatus.COMPLETED and delays == [7.5]
     assert plan.budget is budget and budget.timeout_seconds == 10
 
 
@@ -860,7 +866,7 @@ async def test_initial_usage_survives_serial_early_exit(exit_kind, events):
         usage = events[-1]["result"]["usage"]
     else:
         result = await run(support.request(task="t"), plan=plan)
-        assert result.status == "failed"
+        assert result.status is RunStatus.FAILED
         usage = result.usage
         assert events[-1]["result"]["usage"] == usage
     assert usage == {
@@ -882,7 +888,7 @@ async def test_initial_usage_requires_a_typed_host_ledger(initial, events):
     result = await run(
         support.request(task="t"), plan=plan_of("unbound", initial_usage=initial)
     )
-    assert result.status == "failed" and result.steps == 0
+    assert result.status is RunStatus.FAILED and result.steps == 0
     assert "initial_usage" in result.error
     assert [event["type"] for event in events] == ["error"]
 
@@ -899,7 +905,7 @@ async def test_incoherent_initial_token_total_fails_before_model_resolution(even
         support.request(task="t"),
         plan=plan_of("unbound", initial_usage=IncoherentUsage(input_tokens=1)),
     )
-    assert result.status == "failed" and result.steps == 0
+    assert result.status is RunStatus.FAILED and result.steps == 0
     assert "total_tokens" in result.error
     assert [event["type"] for event in events] == ["error"]
 
@@ -1022,7 +1028,7 @@ async def test_measured_planning_limit_failure_preserves_original_error_and_usag
     )
     result = await run(support.request(task="t", budget_tokens=2))
     assert (result.status, result.steps, result.error) == (
-        "failed",
+        RunStatus.FAILED,
         0,
         f"UsageLimitExceeded: {error}",
     )
@@ -1065,12 +1071,12 @@ async def test_measured_planning_cancellation_keeps_ledger_and_original_exceptio
     assert caught.value is error
     assert caught.value.__cause__ is cause
     assert [event["type"] for event in events] == ["run_cancelled"]
-    assert events[0]["status"] == "stopped"
+    assert events[0]["status"] == "stopped_cancelled"
     assert events[0]["sequence"] == 1 and events[0]["step"] == 0
     assert events[0]["result"] == {
         "run_id": request.run_id,
         "output": "",
-        "status": "stopped",
+        "status": "stopped_cancelled",
         "steps": 0,
         "usage": {
             "requests": 2,
@@ -1108,7 +1114,7 @@ async def test_raw_planning_failures_cannot_claim_unmeasured_usage(
     if error_type is RuntimeError:
         result = await run(request)
         assert (result.status, result.steps, result.usage, result.error) == (
-            "failed",
+            RunStatus.FAILED,
             0,
             {},
             "RuntimeError: raw provider failure",
@@ -1141,7 +1147,7 @@ async def test_invalid_planning_failure_counters_reject_the_whole_ledger(
 
     support.register_run_decision_provider(provide)
     result = await run(support.request(task="t"))
-    assert (result.status, result.steps, result.usage) == ("failed", 0, {})
+    assert (result.status, result.steps, result.usage) == (RunStatus.FAILED, 0, {})
     assert "initial_usage" in result.error
     assert "nonnegative integers" in result.error
     assert [event["type"] for event in events] == ["error"]
@@ -1169,7 +1175,7 @@ async def test_invalid_planning_failure_elapsed_rejects_the_whole_ledger(
 
     support.register_run_decision_provider(provide)
     result = await run(support.request(task="t"))
-    assert (result.status, result.steps, result.usage) == ("failed", 0, {})
+    assert (result.status, result.steps, result.usage) == (RunStatus.FAILED, 0, {})
     assert "initial_elapsed_seconds" in result.error
     assert [event["type"] for event in events] == ["error"]
     assert events[0]["result"] == result.as_dict()
@@ -1191,7 +1197,7 @@ async def test_planning_failure_requires_a_typed_host_ledger(
 
     support.register_run_decision_provider(provide)
     result = await run(support.request(task="t"))
-    assert (result.status, result.steps, result.usage) == ("failed", 0, {})
+    assert (result.status, result.steps, result.usage) == (RunStatus.FAILED, 0, {})
     assert "initial_usage must be RunUsage" in result.error
     assert [event["type"] for event in events] == ["error"]
     assert events[0]["result"] == result.as_dict()
@@ -1216,7 +1222,7 @@ async def test_planning_failure_rejects_an_incoherent_host_token_total(
 
     support.register_run_decision_provider(provide)
     result = await run(support.request(task="t"))
-    assert (result.status, result.steps, result.usage) == ("failed", 0, {})
+    assert (result.status, result.steps, result.usage) == (RunStatus.FAILED, 0, {})
     assert "initial_usage total_tokens" in result.error
     assert [event["type"] for event in events] == ["error"]
     assert events[0]["result"] == result.as_dict()
@@ -1244,7 +1250,7 @@ async def test_model_cannot_inject_a_second_planning_failure_ledger(events):
         ),
         plan=plan,
     )
-    assert (result.status, result.steps) == ("failed", 1)
+    assert (result.status, result.steps) == (RunStatus.FAILED, 1)
     assert result.usage == {
         "requests": 3,
         "tool_calls": 0,
@@ -1276,7 +1282,7 @@ async def test_invalid_planning_cancellation_ledger_fails_before_cancellation(
         )
     )
     result = await run(support.request(task="t"))
-    assert (result.status, result.steps, result.usage) == ("failed", 0, {})
+    assert (result.status, result.steps, result.usage) == (RunStatus.FAILED, 0, {})
     assert result.error.startswith("ValueError: initial_")
     assert [event["type"] for event in events] == ["error"]
     assert events[0]["result"] == result.as_dict()
@@ -1300,7 +1306,7 @@ async def test_planning_failure_does_not_estimate_unreported_tokens(
             task="Prompt and output text must not become token measurements"
         )
     )
-    assert (result.status, result.steps) == ("failed", 0)
+    assert (result.status, result.steps) == (RunStatus.FAILED, 0)
     assert result.usage == {
         "requests": requests,
         "tool_calls": 0,
@@ -1359,11 +1365,11 @@ async def test_task_cancellation_after_planner_consumption_reports_actual_usage(
     assert str(caught.value) == "stop while publishing the measured plan"
     assert execution.cancelled()
     assert [event["type"] for event in events] == ["run_cancelled"]
-    assert events[0]["status"] == "stopped"
+    assert events[0]["status"] == "stopped_cancelled"
     assert events[0]["result"] == {
         "run_id": request.run_id,
         "output": "",
-        "status": "stopped",
+        "status": "stopped_cancelled",
         "steps": 0,
         "usage": {
             "requests": 2,
@@ -1386,7 +1392,7 @@ def failed_run_result():
     return RunResult(
         run_id="host-assigned-run-id",
         output="partial output",
-        status="failed",
+        status=RunStatus.FAILED,
         steps=2,
         usage={
             "requests": 2,
@@ -1507,7 +1513,15 @@ def test_run_failed_rejects_non_result_receipts(result):
     ("field", "value"),
     [
         ("status", value)
-        for value in ("pending", "running", "completed", "stopped", None)
+        for value in (
+            "pending",
+            "running",
+            "completed",
+            "stopped_requested",
+            "stopped_budget",
+            "stopped_cancelled",
+            None,
+        )
     ]
     + [("run_id", value) for value in ("", None, 1, False)]
     + [("output", value) for value in (None, 1, b"text")]
@@ -1804,7 +1818,13 @@ async def test_executor_keeps_successful_and_stopped_return_contract(kind, event
         support.request(task="t")
     )
     assert isinstance(result, RunResult)
-    assert result.status == ("completed" if kind == "completed" else "stopped")
+    assert result.status == (
+        RunStatus.COMPLETED
+        if kind == "completed"
+        else RunStatus.STOPPED_REQUESTED
+        if kind == "stop_marker"
+        else RunStatus.STOPPED_BUDGET
+    )
     assert result.steps == (0 if kind == "budget" else 1)
     assert events[-1]["type"] == "graph_complete"
     assert events[-1]["result"] == result.as_dict()
@@ -1837,7 +1857,7 @@ async def test_executor_preserves_raw_and_measured_planner_cancellation(
         assert events[0]["result"] == {
             "run_id": request.run_id,
             "output": "",
-            "status": "stopped",
+            "status": "stopped_cancelled",
             "steps": 0,
             "usage": {
                 "requests": 2,
@@ -1896,7 +1916,7 @@ async def test_executor_task_cancellation_remains_cancelled_with_measured_usage(
     assert events[-1]["result"] == {
         "run_id": request.run_id,
         "output": "",
-        "status": "stopped",
+        "status": "stopped_cancelled",
         "steps": 1,
         "usage": {
             "requests": 3,
@@ -1964,7 +1984,7 @@ async def test_terminal_observer_preserves_host_mapping_tools_and_privacy(
         )
     else:
         result = await run(request, stream_observer=observe)
-    assert result.status == "completed" and result.output == "answer"
+    assert result.status is RunStatus.COMPLETED and result.output == "answer"
     assert result.run_id == "admitted-id" and tool_calls == ["read"]
     assert received == [request]
     assert received[0].metadata["session"] is session
@@ -2021,7 +2041,9 @@ async def test_terminal_observer_keeps_failure_cancel_and_budget(
         assert "model stream observer failed" in caught.value.result.error
     else:
         result = await execution
-        assert result.status == ("stopped" if outcome == "budget" else "failed")
+        assert result.status == (
+            RunStatus.STOPPED_BUDGET if outcome == "budget" else RunStatus.FAILED
+        )
     assert len(model_calls) == len(observed) == (0 if outcome == "budget" else 1)
     assert "secret observer detail" not in str(events)
 
@@ -2076,8 +2098,8 @@ async def test_live_shared_budget_charges_parent_and_child_once():
     second = await run(
         support.request(task="child"), plan=plan, shared_execution=shared
     )
-    assert first.status == "completed"
-    assert second.status == "stopped"
+    assert first.status is RunStatus.COMPLETED
+    assert second.status is RunStatus.STOPPED_BUDGET
     assert len(calls) == 1
     assert shared.usage.requests == 1
 
@@ -2091,12 +2113,12 @@ async def test_live_shared_budget_refuses_changed_plan_and_closed_scope():
     widened = plan_of(echo_model(calls), budget=RunBudget(request_limit=3))
     assert (
         await run(support.request(task="child"), plan=widened, shared_execution=shared)
-    ).status == "failed"
+    ).status is RunStatus.FAILED
     shared.close()
     original = plan_of(echo_model(calls), budget=budget)
     assert (
         await run(support.request(task="child"), plan=original, shared_execution=shared)
-    ).status == "failed"
+    ).status is RunStatus.FAILED
     assert calls == []
 
 
@@ -2124,7 +2146,7 @@ async def test_live_shared_budget_reserves_before_parallel_child_dispatch():
         child = await run(
             support.request(task="child"), plan=plan, shared_execution=shared
         )
-        assert child.status == "stopped"
+        assert child.status is RunStatus.STOPPED_BUDGET
         assert calls == ["model"]
     finally:
         release.set()
@@ -2187,8 +2209,8 @@ async def test_live_shared_budget_serializes_finite_token_allowance():
         await asyncio.wait_for(child_started.wait(), 0.5)
         release.set()
         parent_result, child_result = await asyncio.gather(parent, child)
-        assert parent_result.status == "completed"
-        assert child_result.status == "stopped"
+        assert parent_result.status is RunStatus.COMPLETED
+        assert child_result.status is RunStatus.STOPPED_BUDGET
         assert calls == ["model"]
     finally:
         release.set()
@@ -2217,8 +2239,8 @@ async def test_live_shared_budget_charges_tool_effects_across_runs():
         support.request(task="parent"), plan=plan, shared_execution=shared
     )
     child = await run(support.request(task="child"), plan=plan, shared_execution=shared)
-    assert parent.status == "completed"
-    assert child.status == "stopped"
+    assert parent.status is RunStatus.COMPLETED
+    assert child.status is RunStatus.STOPPED_BUDGET
     assert effects == ["effect"]
     assert parent.usage["tool_calls"] == 1
     assert child.usage["tool_calls"] == 0
@@ -2239,7 +2261,7 @@ async def test_live_shared_budget_refuses_checkpoint_and_seeded_usage():
     result = await run(
         support.request(task="child"), plan=seeded, shared_execution=shared
     )
-    assert result.status == "failed"
+    assert result.status is RunStatus.FAILED
 
     @contextlib.asynccontextmanager
     async def checkpoint(_request, _plan):
@@ -2250,7 +2272,7 @@ async def test_live_shared_budget_refuses_checkpoint_and_seeded_usage():
     result = await run(
         support.request(task="child"), plan=plan, shared_execution=shared
     )
-    assert result.status == "failed"
+    assert result.status is RunStatus.FAILED
     assert "cannot use a durable checkpoint" in result.error
     assert calls == []
     assert shared.usage.requests == 0
@@ -2270,8 +2292,8 @@ async def test_native_executor_consumes_the_host_shared_budget():
     child = await executor.execute_agent(
         support.request(task="child"), shared_execution=shared, plan=plan
     )
-    assert parent.status == "completed"
-    assert child.status == "stopped"
+    assert parent.status is RunStatus.COMPLETED
+    assert child.status is RunStatus.STOPPED_BUDGET
     assert len(calls) == 1
 
 
@@ -2301,7 +2323,10 @@ async def test_live_shared_budget_keeps_concurrent_child_usage_local():
         await asyncio.wait_for(both_started.wait(), 0.5)
         release.set()
         results = await asyncio.gather(*executions)
-        assert [result.status for result in results] == ["completed", "completed"]
+        assert [result.status for result in results] == [
+            RunStatus.COMPLETED,
+            RunStatus.COMPLETED,
+        ]
         assert [result.usage["requests"] for result in results] == [1, 1]
         assert shared.usage.requests == 2
     finally:
@@ -2322,7 +2347,7 @@ async def test_live_shared_budget_refuses_unaccounted_plan_provider():
 
     support.register_run_decision_provider(provider)
     result = await run(support.request(task="child"), shared_execution=shared)
-    assert result.status == "failed"
+    assert result.status is RunStatus.FAILED
     assert provider_calls == []
     assert shared.usage.requests == 0
 
@@ -2336,7 +2361,7 @@ async def test_live_shared_budget_refuses_expired_and_foreign_loop():
     plan = plan_of(echo_model(calls), budget=budget)
     assert (
         await run(support.request(task="child"), plan=plan, shared_execution=expired)
-    ).status == "stopped"
+    ).status is RunStatus.STOPPED_BUDGET
 
     live = LiveSharedBudget(budget, deadline=asyncio.get_running_loop().time() + 10)
     foreign = await asyncio.to_thread(
@@ -2344,7 +2369,7 @@ async def test_live_shared_budget_refuses_expired_and_foreign_loop():
             run(support.request(task="child"), plan=plan, shared_execution=live)
         )
     )
-    assert foreign.status == "failed"
+    assert foreign.status is RunStatus.FAILED
     assert calls == []
 
 
@@ -2389,8 +2414,8 @@ async def test_live_shared_budget_revocation_blocks_a_waiting_child():
         shared.close()
         release.set()
         parent_result, child_result = await asyncio.gather(parent, child)
-        assert parent_result.status == "completed"
-        assert child_result.status == "failed"
+        assert parent_result.status is RunStatus.COMPLETED
+        assert child_result.status is RunStatus.FAILED
         assert calls == ["model"]
     finally:
         release.set()

@@ -27,7 +27,7 @@ from meristem.graph.live_events import (
     emit_lineage_event,
     lineage_relationship,
 )
-from meristem.graph.state import RunBudget, RunRequest
+from meristem.graph.state import RunBudget, RunEvent, RunRequest, RunStatus, transition
 from meristem.harness.conversation_history import read_recursive_run_history
 from meristem.host_ports import HostPorts
 
@@ -186,7 +186,13 @@ async def _run_level(task: str, env: _Env, output_type: Any) -> Any:
 
 
 async def _run_drained(task: str, env: _Env, output_type: Any) -> Any:
-    """Cancel the framework once, then shield all descendant cleanup."""
+    """Cancel the framework once, then shield all descendant cleanup.
+
+    The level's run status follows the run machine: a cancellation moves it
+    through ``Cancelling`` and the finished drain to ``Stopped(cancelled)``;
+    a failed level to ``Failed``; a clean finish to ``Completed``.
+    """
+    status = RunStatus.RUNNING
     child = asyncio.create_task(_run_level(task, env, output_type))
     interrupted: BaseException | None = None
     value: Any = None
@@ -205,6 +211,18 @@ async def _run_drained(task: str, env: _Env, output_type: Any) -> Any:
                 # Preserve the original cancellation while refusing to deliver
                 # another cancellation into a descendant's async finally block.
                 interrupted = interrupted or exc
+        # The drain has finished: the level's run state follows the machine.
+        if interrupted is not None and isinstance(
+            interrupted, (asyncio.CancelledError, GeneratorExit)
+        ):
+            status = transition(status, RunEvent.CANCEL)
+            status = transition(
+                status, RunEvent.DRAIN_COMPLETE, {"no_active_task": True}
+            )
+        elif interrupted is not None:
+            status = transition(status, RunEvent.FAIL)
+        else:
+            status = transition(status, RunEvent.FINISH, {"output_task_complete": True})
     if interrupted is not None:
         raise interrupted
     return value

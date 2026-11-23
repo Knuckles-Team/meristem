@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import ports_support as support
 import pytest
 from pydantic_ai.messages import ModelResponse, TextPart, ToolCallPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.models.test import TestModel
 
+import meristem.rlm.runner as rlm_runner
 from meristem import host_ports
 from meristem.graph import RunPlan
 from meristem.graph.live_events import LineageBinding
@@ -567,3 +570,52 @@ async def test_recursive_history_selection_refuses_before_model(case):
         )
         assert legacy_calls == (["run"] if case == "legacy" else [])
         assert "private provider details" not in result["error"]
+
+
+# spec: MERISTEM-HARNESS-CYCLE-R086.3
+@pytest.mark.spec("MERISTEM-HARNESS-CYCLE-R086.3")
+async def test_rlm_cancel_drains_through_cancelling_and_propagates(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A host cancel moves the level through Cancelling to a drained stop.
+
+    The level state follows the run machine, and the original cancellation
+    is what propagates to the caller, not a wrapped failure.
+    """
+    calls: list[tuple[str, str, str]] = []
+    original = rlm_runner.transition
+
+    def spy(status, event, guard_facts=None):
+        result = original(status, event, guard_facts)
+        calls.append((status.value, event.value, result.value))
+        return result
+
+    monkeypatch.setattr(rlm_runner, "transition", spy)
+
+    entered = asyncio.Event()
+
+    async def hang(messages, info):
+        entered.set()
+        await asyncio.Event().wait()
+        return ModelResponse(parts=[TextPart("done")])
+
+    execution = asyncio.create_task(
+        run_rlm(
+            "cancel-task",
+            config=RLMConfig(model=FunctionModel(hang)),
+            ports=support.PORTS,
+        )
+    )
+    try:
+        await asyncio.wait_for(entered.wait(), 0.5)
+        execution.cancel("host stop")
+        with pytest.raises(asyncio.CancelledError):
+            await execution
+    finally:
+        if not execution.done():
+            execution.cancel()
+            await asyncio.gather(execution, return_exceptions=True)
+    assert calls == [
+        ("running", "cancel", "cancelling"),
+        ("cancelling", "drain_complete", "stopped_cancelled"),
+    ]

@@ -10,7 +10,7 @@ from pydantic_ai.messages import ModelResponse, TextPart
 from pydantic_ai.models.function import FunctionModel
 from pydantic_ai.usage import RequestUsage
 
-from meristem.graph import RunPlan, run
+from meristem.graph import RunPlan, RunStatus, run
 from meristem.graph.metrics import MAX_REQUEST_SAMPLES, RunMetrics
 
 
@@ -34,7 +34,7 @@ async def test_actual_model_calls_emit_attributed_counts_and_client_time(events)
         support.request(task="test", run_id="run:metrics"),
         plan=RunPlan(model=FunctionModel(respond), steps=("one", "two")),
     )
-    assert result.status == "completed"
+    assert result.status is RunStatus.COMPLETED
     metrics = result.metrics
     assert metrics["coverage"] == "complete"
     assert metrics["observed_model_requests"] == calls == 2
@@ -65,7 +65,7 @@ async def test_failed_model_call_is_observed_without_invented_usage():
         support.request(task="test"),
         plan=RunPlan(model=FunctionModel(fail), steps=("one",)),
     )
-    assert result.status == "failed"
+    assert result.status is RunStatus.FAILED
     assert result.metrics["observed_model_requests"] == 1
     sample = result.metrics["model_requests"][0]
     assert sample["outcome"] == "failed"
@@ -96,7 +96,7 @@ async def test_invalid_response_counts_do_not_become_metric_values(bad_count):
 # spec: MERISTEM-RUN-R001.12
 async def test_missing_model_has_zero_observed_requests():
     result = await run(support.request(task="test"))
-    assert result.status == "failed"
+    assert result.status is RunStatus.FAILED
     assert result.metrics["model_requests"] == []
     assert result.metrics["observed_model_requests"] == 0
 

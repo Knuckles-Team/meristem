@@ -19,6 +19,7 @@ from meristem.graph import (
     DependencyPlan,
     RunBudget,
     RunPlan,
+    RunStatus,
     RunTask,
     StopRule,
     ToolStep,
@@ -136,7 +137,7 @@ async def test_freed_slot_starts_dependent_before_slow_peer_and_join_waits(
         if not parent.done():
             parent.cancel()
         await asyncio.gather(parent, return_exceptions=True)
-    assert result.status == "completed" and result.output == "result:join"
+    assert result.status is RunStatus.COMPLETED and result.output == "result:join"
     assert result.steps == 4 and result.usage["requests"] == initial.requests + 4
     assert result.usage["tool_calls"] == initial.tool_calls
     assert result.usage["total_tokens"] == initial.total_tokens + 8
@@ -193,7 +194,7 @@ async def test_active_limit_and_ready_order(capacity):
         if not parent.done():
             parent.cancel()
         await asyncio.gather(parent, return_exceptions=True)
-    assert result.status == "completed"
+    assert result.status is RunStatus.COMPLETED
     assert model.peak <= capacity
     assert [key for key, kind in model.timeline if kind == "start"] == list(names)
 
@@ -227,7 +228,9 @@ async def test_failure_stop_and_cancel_drain_siblings_and_block_dependents(
     else:
         model.release["B"].set()
         result = await parent
-        assert result.status == ("failed" if failure == "error" else "stopped")
+        assert result.status == (
+            RunStatus.FAILED if failure == "error" else RunStatus.STOPPED_REQUESTED
+        )
     assert model.active == 0 and model.ended["A"].is_set()
     assert events[-1]["result"]["usage"] == {
         "requests": initial.requests + 2,
@@ -301,7 +304,7 @@ async def test_invalid_plan_fails_before_model_binding(change, events):
     base = graph_plan("unbound")
     plan = replace(base, dependency_plan=replace(base.dependency_plan, **change))
     result = await run(support.request(task="t"), plan=plan)
-    assert result.status == "failed"
+    assert result.status is RunStatus.FAILED
     assert [e["type"] for e in events] == ["error"]
 
 
@@ -319,7 +322,7 @@ async def test_over_budget_or_ambiguous_plan_fails_before_binding(change, events
     result = await run(
         support.request(task="t"), plan=replace(graph_plan("unbound"), **change)
     )
-    assert result.status == "failed"
+    assert result.status is RunStatus.FAILED
     assert [e["type"] for e in events] == ["error"]
 
 
@@ -332,7 +335,7 @@ async def test_shared_request_limit_never_overshoots(limit, events):
         support.request(task="t"),
         plan=graph_plan(model.model, budget=RunBudget(request_limit=limit)),
     )
-    assert result.status == "stopped"
+    assert result.status is RunStatus.STOPPED_BUDGET
     assert len(model.inputs) == limit
     assert result.usage["requests"] == limit
     assert model.active == 0
@@ -348,7 +351,7 @@ async def test_shared_token_limit_stops_after_reported_usage():
             model.model, capacity=1, budget=RunBudget(total_tokens_limit=3)
         ),
     )
-    assert result.status == "stopped"
+    assert result.status is RunStatus.STOPPED_BUDGET
     assert list(model.inputs) == ["A", "B"]
     assert result.usage["total_tokens"] == 4
 
@@ -380,7 +383,7 @@ async def test_tool_reservations_are_shared_across_parallel_children(
             initial_usage=RunUsage(tool_calls=initial_tool_calls),
         ),
     )
-    assert result.status == "stopped"
+    assert result.status is RunStatus.STOPPED_BUDGET
     assert effects == ["effect"]
     assert result.usage["tool_calls"] == initial_tool_calls + 1
 
@@ -432,7 +435,9 @@ async def test_host_scope_stays_live_until_children_are_drained(mode, events):
                 await parent
         else:
             result = await parent
-            assert result.status == ("failed" if mode == "fail" else "stopped")
+            assert result.status == (
+                RunStatus.FAILED if mode == "fail" else RunStatus.STOPPED_BUDGET
+            )
         assert scope_log == ["open", "close"] and active == 0
         assert events[-1]["type"] in ("graph_complete", "run_cancelled", "error")
     finally:
@@ -475,7 +480,7 @@ async def test_independent_runs_do_not_share_budget_or_task_state():
         *(run(support.request(task="t"), plan=plan) for plan in plans)
     )
     assert all(
-        result.status == "completed" and result.usage["requests"] == 1
+        result.status is RunStatus.COMPLETED and result.usage["requests"] == 1
         for result in results
     )
     assert results[0].run_id != results[1].run_id
@@ -537,7 +542,7 @@ async def test_reported_fallback_tokens_are_not_lost_from_shared_budget():
             FunctionModel(model), capacity=1, budget=RunBudget(total_tokens_limit=3)
         ),
     )
-    assert result.status == "stopped"
+    assert result.status is RunStatus.STOPPED_BUDGET
     assert result.usage["requests"] == 1 and result.usage["total_tokens"] == 22
 
 
@@ -573,7 +578,7 @@ async def test_model_outputs_cannot_change_admitted_tasks_or_limits(events):
     result = await run(
         support.request(task="t"), plan=graph_plan(FunctionModel(model), capacity=1)
     )
-    assert result.status == "completed" and result.steps == 4
+    assert result.status is RunStatus.COMPLETED and result.steps == 4
     assert list(inputs) == ["A", "B", "C", "join"]
     assert json.loads(inputs["C"].split("Dependency outputs (data):\n")[1]) == {
         "B": malicious
@@ -591,10 +596,13 @@ async def test_model_request_cap_can_be_lower_than_active_task_cap():
         support.request(task="t"),
         plan=graph_plan(model.model, budget=RunBudget(max_concurrent_requests=1)),
     )
-    assert result.status == "completed" and model.peak == 1
+    assert result.status is RunStatus.COMPLETED and model.peak == 1
 
 
-@pytest.mark.parametrize("request_limit,expected", [(1, "stopped"), (2, "completed")])
+@pytest.mark.parametrize(
+    "request_limit,expected",
+    [(1, RunStatus.STOPPED_BUDGET), (2, RunStatus.COMPLETED)],
+)
 async def test_output_validation_retries_share_request_reservations(
     request_limit, expected
 ):
@@ -684,7 +692,7 @@ async def test_tool_step_without_caller_refuses_before_any_task(events):
         output_task_id="dependent",
     )
     result = await run(support.request(task="t"), plan=plan)
-    assert result.status == "failed"
+    assert result.status is RunStatus.FAILED
     assert "ToolCallerUnavailable" in (result.error or "")
     assert model_calls == 0
     assert [event["type"] for event in events] == ["error"]
@@ -766,7 +774,7 @@ async def test_unresolved_binding_is_a_typed_failure(prompt_output, reference, e
 
     support.register_tool_caller(caller)
     result = await run(support.request(task="t"), plan=plan)
-    assert result.status == "failed" and result.output == ""
+    assert result.status is RunStatus.FAILED and result.output == ""
     assert "BindingUnresolved" in (result.error or "")
     assert model_calls == 1
     assert caller_calls == 0
@@ -810,7 +818,7 @@ async def test_failed_tool_step_does_not_start_dependents_and_makes_no_model_req
         output_task_id="dependent",
     )
     result = await run(support.request(task="t"), plan=plan)
-    assert result.status == "failed" and result.output == ""
+    assert result.status is RunStatus.FAILED and result.output == ""
     assert "ToolCallFailed" in (result.error or "")
     assert caller_calls == 1 and model_calls == 0
     failed = next(event for event in events if event["type"] == "task_failed")
@@ -844,7 +852,7 @@ async def test_tool_step_records_resolved_arguments_and_result(events):
         output_task_id="final",
     )
     result = await run(support.request(task="t"), plan=plan)
-    assert result.status == "completed"
+    assert result.status is RunStatus.COMPLETED
     assert result.usage["requests"] == 1 and result.usage["tool_calls"] == 1
     completed = next(
         event
@@ -880,7 +888,7 @@ async def test_tool_step_refusal_and_failure_records_are_typed(
         output_task_id="tool",
     )
     result = await run(support.request(task="t"), plan=plan)
-    assert result.status == "failed"
+    assert result.status is RunStatus.FAILED
     assert error_type in (result.error or "")
     failed = next(event for event in events if event["type"] == "task_failed")
     record = failed["tool_step"]
@@ -902,7 +910,9 @@ async def test_tool_step_host_exception_records_typed_failure(events):
         output_task_id="tool",
     )
     result = await run(support.request(task="t"), plan=plan)
-    assert result.status == "failed" and "ToolCallFailed" in (result.error or "")
+    assert result.status is RunStatus.FAILED and "ToolCallFailed" in (
+        result.error or ""
+    )
     failed = next(event for event in events if event["type"] == "task_failed")
     assert failed["error_type"] == "ToolCallFailed"
     assert failed["tool_step"]["outcome"] == "failed"
@@ -928,7 +938,7 @@ async def test_tool_step_budget_zero_refuses_before_caller(events):
         budget=RunBudget(tool_calls_limit=0),
     )
     result = await run(support.request(task="t"), plan=plan)
-    assert result.status == "stopped"
+    assert result.status is RunStatus.STOPPED_BUDGET
     assert caller_calls == 0 and result.usage["tool_calls"] == 0
     failed = next(event for event in events if event["type"] == "task_failed")
     assert failed["error_type"] == "UsageLimitExceeded"
@@ -959,7 +969,7 @@ async def test_tool_step_budget_one_allows_one_parallel_call(events):
         budget=RunBudget(tool_calls_limit=1),
     )
     result = await run(support.request(task="t"), plan=plan)
-    assert result.status == "stopped"
+    assert result.status is RunStatus.STOPPED_BUDGET
     assert len(calls) == 1 and result.usage["tool_calls"] == 1
     assert any(event["type"] == "task_blocked" for event in events)
 
@@ -1000,7 +1010,7 @@ async def test_tool_step_terminal_records_follow_declaration_order(events):
     )
     release_first.set()
     result = await parent
-    assert result.status == "completed"
+    assert result.status is RunStatus.COMPLETED
     records = [
         event["task_id"]
         for event in events
@@ -1031,7 +1041,7 @@ async def test_oversized_arguments_are_replaced_by_digest(events):
         output_task_id="tool",
     )
     result = await run(support.request(task="t"), plan=plan)
-    assert result.status == "completed" and captured
+    assert result.status is RunStatus.COMPLETED and captured
     completed = next(event for event in events if event["type"] == "task_completed")
     record = completed["tool_step"]["arguments"]
     assert set(record) == {"digest", "bytes"}
@@ -1056,7 +1066,7 @@ async def test_oversized_result_is_replaced_by_digest(events):
         output_task_id="tool",
     )
     result = await run(support.request(task="t"), plan=plan)
-    assert result.status == "completed"
+    assert result.status is RunStatus.COMPLETED
     completed = next(event for event in events if event["type"] == "task_completed")
     record = completed["tool_step"]["result"]
     assert set(record) == {"digest", "bytes"}
@@ -1135,7 +1145,7 @@ async def test_mixed_dag_refills_slots_in_order(events):
         if not parent.done():
             parent.cancel()
         await asyncio.gather(parent, return_exceptions=True)
-    assert result.status == "completed" and result.output == "result:join"
+    assert result.status is RunStatus.COMPLETED and result.output == "result:join"
     assert model_calls == ["A", "C", "join"]
     assert peak <= 2
     assert events[-1]["type"] == "graph_complete"
@@ -1250,7 +1260,7 @@ async def test_tool_deadline_drains_caller_before_terminal_event(monkeypatch):
     finally:
         await stream.aclose()
     assert remaining[-1]["type"] == "graph_complete"
-    assert remaining[-1]["result"]["status"] == "stopped"
+    assert remaining[-1]["result"]["status"] == "stopped_budget"
     assert "timed out" in remaining[-1]["result"]["error"]
     assert [event["type"] for event in events] == [
         "run_started",
@@ -1333,7 +1343,7 @@ async def test_tool_step_end_to_end_through_run_api(events):
         capacity=2,
     )
     result = await run(support.request(task="t"), plan=plan)
-    assert result.status == "completed" and result.output == "finished"
+    assert result.status is RunStatus.COMPLETED and result.output == "finished"
     assert calls == [("incident-server", "close", {"id": "INC-7"}, "tool")]
     assert len(model_inputs) == 2
     assert "closed" in model_inputs[1] and "INC-7" in model_inputs[1]
@@ -1375,7 +1385,7 @@ async def test_tool_validation_retry_cannot_reset_shared_tool_limit():
         toolsets=(toolset,),
     )
     result = await run(support.request(task="t"), plan=plan)
-    assert result.status == "stopped" and calls == 1
+    assert result.status is RunStatus.STOPPED_BUDGET and calls == 1
     assert result.usage["tool_calls"] == 1
 
 
@@ -1420,7 +1430,7 @@ async def test_unspecified_parallel_tool_limit_refuses_oversized_batch_before_fa
             ),
         ),
     )
-    assert result.status == "stopped" and calls == 0
+    assert result.status is RunStatus.STOPPED_BUDGET and calls == 0
     assert result.usage["tool_calls"] == 0
 
 
@@ -1473,7 +1483,7 @@ async def test_dependency_deadline_drains_work_while_reader_is_paused(monkeypatc
     finally:
         await stream.aclose()
     assert remaining[-1]["type"] == "graph_complete"
-    assert remaining[-1]["result"]["status"] == "stopped"
+    assert remaining[-1]["result"]["status"] == "stopped_budget"
     assert "timed out" in remaining[-1]["result"]["error"]
     assert [event["type"] for event in events] == [
         "run_started",
@@ -1541,7 +1551,7 @@ async def test_dependency_deadline_includes_scaffold_setup(stage, monkeypatch):
         assert len(scopes) == 1
         scopes[0].reschedule(asyncio.get_running_loop().time())
         result = await asyncio.wait_for(parent, 0.5)
-        assert result.status == "stopped" and "timed out" in result.error
+        assert result.status is RunStatus.STOPPED_BUDGET and "timed out" in result.error
         assert calls == 0 and closed.is_set()
     finally:
         if not parent.done():
@@ -1580,7 +1590,7 @@ async def test_initial_dependency_budget_refuses_before_binding_or_child_dispatc
             budget=budget,
         ),
     )
-    assert result.status == "stopped" and result.steps == 0
+    assert result.status is RunStatus.STOPPED_BUDGET and result.steps == 0
     assert (result.error or "").startswith("budget:")
     assert result.usage["requests"] == initial.requests
     assert result.usage["tool_calls"] == initial.tool_calls
@@ -1625,7 +1635,7 @@ async def test_exact_initial_dependency_tool_limit_allows_only_model_work(
     calls = 1 if attempt_tool else 4
     assert prompts == ["A", "B", "C", "join"][:calls]
     assert (result.status, result.steps, result.output) == (
-        "stopped" if attempt_tool else "completed",
+        RunStatus.STOPPED_BUDGET if attempt_tool else RunStatus.COMPLETED,
         calls,
         "" if attempt_tool else "ok",
     )
@@ -1682,7 +1692,7 @@ async def test_initial_dependency_usage_leaves_only_the_aggregate_remainder(
         support.request(task="t"),
         plan=graph_plan(model.model, capacity=1, initial_usage=initial, budget=budget),
     )
-    assert result.status == "stopped"
+    assert result.status is RunStatus.STOPPED_BUDGET
     assert len(model.inputs) == calls and model.active == 0
     assert result.usage["requests"] == initial.requests + calls
     assert result.usage["total_tokens"] == tokens
@@ -1710,7 +1720,8 @@ async def test_reusing_one_seeded_dependency_plan_does_not_share_mutable_usage()
         "total_tokens": 15,
     }
     assert all(
-        result.status == "completed" and result.usage == expected for result in results
+        result.status is RunStatus.COMPLETED and result.usage == expected
+        for result in results
     )
     assert initial == RunUsage(
         requests=2, tool_calls=1, input_tokens=3, output_tokens=4

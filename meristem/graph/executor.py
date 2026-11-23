@@ -39,12 +39,16 @@ from .metrics import MeasuredModel, RunMetrics
 from .state import (
     GraphDeps,
     GraphState,
+    RunEvent,
     RunFailed,
     RunPlan,
     RunPlanFailure,
     RunRequest,
     RunResult,
+    RunStatus,
+    _result_from_dict,
     default_run_plan,
+    transition,
 )
 from .text_only import (
     TextOnlyModel,
@@ -285,8 +289,13 @@ async def iterate_run(
             # was admitted. It grants no execution and cannot replace limits.
             state.add_usage(initial_run_usage(failure))
             if isinstance(failure.error, (asyncio.CancelledError, GeneratorExit)):
-                state.status = "stopped"
-                emit(state, "run_cancelled", status="stopped", result=_result(state))
+                state.status = transition(state.status, RunEvent.CANCEL)
+                emit(
+                    state,
+                    "run_cancelled",
+                    status=state.status.value,
+                    result=_result(state),
+                )
             raise failure.error from failure.error.__cause__
         if stream_observer is not None and (
             run_plan.dependency_plan is not None
@@ -320,7 +329,8 @@ async def iterate_run(
         if run_plan.harness.plan_scaffold == "on":
             state.scaffold = host_ports.PlanState()
     except Exception as exc:  # noqa: BLE001 - a failed plan is a failed run
-        state.status, state.error = "failed", f"{type(exc).__name__}: {exc}"
+        state.status = transition(state.status, RunEvent.FAIL)
+        state.error = f"{type(exc).__name__}: {exc}"
         yield emit(state, "error", error=state.error, result=_result(state))
         return
     deps = GraphDeps(state=state, plan=run_plan, config=cfg)
@@ -338,6 +348,13 @@ async def iterate_run(
                 else None
             )
             if shared_execution is not None:
+                # The shared authority admits the received plan; the run
+                # enters Running first, so a breach stops it (RE6) instead
+                # of leaving it Pending.
+                if state.status is RunStatus.PENDING:
+                    state.status = transition(
+                        state.status, RunEvent.START, {"plan_received": True}
+                    )
                 shared_execution.require(run_plan.budget)
             if checkpoint is not None:
                 await checkpoint.restore()
@@ -355,8 +372,12 @@ async def iterate_run(
                     # transaction is new and only the current snapshot is
                     # absent; a later restart must retain the same messages.
                     checkpoint.history = list(history)
-            if not (checkpoint is not None and checkpoint.restored):
-                state.status = "running"
+            if state.status is RunStatus.PENDING:
+                # A resumed run re-enters Running through the same edge: the
+                # plan it received is the one its checkpoint is bound to.
+                state.status = transition(
+                    state.status, RunEvent.START, {"plan_received": True}
+                )
             shared_budget = (
                 shared_execution.run_view() if shared_execution else None
             ) or (
@@ -378,7 +399,7 @@ async def iterate_run(
                     if checkpoint is not None and checkpoint.restored
                     else run_plan.initial_elapsed_seconds
                 )
-                if state.status == "running":
+                if state.status is RunStatus.RUNNING:
                     shared_budget.check_initial_consumption()
                     if elapsed >= run_plan.budget.timeout_seconds:
                         raise TimeoutError
@@ -397,11 +418,7 @@ async def iterate_run(
             if (
                 checkpoint is not None
                 and checkpoint.restored
-                and state.status
-                in (
-                    "completed",
-                    "stopped",
-                )
+                and state.status.is_terminal
             ):
                 pass
             else:
@@ -520,7 +537,9 @@ async def iterate_run(
                                 if index == 0 and attachments:
                                     model_input = [prompt, *attachments]
 
-                                async def after_result(result: Any) -> None:
+                                async def after_result(
+                                    result: Any, _index: int = index
+                                ) -> None:
                                     nonlocal history
                                     if shared_budget is not None:
                                         state.usage.clear()
@@ -530,14 +549,27 @@ async def iterate_run(
                                         state.add_usage(result.usage)
                                     text = _text(result.output)
                                     state.outputs.append(text)
-                                    if any(
-                                        marker in text
-                                        for marker in run_plan.stop.stop_markers
-                                    ):
-                                        state.status = "stopped"
+                                    if state.status is RunStatus.RUNNING:
+                                        if any(
+                                            marker in text
+                                            for marker in run_plan.stop.stop_markers
+                                        ):
+                                            state.status = transition(
+                                                state.status, RunEvent.STOP_REQUESTED
+                                            )
+                                        elif _index == len(steps) - 1:
+                                            # The last admitted step is the
+                                            # output step: the run may finish
+                                            # now, before its completed
+                                            # checkpoint is published.
+                                            state.status = transition(
+                                                state.status,
+                                                RunEvent.FINISH,
+                                                {"output_task_complete": True},
+                                            )
                                     if checkpoint is not None:
                                         checkpoint.history = history
-                                        checkpoint.inflight_tasks.discard(marker)
+                                        checkpoint.complete_step(marker)
                                         await checkpoint.save("completed")
 
                                 try:
@@ -561,23 +593,39 @@ async def iterate_run(
                                         state.add_usage(shared_budget.usage)
                                 text = _text(result.output)
                                 yield emit(state, "node_transition", output=text)
-                                if state.status == "stopped":
+                                if state.status.stop_reason is not None:
                                     break
     except UsageLimitExceeded as exc:
-        state.status, state.error = "stopped", f"budget: {exc}"
+        if state.status is RunStatus.RUNNING:
+            state.status = transition(state.status, RunEvent.STOP_BUDGET)
+        state.error = f"budget: {exc}"
     except TimeoutError:
-        state.status, state.error = "stopped", "budget: run timed out"
+        if state.status is RunStatus.RUNNING:
+            state.status = transition(state.status, RunEvent.STOP_BUDGET)
+        state.error = "budget: run timed out"
     except (asyncio.CancelledError, GeneratorExit):
-        state.status = "stopped"
-        emit(state, "run_cancelled", status="stopped", result=_result(state))
+        if not state.status.is_terminal:
+            state.status = transition(state.status, RunEvent.CANCEL)
+            if state.status is RunStatus.CANCELLING:
+                # The bound scopes have drained behind this handler.
+                state.status = transition(
+                    state.status, RunEvent.DRAIN_COMPLETE, {"no_active_task": True}
+                )
+        emit(state, "run_cancelled", status=state.status.value, result=_result(state))
         raise
     except Exception as exc:  # noqa: BLE001 - surfaced as the terminal event
-        state.status, state.error = "failed", f"{type(exc).__name__}: {exc}"
+        if not state.status.is_terminal:
+            state.status = transition(state.status, RunEvent.FAIL)
+        state.error = f"{type(exc).__name__}: {exc}"
         yield emit(state, "error", error=state.error, result=_result(state))
         return
-    if state.status == "running":
-        state.status = "completed"
-    yield emit(state, "graph_complete", status=state.status, result=_result(state))
+    if state.status is RunStatus.RUNNING:
+        state.status = transition(
+            state.status, RunEvent.FINISH, {"output_task_complete": True}
+        )
+    yield emit(
+        state, "graph_complete", status=state.status.value, result=_result(state)
+    )
 
 
 def _result(state: GraphState) -> dict[str, Any]:
@@ -610,8 +658,7 @@ async def run(
         shared_execution=shared_execution,
     ):
         final = event
-    data = final["result"]
-    return RunResult(**data)
+    return _result_from_dict(final["result"])
 
 
 class AgentRunExecutor:
@@ -678,7 +725,7 @@ class AgentRunExecutor:
             stream_observer=stream_observer,
             shared_execution=shared_execution,
         )
-        if result.status == "failed":
+        if result.status is RunStatus.FAILED:
             raise RunFailed(result)
         return result
 

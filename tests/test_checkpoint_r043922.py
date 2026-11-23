@@ -18,6 +18,7 @@ from meristem.graph import (
     RunBudget,
     RunPlan,
     RunRequest,
+    RunStatus,
     RunTask,
     run,
 )
@@ -46,7 +47,10 @@ class MemoryCheckpoint:
             (
                 "save",
                 payload["phase"],
-                next(iter(payload["inflight_tasks"]), None),
+                next(
+                    (k for k, v in payload["task_states"].items() if v == "active"),
+                    None,
+                ),
             )
         )
 
@@ -111,20 +115,19 @@ async def _seed_partial(
         timeout_seconds=timeout_seconds,
     )
     first = await run(request, plan=plan)
-    assert first.status == "completed"
+    assert first.status is RunStatus.COMPLETED
     assert port.content is not None
 
     payload = json.loads(port.content)
     payload.update(
         {
             "phase": "completed",
-            "inflight_tasks": [],
+            "task_states": {"A": "done"},
             "next_step": 1,
             "messages": [],
-            "completed_tasks": ["A"],
             "dependency_outputs": {"A": "seeded-A"},
             "outputs": [],
-            "status": "running",
+            "run_status": "running",
             "usage": usage
             or {
                 "requests": 1,
@@ -155,7 +158,7 @@ async def _seed_full(
     request = support.request(task="dag", run_id="checkpoint-run")
     plan = _plan(recorder.model)
     result = await run(request, plan=plan)
-    assert result.status == "completed"
+    assert result.status is RunStatus.COMPLETED
     assert port.content is not None
     return request, plan, json.loads(port.content)
 
@@ -166,17 +169,20 @@ async def test_dependency_restore_skips_completed_tasks_and_keeps_outputs():
 
     resumed = await run(request, plan=plan)
 
-    assert resumed.status == "completed"
+    assert resumed.status is RunStatus.COMPLETED
     assert resumed.output == "reply:bravo"
     assert [prompt.splitlines()[0] for prompt in recorder.prompts] == ["bravo"]
     assert "seeded-A" in recorder.prompts[0]
     saved = json.loads(port.content or "null")
-    assert set(saved["completed_tasks"]) == {"A", "B"}
+    assert {key for key, value in saved["task_states"].items() if value == "done"} == {
+        "A",
+        "B",
+    }
     assert saved["dependency_outputs"]["A"] == "seeded-A"
 
     recorder.prompts.clear()
     repeated = await run(request, plan=plan)
-    assert repeated.status == "completed"
+    assert repeated.status is RunStatus.COMPLETED
     assert repeated.output == "reply:bravo"
     assert recorder.prompts == []
 
@@ -196,7 +202,7 @@ async def test_dependency_checkpoint_ack_precedes_effect_and_output_events():
         plan=_plan(recorder.model),
     )
 
-    assert result.status == "completed"
+    assert result.status is RunStatus.COMPLETED
     for task_id in ("A", "B"):
         started = next(
             index
@@ -233,7 +239,7 @@ async def test_foreign_checkpoint_binding_refuses_before_any_model_effect(field)
 
     result = await run(request, plan=plan)
 
-    assert result.status == "failed"
+    assert result.status is RunStatus.FAILED
     assert recorder.prompts == []
     assert port.saves == []
 
@@ -251,7 +257,7 @@ async def test_changed_received_plan_refuses_before_any_model_effect():
 
     result = await run(request, plan=changed)
 
-    assert result.status == "failed"
+    assert result.status is RunStatus.FAILED
     assert recorder.prompts == []
     assert port.saves == []
 
@@ -262,13 +268,12 @@ async def test_inflight_dependency_checkpoint_refuses_without_replay():
     payload.update(
         {
             "phase": "step_inflight",
-            "inflight_tasks": ["B"],
+            "task_states": {"A": "done", "B": "active"},
             "next_step": 1,
             "messages": [],
-            "completed_tasks": ["A"],
             "dependency_outputs": {"A": "seeded-A"},
             "outputs": [],
-            "status": "running",
+            "run_status": "running",
         }
     )
     payload["task_messages"] = {}
@@ -278,7 +283,7 @@ async def test_inflight_dependency_checkpoint_refuses_without_replay():
 
     result = await run(request, plan=plan)
 
-    assert result.status == "failed"
+    assert result.status is RunStatus.FAILED
     assert "uncertain" in (result.error or "")
     assert recorder.prompts == []
     assert port.saves == []
@@ -301,7 +306,7 @@ async def test_restored_request_budget_is_not_reset():
 
     result = await run(request, plan=plan)
 
-    assert result.status == "stopped"
+    assert result.status is RunStatus.STOPPED_BUDGET
     assert result.usage["requests"] == 2
     assert recorder.prompts == []
 
@@ -317,6 +322,6 @@ async def test_restored_elapsed_budget_is_not_reset():
 
     result = await run(request, plan=plan)
 
-    assert result.status == "stopped"
+    assert result.status is RunStatus.STOPPED_BUDGET
     assert "timed out" in (result.error or "")
     assert recorder.prompts == []
