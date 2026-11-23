@@ -31,16 +31,100 @@ from .state import (
     DependencyPlan,
     GraphDeps,
     GraphState,
+    RunEvent,
     RunPlan,
+    RunStatus,
     RunTask,
+    TaskEvent,
+    TaskStatus,
+    TaskTransitionRefused,
     ToolCallerUnavailable,
     ToolCallFailed,
     ToolCallRefused,
     ToolStep,
+    transition,
 )
 
 TOOL_ARGUMENT_LIMIT = 64 * 1024
 TOOL_RESULT_LIMIT = 256 * 1024
+
+
+#: Legal task edges ``(from, event, to, guard facts)``; TE1 to TE7. The skip
+#: edge admits any one of its two guard facts; the others admit exactly their
+#: named fact.
+_TASK_EDGES: tuple[
+    tuple[TaskStatus, TaskEvent, TaskStatus, tuple[str, ...] | None], ...
+] = (
+    (TaskStatus.BLOCKED, TaskEvent.DEPS_MET, TaskStatus.READY, ("all_parents_done",)),
+    (
+        TaskStatus.BLOCKED,
+        TaskEvent.SKIP,
+        TaskStatus.SKIPPED,
+        ("ancestor_failed_or_cancelled", "run_cancelling_or_failed"),
+    ),
+    (
+        TaskStatus.READY,
+        TaskEvent.SKIP,
+        TaskStatus.SKIPPED,
+        ("ancestor_failed_or_cancelled", "run_cancelling_or_failed"),
+    ),
+    (TaskStatus.READY, TaskEvent.DISPATCH, TaskStatus.ACTIVE, ("permit_held",)),
+    (TaskStatus.ACTIVE, TaskEvent.COMPLETE, TaskStatus.DONE, ("run_running",)),
+    (TaskStatus.ACTIVE, TaskEvent.FAIL, TaskStatus.FAILED, None),
+    (TaskStatus.ACTIVE, TaskEvent.CANCEL, TaskStatus.CANCELLED, None),
+)
+
+
+def _task_event_by_value(value: Any) -> TaskEvent | None:
+    if not isinstance(value, str):
+        return None
+    for event in TaskEvent:
+        if event.value == value:
+            return event
+    return None
+
+
+def transition_task(
+    task_status: TaskStatus,
+    event: TaskEvent | str,
+    guard_facts: Mapping[str, bool] | None = None,
+) -> TaskStatus:
+    """The only writer of a task status: fire ``event`` on ``task_status``.
+
+    Legal edges are TE1 to TE7; every other pair refuses with
+    :class:`TaskTransitionRefused` (code ``TASK_TRANSITION_REFUSED``). The skip
+    edge admits any one of its guard facts; the other guards admit exactly
+    their named fact. A missing or false fact refuses with ``GuardFailed``.
+    """
+    facts = dict(guard_facts or {})
+    if isinstance(event, str):
+        fired = _task_event_by_value(event)
+        if fired is None:
+            raise TaskTransitionRefused(
+                from_status=task_status, event=event, reason="UnknownEvent"
+            )
+    elif not isinstance(event, TaskEvent):
+        raise TaskTransitionRefused(
+            from_status=task_status, event=event, reason="UnknownEvent"
+        )
+    else:
+        fired = event
+    if task_status.is_terminal:
+        raise TaskTransitionRefused(
+            from_status=task_status, event=fired, reason="TerminalState"
+        )
+    for from_status, edge_event, target, guards in _TASK_EDGES:
+        if from_status is task_status and edge_event is fired:
+            break
+    else:
+        raise TaskTransitionRefused(
+            from_status=task_status, event=fired, reason="IllegalTransition"
+        )
+    if guards is not None and not any(facts.get(name, False) for name in guards):
+        raise TaskTransitionRefused(
+            from_status=task_status, event=fired, reason="GuardFailed"
+        )
+    return target
 
 
 @dataclass(frozen=True, slots=True)
@@ -450,6 +534,7 @@ async def _execute_dependency_plan(
     checkpoint: RunCheckpoint | None = None,
     event_publisher: DurableRunEventPublisher | None = None,
     child_records: Any = None,
+    deadline_scope: asyncio.Timeout | None = None,
 ) -> None:
     """Refill a free slot after any successful prerequisite, not a whole wave.
 
@@ -466,11 +551,16 @@ async def _execute_dependency_plan(
         for dep in node.depends_on:
             children[dep].append(node.task_id)
     active: dict[str, asyncio.Task[Any]] = {}
-    completed_tasks = (
-        set(checkpoint.completed_tasks)
-        if checkpoint is not None and checkpoint.restored
-        else set()
-    )
+    # One machine state per declared task; every change goes through
+    # transition_task.  A restored checkpoint seeds the done tasks.
+    task_state: dict[str, TaskStatus] = {key: TaskStatus.BLOCKED for key in nodes}
+    if checkpoint is not None and checkpoint.restored:
+        for key, stored in checkpoint.task_states.items():
+            if key in nodes and stored is TaskStatus.DONE:
+                task_state[key] = stored
+    completed_tasks = {
+        key for key, stored in task_state.items() if stored is TaskStatus.DONE
+    }
     outputs: dict[str, Any] = (
         dict(checkpoint.dependency_outputs)
         if checkpoint is not None and checkpoint.restored
@@ -479,14 +569,22 @@ async def _execute_dependency_plan(
     for key in completed_tasks:
         for child in children[key]:
             indegree[child] -= 1
-    ready = [
-        order[key]
+    ready_keys = [
+        key
         for key, count in indegree.items()
         if count == 0 and key not in completed_tasks
     ]
+    for key in ready_keys:
+        # Every parent of an initially ready task is done (none exist).
+        task_state[key] = transition_task(
+            task_state[key], TaskEvent.DEPS_MET, {"all_parents_done": True}
+        )
+    ready = [order[key] for key in ready_keys]
     heapq.heapify(ready)
     pending = set(nodes) - completed_tasks
     interrupted: BaseException | None = None
+    drain_error: BaseException | None = None
+    failures: list[BaseException] = []
     tool_order = [task.task_id for task in graph.tasks if task.call is not None]
     tool_terminal_buffer: dict[str, tuple[str, dict[str, Any]]] = {}
     # A tool effect may finish out of declaration order when the graph has
@@ -578,6 +676,24 @@ async def _execute_dependency_plan(
         tool_terminal_buffer[key] = (kind, fields)
         return None
 
+    def run_running() -> bool:
+        """The guard fact of TE5: the run still runs and will complete normally."""
+        return (
+            state.status is RunStatus.RUNNING and not failures and interrupted is None
+        )
+
+    def skip_descendants(root: str) -> None:
+        """A failed or cancelled task skips every descendant it leaves behind."""
+        stack = list(children[root])
+        while stack:
+            key = stack.pop()
+            if task_state[key].is_terminal or task_state[key] is TaskStatus.ACTIVE:
+                continue
+            task_state[key] = transition_task(
+                task_state[key], TaskEvent.SKIP, {"ancestor_failed_or_cancelled": True}
+            )
+            stack.extend(children[key])
+
     def tool_event_fields(record: dict[str, Any] | None) -> dict[str, Any]:
         """Expose the bounded record both nested and as stable event fields."""
         if record is None:
@@ -634,14 +750,28 @@ async def _execute_dependency_plan(
                         output_text = _output_text(result.output)
                         if key == graph.output_task_id:
                             state.outputs = [output_text]
+                        await publish_tool_record(
+                            nodes[key], record, step=step_by_task[key]
+                        )
+                        if key == graph.output_task_id:
                             if any(
                                 marker in output_text
                                 for marker in plan.stop.stop_markers
                             ):
-                                state.status = "stopped"
-                        await publish_tool_record(
-                            nodes[key], record, step=step_by_task[key]
-                        )
+                                if state.status is RunStatus.RUNNING:
+                                    state.status = transition(
+                                        state.status, RunEvent.STOP_REQUESTED
+                                    )
+                            elif state.status is RunStatus.RUNNING:
+                                state.status = transition(
+                                    state.status,
+                                    RunEvent.FINISH,
+                                    {"output_task_complete": True},
+                                )
+                            if checkpoint is not None and state.status.is_terminal:
+                                # The terminal snapshot records the run state
+                                # exactly; it is never inferred from Running.
+                                await checkpoint.save("completed")
                     except BaseException:
                         # Do not expose a terminal event after a durable
                         # publication failure; the failed record remains
@@ -813,7 +943,7 @@ async def _execute_dependency_plan(
             run_id=state.run_id,
             query=task.prompt,
             mode=state.mode,
-            status="running",
+            status=RunStatus.RUNNING,
             step=1,
             scaffold=state.scaffold,
         )
@@ -838,10 +968,10 @@ async def _execute_dependency_plan(
             outputs[task.task_id] = text
             if task.task_id == graph.output_task_id:
                 state.outputs = [text]
-            if task.task_id == graph.output_task_id and any(
-                marker in text for marker in plan.stop.stop_markers
-            ):
-                state.status = "stopped"
+            # The task machine admits the completion now; its ACK snapshot
+            # precedes the durable state event of the same step.  The run
+            # terminal effect and its terminal snapshot follow in
+            # ``completed``.
             checkpoint.record_completed(task.task_id, text, list(result.all_messages()))
             await checkpoint.save("completed")
             checkpoint_acked.add(task.task_id)
@@ -867,13 +997,9 @@ async def _execute_dependency_plan(
             output_text = _output_text(result.output)
             if key == graph.output_task_id:
                 state.outputs = [output_text]
-            if (
-                event_publisher is None
-                and key == graph.output_task_id
-                and any(marker in output_text for marker in plan.stop.stop_markers)
-            ):
-                state.status = "stopped"
             if event_publisher is not None:
+                # The durable publisher path records and stops or finishes
+                # the run in declaration order, inside the ordered flush.
                 tool_completion_buffer[key] = result
                 terminal_event(
                     "task_completed",
@@ -895,6 +1021,20 @@ async def _execute_dependency_plan(
                 await checkpoint.save("completed")
                 checkpoint_acked.add(key)
             await publish_tool_record(nodes[key], record, step=step_by_task[key])
+            if key == graph.output_task_id:
+                if any(marker in output_text for marker in plan.stop.stop_markers):
+                    if state.status is RunStatus.RUNNING:
+                        state.status = transition(state.status, RunEvent.STOP_REQUESTED)
+                elif state.status is RunStatus.RUNNING:
+                    state.status = transition(
+                        state.status,
+                        RunEvent.FINISH,
+                        {"output_task_complete": True},
+                    )
+                if checkpoint is not None and state.status.is_terminal:
+                    # The terminal snapshot records the run state exactly;
+                    # it is never inferred from Running.
+                    await checkpoint.save("completed")
             terminal_event(
                 "task_completed",
                 key,
@@ -914,15 +1054,23 @@ async def _execute_dependency_plan(
         outputs[key] = text
         if key == graph.output_task_id:
             state.outputs = [text]
-        if key == graph.output_task_id and any(
-            marker in text for marker in plan.stop.stop_markers
-        ):
-            state.status = "stopped"
         if checkpoint is not None and key not in checkpoint_acked:
             sync_usage()
             checkpoint.record_completed(key, text, list(result.all_messages()))
-            await checkpoint.save("completed")
             checkpoint_acked.add(key)
+            await checkpoint.save("completed")
+        if key == graph.output_task_id:
+            if any(marker in text for marker in plan.stop.stop_markers):
+                if state.status is RunStatus.RUNNING:
+                    state.status = transition(state.status, RunEvent.STOP_REQUESTED)
+            elif state.status is RunStatus.RUNNING:
+                state.status = transition(
+                    state.status, RunEvent.FINISH, {"output_task_complete": True}
+                )
+            if checkpoint is not None and state.status.is_terminal:
+                # The terminal snapshot records the run state exactly; it is
+                # never inferred from Running.
+                await checkpoint.save("completed")
         event("task_completed", key, status="completed", output=text)
         return (key,)
 
@@ -936,6 +1084,12 @@ async def _execute_dependency_plan(
                 if checkpoint is not None:
                     sync_usage()
                     await checkpoint.save("step_inflight", task_id=node.task_id)
+                # A free slot is the model-call permit of TE4.
+                task_state[node.task_id] = transition_task(
+                    task_state[node.task_id],
+                    TaskEvent.DISPATCH,
+                    {"permit_held": True},
+                )
                 active[node.task_id] = asyncio.create_task(
                     execute(node), name=f"run:{state.run_id}:task:{node.task_id}"
                 )
@@ -943,7 +1097,6 @@ async def _execute_dependency_plan(
             done, _ = await asyncio.wait(
                 active.values(), return_when=asyncio.FIRST_COMPLETED
             )
-            failure: BaseException | None = None
             for key in sorted(
                 (key for key, task in active.items() if task in done),
                 key=order.__getitem__,
@@ -952,7 +1105,9 @@ async def _execute_dependency_plan(
                 try:
                     result = task.result()
                 except asyncio.CancelledError as exc:
-                    failure = failure or exc
+                    failures.append(exc)
+                    task_state[key] = transition_task(task_state[key], TaskEvent.CANCEL)
+                    skip_descendants(key)
                     record = getattr(exc, "tool_step", None)
                     terminal_event(
                         "task_cancelled",
@@ -961,7 +1116,9 @@ async def _execute_dependency_plan(
                         **tool_event_fields(record),
                     )
                 except Exception as exc:  # noqa: BLE001 - parent owns failure policy
-                    failure = failure or exc
+                    failures.append(exc)
+                    task_state[key] = transition_task(task_state[key], TaskEvent.FAIL)
+                    skip_descendants(key)
                     if str(exc) == "durable run event publication failed":
                         publication_failed = True
                     record = getattr(exc, "tool_step", None)
@@ -973,20 +1130,41 @@ async def _execute_dependency_plan(
                         **tool_event_fields(record),
                     )
                 else:
+                    try:
+                        task_state[key] = transition_task(
+                            task_state[key],
+                            TaskEvent.COMPLETE,
+                            {"run_running": run_running()},
+                        )
+                    except TaskTransitionRefused:
+                        # A sibling that finishes after a failure in this
+                        # round has its complete refused by the guard; its
+                        # output is discarded with the failed run.
+                        continue
                     released = await completed(key, result)
                     for released_key in released:
-                        if any(
+                        if state.status is RunStatus.RUNNING and any(
                             m in _output_text(outputs[released_key])
                             for m in plan.stop.stop_markers
                         ):
-                            state.status = "stopped"
+                            state.status = transition(
+                                state.status, RunEvent.STOP_REQUESTED
+                            )
                         for child in children[released_key]:
                             indegree[child] -= 1
                             if indegree[child] == 0:
+                                # Every parent of a released child is done.
+                                task_state[child] = transition_task(
+                                    task_state[child],
+                                    TaskEvent.DEPS_MET,
+                                    {"all_parents_done": True},
+                                )
                                 heapq.heappush(ready, order[child])
-            if failure is not None:
-                raise failure
-            if state.status == "stopped":
+            if failures:
+                if len(failures) > 1:
+                    failures[0].all_failures = tuple(failures)  # type: ignore[attr-defined]
+                raise failures[0]
+            if state.status.stop_reason is not None:
                 break
         if graph.output_task_id in outputs and not state.outputs:
             state.outputs.append(_output_text(outputs[graph.output_task_id]))
@@ -994,6 +1172,16 @@ async def _execute_dependency_plan(
         interrupted = exc
     finally:
         # No terminal parent event or released host scope can precede cleanup.
+        # A fired deadline is a budget stop (RE6); a host cancellation moves
+        # the run to Cancelling (RE8). The drain below then cancels every
+        # Active task and skips every Blocked or Ready one.
+        if state.status is RunStatus.RUNNING and isinstance(
+            interrupted, asyncio.CancelledError
+        ):
+            if deadline_scope is not None and deadline_scope.expired():
+                state.status = transition(state.status, RunEvent.STOP_BUDGET)
+            else:
+                state.status = transition(state.status, RunEvent.CANCEL)
         for task in active.values():
             if not task.done():
                 task.cancel()
@@ -1008,9 +1196,19 @@ async def _execute_dependency_plan(
                     interrupted = interrupted or exc
         for key, task in active.items():
             if task.cancelled():
+                task_state[key] = transition_task(task_state[key], TaskEvent.CANCEL)
+                skip_descendants(key)
                 terminal_event("task_cancelled", key, status="cancelled")
             elif task.exception() is not None:
-                record = getattr(task.exception(), "tool_step", None)
+                task_exc = task.exception()
+                if not isinstance(task_exc, (asyncio.CancelledError, GeneratorExit)):
+                    # A drain error is a run-level failure, not only a task
+                    # failure; it is raised after the drain if the run is
+                    # still Cancelling (RE10).
+                    drain_error = drain_error or task_exc
+                task_state[key] = transition_task(task_state[key], TaskEvent.FAIL)
+                skip_descendants(key)
+                record = getattr(task_exc, "tool_step", None)
                 terminal_event(
                     "task_failed",
                     key,
@@ -1019,6 +1217,17 @@ async def _execute_dependency_plan(
                     **tool_event_fields(record),
                 )
             elif not publication_failed:
+                # A sibling that finishes after the run failed or cancelled
+                # has its complete refused by the guard; its output is
+                # discarded.
+                try:
+                    task_state[key] = transition_task(
+                        task_state[key],
+                        TaskEvent.COMPLETE,
+                        {"run_running": run_running()},
+                    )
+                except TaskTransitionRefused:
+                    continue
                 await completed(key, task.result())
         await flush_tool_terminals(
             publish_records=not publication_failed
@@ -1027,10 +1236,30 @@ async def _execute_dependency_plan(
         )
         if not publication_failed:
             for key in sorted(pending, key=order.__getitem__):
+                if (
+                    state.status is RunStatus.CANCELLING
+                    and not task_state[key].is_terminal
+                ):
+                    task_state[key] = transition_task(
+                        task_state[key],
+                        TaskEvent.SKIP,
+                        {"run_cancelling_or_failed": True},
+                    )
                 event("task_blocked", key, status="blocked")
         # This seeded ledger is the whole run, not a delta to add again.
         state.usage.clear()
         state.add_usage(budget.usage)
+        # A drain error is a run-level failure (RE10): a cancellation that
+        # cannot drain is not a clean stop, so the plain exception escapes
+        # the finally ahead of the in-flight cancellation.
+        if drain_error is not None and state.status is RunStatus.CANCELLING:
+            raise drain_error
+        # Every task is no longer Active, so the cancellation has fully
+        # drained (RE9).
+        if state.status is RunStatus.CANCELLING:
+            state.status = transition(
+                state.status, RunEvent.DRAIN_COMPLETE, {"no_active_task": True}
+            )
     if interrupted is not None:
         raise interrupted
 
@@ -1071,7 +1300,8 @@ async def iterate_dependency_plan(
         try:
             # Own the deadline where work runs, not in the external reader's
             # task: a reader may pause indefinitely between iterator reads.
-            async with asyncio.timeout_at(deadline):
+            scope = asyncio.timeout_at(deadline)
+            async with scope:
                 await _execute_dependency_plan(
                     agent,
                     plan,
@@ -1084,6 +1314,7 @@ async def iterate_dependency_plan(
                     checkpoint,
                     event_publisher,
                     child_records,
+                    deadline_scope=scope,
                 )
         finally:
             events.put_nowait(None)
@@ -1105,5 +1336,14 @@ async def iterate_dependency_plan(
                 await asyncio.shield(drain)
             except asyncio.CancelledError as exc:
                 interrupted = interrupted or exc
+        # A plain exception that escaped the driver's drain is a run failure
+        # (RE10); it is not masked by the host cancellation that started
+        # the drain.
+        if isinstance(interrupted, (asyncio.CancelledError, GeneratorExit)):
+            outcome = drain.result()[0]
+            if isinstance(outcome, BaseException) and not isinstance(
+                outcome, (asyncio.CancelledError, GeneratorExit)
+            ):
+                interrupted = outcome
     if interrupted is not None:
         raise interrupted

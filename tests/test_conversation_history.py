@@ -14,6 +14,7 @@ from meristem.graph import (
     DependencyPlan,
     RunBudget,
     RunPlan,
+    RunStatus,
     RunTask,
     run,
 )
@@ -64,7 +65,7 @@ async def test_first_request_uses_only_bound_history_with_fresh_budget(bound):
             budget=RunBudget(request_limit=1, total_tokens_limit=10),
         ),
     )
-    assert result.status == "completed"
+    assert result.status is RunStatus.COMPLETED
     assert len(calls) == 1
     assert len(calls[0]) == (3 if bound else 1)
     if bound:
@@ -100,7 +101,7 @@ async def test_bad_history_refuses_before_model_effect(change):
         support.request(task="new", run_id="current"),
         plan=RunPlan(model=FunctionModel(respond), steps=("new",)),
     )
-    assert result.status == "failed"
+    assert result.status is RunStatus.FAILED
     assert calls == []
     assert "completed conversation history is invalid" in result.error
 
@@ -130,7 +131,7 @@ async def test_dependency_history_refuses_before_model_effect():
             ),
         ),
     )
-    assert result.status == "failed"
+    assert result.status is RunStatus.FAILED
     assert "dependency-plan conversation history is unavailable" in result.error
     assert calls == []
 
@@ -151,7 +152,7 @@ async def test_provider_failure_is_not_empty_history_or_private_error():
         plan=RunPlan(model=FunctionModel(respond), steps=("new",)),
     )
     assert calls == []
-    assert result.status == "failed"
+    assert result.status is RunStatus.FAILED
     assert "conversation history provider failed" in result.error
     assert "private provider details" not in result.error
 
@@ -199,7 +200,7 @@ async def test_nested_model_authority_refuses_before_effects(field, value):
         support.request(task="new", run_id="current"),
         plan=RunPlan(model=FunctionModel(respond), steps=("new",)),
     )
-    assert result.status == "failed"
+    assert result.status is RunStatus.FAILED
     assert calls == []
     assert "private" not in result.error
 
@@ -263,7 +264,7 @@ async def test_checkpoint_selection_is_one_read_without_legacy_fallback(prior):
             budget=RunBudget(request_limit=1, total_tokens_limit=10),
         ),
     )
-    assert result.status == "completed"
+    assert result.status is RunStatus.COMPLETED
     assert reads == ["current"] and legacy == []
     assert len(calls) == 1 and len(calls[0]) == (3 if prior else 1)
     assert calls[0][-1].parts[0].content == "new question"
@@ -292,7 +293,7 @@ async def test_current_checkpoint_precedes_history_before_planning_or_model(curr
     support.register_run_decision_provider(decide)
     support.register_model_provider(lambda name: effects.append("model"))
     result = await run(support.request(task="new", run_id="current"))
-    assert result.status == "failed"
+    assert result.status is RunStatus.FAILED
     assert effects == []
     assert "current-run checkpoint restore is unavailable" in result.error
     assert "private" not in result.error
@@ -333,7 +334,7 @@ async def test_partial_or_malformed_selection_refuses_without_fallback(selection
     support.register_run_history_provider(old_history)
     support.register_run_decision_provider(decide)
     result = await run(support.request(task="new", run_id="current"))
-    assert result.status == "failed" and effects == []
+    assert result.status is RunStatus.FAILED and effects == []
     assert "private" not in result.error
 
 
@@ -370,7 +371,7 @@ async def test_checkpoint_provider_failure_is_private_and_does_not_plan(
         )
         return
     result = await run(support.request(task="new", run_id="current"))
-    assert result.status == "failed" and effects == []
+    assert result.status is RunStatus.FAILED and effects == []
     assert "run checkpoint provider failed" in result.error
     assert "private" not in result.error
 
@@ -407,7 +408,7 @@ async def test_supplied_plan_usage_survives_history_refusal_exactly_once(case, e
         ),
     )
     succeeded = case == "success"
-    assert result.status == ("completed" if succeeded else "failed")
+    assert result.status == (RunStatus.COMPLETED if succeeded else RunStatus.FAILED)
     assert len(calls) == int(succeeded)
     assert result.usage["requests"] == 1 + int(succeeded)
     assert result.usage["input_tokens"] == 3 + (2 if succeeded else 0)
@@ -460,10 +461,10 @@ async def test_selected_child_history_is_bound_before_model(mismatch):
         plan=RunPlan(model=FunctionModel(respond), steps=("new question",)),
     )
     if mismatch:
-        assert result.status == "failed"
+        assert result.status is RunStatus.FAILED
         assert not calls
     else:
-        assert result.status == "completed"
+        assert result.status is RunStatus.COMPLETED
         assert [message.parts[0].content for message in calls[0]] == [
             "earlier question",
             "earlier answer",
@@ -495,7 +496,7 @@ async def test_missing_child_history_and_current_checkpoint_fail_closed(current)
         support.request(task="new", run_id="current"),
         plan=RunPlan(model=FunctionModel(respond), steps=("new",)),
     )
-    assert result.status == "failed"
+    assert result.status is RunStatus.FAILED
     assert not calls
     assert (
         "current-run checkpoint restore is unavailable"
@@ -540,7 +541,7 @@ async def test_oversized_child_binding_refuses_before_model(field):
         support.request(task="new", run_id="current"),
         plan=RunPlan(model=FunctionModel(respond), steps=("new",)),
     )
-    assert result.status == "failed"
+    assert result.status is RunStatus.FAILED
     assert not calls
 
 
@@ -595,9 +596,9 @@ async def test_selected_child_history_preserves_shared_limit_and_fresh_run_usage
         shared_execution=shared,
     )
     assert (parent.status, child.status, refused.status) == (
-        "completed",
-        "completed",
-        "stopped",
+        RunStatus.COMPLETED,
+        RunStatus.COMPLETED,
+        RunStatus.STOPPED_BUDGET,
     )
     assert len(calls) == 2
     assert [message.parts[0].content for message in calls[1]] == [
@@ -678,6 +679,6 @@ async def test_selected_child_refusal_does_not_spend_enclosing_budget(case):
         ),
         shared_execution=shared,
     )
-    assert result.status == "failed"
+    assert result.status is RunStatus.FAILED
     assert calls == []
     assert shared.usage.requests == 0

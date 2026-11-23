@@ -9,7 +9,7 @@ import pytest
 from pydantic_ai.messages import ModelResponse, TextPart
 from pydantic_ai.models.function import FunctionModel
 
-from meristem.graph import RunBudget, RunPlan, RunRequest
+from meristem.graph import RunBudget, RunPlan, RunRequest, RunStatus
 from meristem.graph.harness_cycle import (
     ABSTAIN_REASONS,
     ContrastAnswer,
@@ -190,7 +190,7 @@ async def test_probe_shares_conditions_and_records_trace() -> None:
         )
     }
     for trace in traces:
-        assert trace.status == "completed"
+        assert trace.status is RunStatus.COMPLETED
         assert trace.error is None
         assert trace.steps == 1
 

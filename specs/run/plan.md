@@ -37,6 +37,7 @@ Meristem retains the first two directory levels of its current package. A direct
 | `meristem/core` | keep | meristem |
 | `meristem/graph` | keep | meristem |
 | `meristem/harness` | keep | meristem |
+| `meristem/ontology` | keep | meristem |
 | `meristem/rlm` | keep | meristem |
 | `meristem/runtime` | keep | meristem |
 | `meristem/skills` | keep | meristem |
@@ -49,6 +50,14 @@ No unknowns.
 ## Phase 1: Design
 
 The run-loop design is in the amendment sections below. The seams to other repositories are the contracts in `contracts/`.
+
+- **Owner.** `merstem/graph` owns the run: `state.py` holds the closed machines and the frozen run contracts, `executor.py` drives the loop, `dependency.py` the fan-out scheduler, `checkpoint.py` the snapshot codec. The host ports in `host_ports.py` are the only seam; arbora owns the host side and registration.
+- **Cohesion.** Each status moves through exactly one guarded table: run status through `transition` (RE1-RE10) and task status through `transition_task` (TE1-TE7), both beside the status types they guard. The scheduler owns dispatch and drain; the codec owns the persisted shape; no module writes a status directly.
+- **Dependency direction.** `graph` imports its own siblings (`state`, `budget`, `metrics`) and the ports in `host_ports`; no run module imports `harness`, `rlm` or a later unit. An upward call (decisions, events, probes, publication) goes through a port bound on `RunRequest.ports`.
+- **Interface depth.** The served surface is `execute_graph` and `run` plus the frozen types of `state.py`; the checkpoint exposes `restore` and `save` with one content string; the probe and cycle seams are single ports. Everything else is reached only through those.
+- **Special cases.** None added: a dependency plan runs under the same run machine as a serial run (one task per step); cancellation, budget stops, stop markers and drain errors all end in the same closed terminal set, and the recursive runner level follows the same machine.
+- **State.** Run and task status change only through the two guarded tables; the checkpoint persists `run_status` and `task_states` exactly, restores them without inferring a terminal, and refuses a stored value outside the closed enum with `RUN_STATE_UNKNOWN`.
+- **Environment.** None: nothing here is deployment-specific; the host binds the ports and registers the packaged ontology pack, and the gates run unchanged in CI.
 
 ### Amendment 2026-10-18: retain the run scaffold after the boundary cut
 

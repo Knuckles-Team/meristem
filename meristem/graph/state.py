@@ -12,8 +12,9 @@ from __future__ import annotations
 import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from enum import Enum
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Final, Literal
 
 from pydantic_ai import BinaryContent
 from pydantic_ai.usage import RunUsage
@@ -30,7 +31,219 @@ if TYPE_CHECKING:
     from meristem.harness.client_capabilities import ClientToolLimits
     from meristem.harness.run_lifecycle import RunLifecycle
 
-RunStatus = Literal["pending", "running", "completed", "stopped", "failed"]
+#: The closed refusal reasons of both in-run machines, matching the medulla
+#: ``TransitionRefused`` record (MEDULLA-ORCH-VOCAB-R811.4).
+RefusalReason = Literal[
+    "IllegalTransition", "GuardFailed", "TerminalState", "UnknownEvent"
+]
+
+RUN_TRANSITION_REFUSED: Final = "RUN_TRANSITION_REFUSED"
+TASK_TRANSITION_REFUSED: Final = "TASK_TRANSITION_REFUSED"
+
+
+class RunStatus(Enum):
+    """The closed states of one run. Terminals derive, they are never stored."""
+
+    PENDING = "pending"
+    RUNNING = "running"
+    CANCELLING = "cancelling"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    STOPPED_REQUESTED = "stopped_requested"
+    STOPPED_BUDGET = "stopped_budget"
+    STOPPED_CANCELLED = "stopped_cancelled"
+
+    @property
+    def stop_reason(self) -> str | None:
+        """The typed reason of a stopped run; ``None`` for every other state."""
+        reasons = {
+            RunStatus.STOPPED_REQUESTED: "requested",
+            RunStatus.STOPPED_BUDGET: "budget",
+            RunStatus.STOPPED_CANCELLED: "cancelled",
+        }
+        return reasons.get(self)
+
+    @property
+    def is_terminal(self) -> bool:
+        return self in (
+            RunStatus.COMPLETED,
+            RunStatus.FAILED,
+            RunStatus.STOPPED_REQUESTED,
+            RunStatus.STOPPED_BUDGET,
+            RunStatus.STOPPED_CANCELLED,
+        )
+
+
+class RunEvent(Enum):
+    """The closed events of the run machine; the value is the wire form."""
+
+    START = "start"
+    FINISH = "finish"
+    STOP_REQUESTED = "stop_requested"
+    STOP_BUDGET = "stop_budget"
+    CANCEL = "cancel"
+    DRAIN_COMPLETE = "drain_complete"
+    FAIL = "fail"
+
+
+class TaskStatus(Enum):
+    """The closed states of one fan-out task."""
+
+    BLOCKED = "blocked"
+    READY = "ready"
+    ACTIVE = "active"
+    DONE = "done"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+    SKIPPED = "skipped"
+
+    @property
+    def is_terminal(self) -> bool:
+        return self in (
+            TaskStatus.DONE,
+            TaskStatus.FAILED,
+            TaskStatus.CANCELLED,
+            TaskStatus.SKIPPED,
+        )
+
+
+class TaskEvent(Enum):
+    """The closed events of the task machine; the value is the wire form."""
+
+    DEPS_MET = "deps_met"
+    DISPATCH = "dispatch"
+    COMPLETE = "complete"
+    FAIL = "fail"
+    CANCEL = "cancel"
+    SKIP = "skip"
+
+
+class RunTransitionRefused(RuntimeError):
+    """A run status event the run machine does not admit."""
+
+    machine = "run"
+    code: Literal["RUN_TRANSITION_REFUSED"] = RUN_TRANSITION_REFUSED
+
+    def __init__(
+        self,
+        *,
+        from_status: RunStatus,
+        event: RunEvent | str,
+        reason: RefusalReason,
+    ) -> None:
+        self.from_status = from_status
+        self.event = event
+        self.reason = reason
+        super().__init__(
+            f"run transition refused: {from_status.value} + {event} ({reason})"
+        )
+
+
+class TaskTransitionRefused(RuntimeError):
+    """A task status event the task machine does not admit."""
+
+    machine = "task"
+    code: Literal["TASK_TRANSITION_REFUSED"] = TASK_TRANSITION_REFUSED
+
+    def __init__(
+        self,
+        *,
+        from_status: TaskStatus,
+        event: TaskEvent | str,
+        reason: RefusalReason,
+    ) -> None:
+        self.from_status = from_status
+        self.event = event
+        self.reason = reason
+        super().__init__(
+            f"task transition refused: {from_status.value} + {event} ({reason})"
+        )
+
+
+#: Legal run edges ``(from, event, to, guard fact)``; RE1 to RE10.
+_RUN_EDGES: tuple[tuple[RunStatus, RunEvent, RunStatus, str | None], ...] = (
+    (RunStatus.PENDING, RunEvent.START, RunStatus.RUNNING, "plan_received"),
+    (RunStatus.PENDING, RunEvent.FAIL, RunStatus.FAILED, None),
+    (RunStatus.PENDING, RunEvent.CANCEL, RunStatus.STOPPED_CANCELLED, None),
+    (RunStatus.RUNNING, RunEvent.FINISH, RunStatus.COMPLETED, "output_task_complete"),
+    (RunStatus.RUNNING, RunEvent.STOP_REQUESTED, RunStatus.STOPPED_REQUESTED, None),
+    (RunStatus.RUNNING, RunEvent.STOP_BUDGET, RunStatus.STOPPED_BUDGET, None),
+    (RunStatus.RUNNING, RunEvent.FAIL, RunStatus.FAILED, None),
+    (RunStatus.RUNNING, RunEvent.CANCEL, RunStatus.CANCELLING, None),
+    (
+        RunStatus.CANCELLING,
+        RunEvent.DRAIN_COMPLETE,
+        RunStatus.STOPPED_CANCELLED,
+        "no_active_task",
+    ),
+    (RunStatus.CANCELLING, RunEvent.FAIL, RunStatus.FAILED, None),
+)
+
+#: The one table mapping terminal run states onto the medulla work-item
+#: vocabulary (MEDULLA-ORCH-VOCAB-R812.1). Stopped(requested) is a distinct
+#: terminal that keeps its reason; it maps to Cancelled, never to Succeeded.
+RUN_TERMINAL_VOCAB: Mapping[RunStatus, str] = MappingProxyType(
+    {
+        RunStatus.COMPLETED: "Succeeded",
+        RunStatus.FAILED: "Failed",
+        RunStatus.STOPPED_CANCELLED: "Cancelled",
+        RunStatus.STOPPED_REQUESTED: "Cancelled",
+        RunStatus.STOPPED_BUDGET: "Failed",
+    }
+)
+
+
+def _run_event_by_value(value: Any) -> RunEvent | None:
+    if not isinstance(value, str):
+        return None
+    for event in RunEvent:
+        if event.value == value:
+            return event
+    return None
+
+
+def transition(
+    status: RunStatus,
+    event: RunEvent | str,
+    guard_facts: Mapping[str, bool] | None = None,
+) -> RunStatus:
+    """The only writer of the run status: fire ``event`` on ``status``.
+
+    Legal edges are RE1 to RE10; every other pair refuses with
+    :class:`RunTransitionRefused` (code ``RUN_TRANSITION_REFUSED``). A guard
+    names one fact the caller must assert in ``guard_facts``; a missing or
+    false fact refuses with ``GuardFailed``.
+    """
+    facts = dict(guard_facts or {})
+    if isinstance(event, str):
+        fired = _run_event_by_value(event)
+        if fired is None:
+            raise RunTransitionRefused(
+                from_status=status, event=event, reason="UnknownEvent"
+            )
+    elif not isinstance(event, RunEvent):
+        raise RunTransitionRefused(
+            from_status=status, event=event, reason="UnknownEvent"
+        )
+    else:
+        fired = event
+    if status.is_terminal:
+        raise RunTransitionRefused(
+            from_status=status, event=fired, reason="TerminalState"
+        )
+    for from_status, edge_event, target, guard in _RUN_EDGES:
+        if from_status is status and edge_event is fired:
+            break
+    else:
+        raise RunTransitionRefused(
+            from_status=status, event=fired, reason="IllegalTransition"
+        )
+    if guard is not None and not facts.get(guard, False):
+        raise RunTransitionRefused(
+            from_status=status, event=fired, reason="GuardFailed"
+        )
+    return target
+
 
 #: Fallback budgets when the host gives none.
 DEFAULT_REQUEST_LIMIT = 50
@@ -303,7 +516,7 @@ class GraphState:
     run_id: str
     query: str
     mode: str = "ask"
-    status: RunStatus = "pending"
+    status: RunStatus = RunStatus.PENDING
     step: int = 0
     outputs: list[str] = field(default_factory=list)
     usage: dict[str, int] = field(default_factory=dict)
@@ -345,10 +558,11 @@ class RunResult:
     metrics: Mapping[str, Any] = field(default_factory=dict)
 
     def as_dict(self) -> dict[str, Any]:
+        """The public wire form; the status travels as its enum value."""
         return {
             "run_id": self.run_id,
             "output": self.output,
-            "status": self.status,
+            "status": self.status.value,
             "steps": self.steps,
             "usage": dict(self.usage),
             "error": self.error,
@@ -357,9 +571,33 @@ class RunResult:
         }
 
 
+def _result_from_dict(data: Mapping[str, Any]) -> RunResult:
+    """Rebuild a result from the public wire form of :meth:`RunResult.as_dict`."""
+    status = data["status"]
+    if not isinstance(status, str):
+        raise ValueError("result status must be a string")
+    try:
+        status = RunStatus(status)
+    except ValueError as exc:
+        raise ValueError("unknown run status in result") from exc
+    return RunResult(
+        run_id=data["run_id"],
+        output=data["output"],
+        status=status,
+        steps=data["steps"],
+        usage=dict(data["usage"]),
+        error=data["error"],
+        execution_mode=data["execution_mode"],
+        metrics=dict(data["metrics"]),
+    )
+
+
 def _validate_failure_outcome(result: RunResult) -> None:
     """Only a failed terminal state can travel through the exception port."""
-    if type(result.status) is not str or result.status != "failed":
+    if (
+        not isinstance(result.status, RunStatus)
+        or result.status is not RunStatus.FAILED
+    ):
         raise ValueError("result status must be failed")
     if type(result.steps) is not int or result.steps < 0:
         raise ValueError("result steps must be a nonnegative integer")
@@ -444,7 +682,7 @@ class RunFailed(RuntimeError):
         # RuntimeError reconstructs from its message by default. Rebuild this
         # typed carrier from plain scalar data instead of a mapping proxy.
         state = {key: value for key, value in self.__dict__.items() if key != "_result"}
-        return type(self), (RunResult(**self.result.as_dict()),), state
+        return type(self), (_result_from_dict(self.result.as_dict()),), state
 
 
 def default_run_plan(request: RunRequest, config: Mapping[str, Any]) -> RunPlan:
@@ -490,7 +728,11 @@ __all__ = [
     "GraphState",
     "HarnessConfig",
     "ProgramReuseConfig",
+    "RUN_TERMINAL_VOCAB",
+    "RUN_TRANSITION_REFUSED",
+    "RefusalReason",
     "RunBudget",
+    "RunEvent",
     "RunFailed",
     "RunPlan",
     "RunPlanUnavailable",
@@ -498,10 +740,16 @@ __all__ = [
     "RunResult",
     "RunStatus",
     "RunTask",
+    "RunTransitionRefused",
     "StopRule",
+    "TASK_TRANSITION_REFUSED",
+    "TaskEvent",
+    "TaskStatus",
+    "TaskTransitionRefused",
     "ToolCallerUnavailable",
     "ToolCallFailed",
     "ToolCallRefused",
     "ToolStep",
     "default_run_plan",
+    "transition",
 ]

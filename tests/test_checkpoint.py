@@ -15,6 +15,7 @@ from meristem.graph import (
     DependencyPlan,
     RunBudget,
     RunPlan,
+    RunStatus,
     RunTask,
     ToolStep,
     ToolStepResult,
@@ -84,7 +85,7 @@ async def test_restart_restores_messages_and_skips_completed_model_step():
     assert saved["usage"]["requests"] == 1
     result = await run(request, plan=plan)
     assert (result.status, result.steps, result.output) == (
-        "completed",
+        RunStatus.COMPLETED,
         3,
         "reply:third",
     )
@@ -115,7 +116,7 @@ async def test_invalid_or_uncertain_restore_never_calls_model(mutation):
     raw.update(mutation)
     port.content = json.dumps(raw)
     result = await run(request, plan=plan)
-    assert result.status == "failed"
+    assert result.status is RunStatus.FAILED
     assert prompts == ["first"]
     assert "DO-NOT-ECHO" not in (result.error or "")
 
@@ -125,10 +126,10 @@ async def test_restart_preserves_cumulative_request_budget():
     request, plan, prompts = setup(port, limit=2)
     await stop_after_first(request, plan)
     result = await run(request, plan=plan)
-    assert result.status == "stopped"
+    assert result.status is RunStatus.STOPPED_BUDGET
     assert prompts == ["first", "second"]
     assert json.loads(port.content)["phase"] == "step_inflight"
-    assert (await run(request, plan=plan)).status == "failed"
+    assert (await run(request, plan=plan)).status is RunStatus.FAILED
     assert prompts == ["first", "second"]
 
 
@@ -136,11 +137,11 @@ async def test_completed_restore_skips_model_when_request_limit_is_exhausted():
     port = HostCheckpoint()
     request, plan, prompts = setup(port, limit=3)
     result = await run(request, plan=plan)
-    assert result.status == "completed" and result.usage["requests"] == 3
+    assert result.status is RunStatus.COMPLETED and result.usage["requests"] == 3
 
     again = await run(request, plan=plan)
 
-    assert again.status == "completed"
+    assert again.status is RunStatus.COMPLETED
     assert again.output == result.output
     assert again.usage == result.usage
     assert prompts == ["first", "second", "third"]
@@ -153,7 +154,7 @@ async def test_host_save_failure_stops_before_first_model_call():
 
     request, plan, prompts = setup(Refused())
     result = await run(request, plan=plan)
-    assert result.status == "failed" and prompts == []
+    assert result.status is RunStatus.FAILED and prompts == []
 
 
 async def test_restart_does_not_repeat_completed_native_tool_effect():
@@ -191,7 +192,7 @@ async def test_restart_does_not_repeat_completed_native_tool_effect():
     await stop_after_first(request, plan)
     assert effects == ["effect"]
     result = await run(request, plan=plan)
-    assert result.status == "stopped" and effects == ["effect"]
+    assert result.status is RunStatus.STOPPED_BUDGET and effects == ["effect"]
     assert result.usage["tool_calls"] == 1
 
 
@@ -202,7 +203,7 @@ async def test_changed_plan_stops_before_effects():
     request, plan, prompts = setup(port)
     await stop_after_first(request, plan)
     result = await run(request, plan=replace(plan, steps=("first", "different")))
-    assert result.status == "failed" and prompts == ["first"]
+    assert result.status is RunStatus.FAILED and prompts == ["first"]
 
 
 async def test_exhausted_restored_wall_budget_never_calls_model():
@@ -213,7 +214,7 @@ async def test_exhausted_restored_wall_budget_never_calls_model():
     raw["elapsed_seconds"] = plan.budget.timeout_seconds + 1.0
     port.content = json.dumps(raw)
     result = await run(request, plan=plan)
-    assert result.status == "stopped" and prompts == ["first"]
+    assert result.status is RunStatus.STOPPED_BUDGET and prompts == ["first"]
     assert port.phases == ["step_inflight", "completed"]
 
 
@@ -223,7 +224,7 @@ async def test_empty_plan_has_no_steps_or_checkpoint_writes():
     port = HostCheckpoint()
     request, plan, prompts = setup(port)
     result = await run(request, plan=replace(plan, steps=()))
-    assert result.status == "completed" and result.steps == 0
+    assert result.status is RunStatus.COMPLETED and result.steps == 0
     assert prompts == [] and port.phases == []
 
 
@@ -282,19 +283,18 @@ async def test_dependency_checkpoint_restores_completed_tasks_and_shared_budget(
     saved_content = next(
         content
         for content in reversed(port.snapshots)
-        if json.loads(content)["completed_tasks"] == ["A"]
-        and not json.loads(content)["inflight_tasks"]
+        if json.loads(content)["task_states"] == {"A": "done"}
     )
     port.content = saved_content
     saved = json.loads(saved_content)
-    assert saved["completed_tasks"] == ["A"]
+    assert saved["task_states"] == {"A": "done"}
     assert saved["dependency_outputs"] == {"A": "a"}
     assert saved["usage"]["requests"] == 1
     tool_gate.set()
 
     result = await run(request, plan=plan)
 
-    assert result.status == "completed"
+    assert result.status is RunStatus.COMPLETED
     assert result.output == "d"
     assert result.steps == 4
     assert result.usage["requests"] == 3
@@ -302,7 +302,7 @@ async def test_dependency_checkpoint_restores_completed_tasks_and_shared_budget(
     assert prompts == ["A", "C", "D"]
     assert tool_calls == [("B", {"value": "a"})]
     finished = json.loads(port.content)
-    assert finished["status"] == "completed"
+    assert finished["run_status"] == "completed"
     assert finished["outputs"] == ["d"]
     again = await run(request, plan=plan)
     assert again.output == "d" and prompts == ["A", "C", "D"]

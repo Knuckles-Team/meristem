@@ -16,6 +16,7 @@ from meristem.graph import (
     AgentRunExecutor,
     RunBudget,
     RunPlan,
+    RunStatus,
     StopRule,
 )
 from meristem.graph.state import HarnessConfig
@@ -109,7 +110,7 @@ async def test_real_text_loop_without_inherited_hooks(monkeypatch):
         result = await AgentRunExecutor(ports=support.PORTS).execute_text_only(
             support.request(task="hello"), plan=plan
         )
-        assert result.status == "completed" and result.output == "hello"
+        assert result.status is RunStatus.COMPLETED and result.output == "hello"
         assert result.usage["requests"] == 1 and result.usage["total_tokens"] == 3
         assert not client.is_closed()
         assert len(calls) == 1 and "tools" not in calls[0]
@@ -147,7 +148,7 @@ async def test_provider_effect_configuration_refuses(options):
             result = await AgentRunExecutor(ports=support.PORTS).execute_text_only(
                 support.request(task="hello"), plan=plan
             )
-            assert result.status == "failed"
+            assert result.status is RunStatus.FAILED
         assert calls == []
     finally:
         await client.close()
@@ -183,7 +184,7 @@ async def test_tool_reply_never_executes_or_retries():
         result = await AgentRunExecutor(ports=support.PORTS).execute_text_only(
             support.request(task="hello"), plan=plan
         )
-        assert result.status == "failed" and len(calls) == 1
+        assert result.status is RunStatus.FAILED and len(calls) == 1
     finally:
         await client.close()
 
@@ -227,7 +228,7 @@ async def test_over_budget_reply_retains_reported_consumption():
         result = await AgentRunExecutor(ports=support.PORTS).execute_text_only(
             support.request(task="hello"), plan=plan
         )
-        assert result.status == "stopped" and len(calls) == 1
+        assert result.status is RunStatus.STOPPED_BUDGET and len(calls) == 1
         assert result.usage["requests"] == 1 and result.usage["total_tokens"] == 3
         assert result.output == ""
     finally:
@@ -247,7 +248,7 @@ async def test_retryable_http_error_is_one_attempt():
         result = await AgentRunExecutor(ports=support.PORTS).execute_text_only(
             support.request(task="hello"), plan=plan
         )
-        assert result.status == "failed" and len(calls) == 1
+        assert result.status is RunStatus.FAILED and len(calls) == 1
         assert "synthetic failure" not in (result.error or "")
         assert result.usage["requests"] == 1
     finally:
@@ -296,7 +297,7 @@ async def test_received_request_cannot_inherit_or_substitute(received):
         result = await AgentRunExecutor(ports=support.PORTS).execute_text_only(
             received, plan=plan
         )
-        assert result.status == "failed" and calls == []
+        assert result.status is RunStatus.FAILED and calls == []
     finally:
         await client.close()
 
@@ -311,6 +312,6 @@ async def test_timeout_subclass_keeps_existing_acceptance():
         result = await AgentRunExecutor(ports=support.PORTS).execute_text_only(
             support.request(task="hello"), plan=plan
         )
-        assert result.status == "completed" and len(calls) == 1
+        assert result.status is RunStatus.COMPLETED and len(calls) == 1
     finally:
         await client.close()
