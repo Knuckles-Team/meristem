@@ -154,6 +154,99 @@ async def draft_skill_workflow(
 
 
 @dataclass(frozen=True, slots=True)
+class TaskPlanSubmission:
+    """The structured plan submitted after a refused route stage."""
+
+    tasks: tuple[Mapping[str, Any], ...]
+    proposal_digest: str
+    plan: Mapping[str, Any] | None
+    record_digest: str | None
+
+
+def _extract_task_plan(model_output: Any) -> list[Mapping[str, Any]]:
+    """The structured plan held in the model output, or no tasks."""
+    document = model_output
+    if type(document) is str:
+        try:
+            document = json.loads(document)
+        except json.JSONDecodeError:
+            return []
+    if not isinstance(document, Mapping):
+        return []
+    raw_tasks = document.get("tasks")
+    if not isinstance(raw_tasks, (list, tuple)) or not raw_tasks:
+        return []
+    tasks: list[Mapping[str, Any]] = []
+    seen: set[str] = set()
+    for task in raw_tasks:
+        if not isinstance(task, Mapping):
+            return []
+        task_id = task.get("id")
+        prompt = task.get("prompt")
+        depends_on = task.get("depends_on")
+        if type(task_id) is not str or not task_id or task_id in seen:
+            return []
+        if type(prompt) is not str or not prompt:
+            return []
+        if not isinstance(depends_on, (list, tuple)) or not all(
+            type(dependency) is str for dependency in depends_on
+        ):
+            return []
+        seen.add(task_id)
+        tasks.append(task)
+    if any(
+        dependency not in seen
+        for task in tasks
+        for dependency in task.get("depends_on", ())
+    ):
+        return []
+    return tasks
+
+
+async def submit_task_plan_on_no_stage(
+    request: Any, port: EngineDecisionPort | None, *, run_ref: str
+) -> TaskPlanSubmission | None:
+    """Submit a task plan when no route stage matches.
+
+    On the engine refusal ``ROUTE_NO_STAGE`` the structured plan is
+    extracted from the model output — tasks with ids, prompts and
+    ``depends_on`` — and submitted once as a ``TaskPlan`` through one
+    ``task_plan`` decision; the run runs the plan the answer returns.
+    The harness never routes by itself. Model output that holds no
+    task refuses ``plan_extraction_failed``; other engine codes pass
+    through without a submission; an unbound port refuses
+    ``engine_decision_unavailable`` and decides nothing. The proposal
+    digest and the record digest enter the trace.
+    """
+    if port is None:
+        raise EngineDecisionRefused("engine_decision_unavailable")
+    metadata = getattr(request, "metadata", None) or {}
+    route_refusal = (
+        metadata.get("route_refusal") if isinstance(metadata, Mapping) else None
+    )
+    if route_refusal != "ROUTE_NO_STAGE":
+        return None
+    tasks = _extract_task_plan(metadata.get("model_output"))
+    if not tasks:
+        raise ConsumerRefused("plan_extraction_failed")
+    proposal = {"tasks": [dict(task) for task in tasks]}
+    answer = await port.decide("task_plan", proposal, run_ref=run_ref)
+    if answer.refusal_code is not None:
+        raise ConsumerRefused(answer.refusal_code)
+    plan = (
+        answer.payload.get("plan")
+        if answer.outcome in ("solved", "committed")
+        else None
+    )
+    return TaskPlanSubmission(
+        tasks=tuple(dict(task) for task in tasks),
+        proposal_digest=canonical_json(proposal),
+        plan=dict(plan) if isinstance(plan, Mapping) else None,
+        record_digest=answer.record_digest,
+    )
+
+
+@dataclass(frozen=True, slots=True)
 class PlanningAdmission:
     """The gap proposals one planning admission answer admits.
 
@@ -320,6 +413,7 @@ __all__ = [
     "CompiledWorkflow",
     "PlanningAdmission",
     "SkillWorkflowDraft",
+    "TaskPlanSubmission",
     "WorkflowEntry",
     "WorkflowRegistryPort",
     "WorkflowResolutionRefused",
@@ -329,4 +423,5 @@ __all__ = [
     "draft_skill_workflow",
     "resolve_workflows",
     "store_then_compile",
+    "submit_task_plan_on_no_stage",
 ]

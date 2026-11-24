@@ -117,12 +117,22 @@
       "owner": "meristem"
     },
     {
+      "path": "meristem/harness/assembly.py",
+      "disposition": "keep",
+      "owner": "meristem"
+    },
+    {
       "path": "meristem/harness/changeset_loop.py",
       "disposition": "keep",
       "owner": "meristem"
     },
     {
       "path": "meristem/harness/client_capabilities.py",
+      "disposition": "keep",
+      "owner": "meristem"
+    },
+    {
+      "path": "meristem/harness/command_file.py",
       "disposition": "keep",
       "owner": "meristem"
     },
@@ -158,6 +168,11 @@
     },
     {
       "path": "meristem/harness/quality_gates.py",
+      "disposition": "keep",
+      "owner": "meristem"
+    },
+    {
+      "path": "meristem/harness/rules.py",
       "disposition": "keep",
       "owner": "meristem"
     },
