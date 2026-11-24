@@ -524,6 +524,12 @@ class GraphState:
     scaffold: PlanState | None = None
     metrics: RunMetrics = field(default_factory=RunMetrics)
     event_sequence: int = 0
+    insights: tuple[Mapping[str, Any], ...] = ()
+    """Insights observed during the run, as received; the plan-runtime
+    consumer submits them at run end (R022.2)."""
+    curriculum: Mapping[str, Any] | None = None
+    """The task's subgoal hierarchy, checkpoints, trajectory and
+    received depth for one curriculum submission (R028.1)."""
 
     def add_usage(self, usage: Any) -> None:
         for key in ("requests", "tool_calls", "input_tokens", "output_tokens"):
