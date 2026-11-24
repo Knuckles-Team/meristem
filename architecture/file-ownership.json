@@ -147,6 +147,11 @@
       "owner": "meristem"
     },
     {
+      "path": "meristem/harness/plan.py",
+      "disposition": "keep",
+      "owner": "meristem"
+    },
+    {
       "path": "meristem/harness/plan_runtime.py",
       "disposition": "keep",
       "owner": "meristem"

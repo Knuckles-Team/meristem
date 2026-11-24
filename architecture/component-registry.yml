@@ -31,6 +31,7 @@
         "meristem/harness/contract_validator.py",
         "meristem/harness/conversation_history.py",
         "meristem/harness/edit_engine.py",
+        "meristem/harness/plan.py",
         "meristem/harness/plan_runtime.py",
         "meristem/harness/quality_gates.py",
         "meristem/harness/run_lifecycle.py",
