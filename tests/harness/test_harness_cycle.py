@@ -520,7 +520,7 @@ async def test_compose_sends_trace_refs_and_maps_answers() -> None:
 
 @pytest.mark.spec("MERISTEM-HARNESS-CYCLE-R001.12")
 @pytest.mark.parametrize("port_bound", [False, True])
-def test_persist_refuses_unverified_contrast_before_writes_or_switch(
+async def test_persist_refuses_unverified_contrast_before_writes_or_switch(
     tmp_path, port_bound
 ) -> None:
     component = tmp_path / "harness" / "system_prompt.md"
@@ -547,7 +547,7 @@ def test_persist_refuses_unverified_contrast_before_writes_or_switch(
     else:
         support.register_engine_decision_port(None)
     with pytest.raises(CycleRefusal, match="measurement_unavailable"):
-        persist(
+        await persist(
             task_ref="task-1",
             task_class="classification",
             decision_record_digest="contrast-record-1",
@@ -559,11 +559,140 @@ def test_persist_refuses_unverified_contrast_before_writes_or_switch(
                 adopted_component_kind="system_prompt",
                 adopted_content="changed",
             ),
+            evidence_run_ids=(),
+            ports=support.PORTS,
+            run_ref="task-1",
             write_envelope=writes.append,
             root=tmp_path,
         )
     assert writes == []
     assert component.read_text(encoding="utf-8") == "current prompt"
+
+
+@pytest.mark.spec("MERISTEM-HARNESS-CYCLE-R001.5")
+async def test_persist_logs_one_adoption_then_switches(tmp_path, monkeypatch) -> None:
+    import meristem.graph.harness_cycle as cycle
+
+    adopted = HarnessCandidate(
+        candidate_id="task-1:candidate:0",
+        task_ref="task-1",
+        component_kind="system_prompt",
+        component_version_ref="eg:component/system_prompt/3",
+        seed="seed-1",
+        model_ref="model-1",
+        budget_ref="budget-1",
+    )
+    answer = ContrastAnswer(
+        adopted_version_ref="eg:component/system_prompt/3",
+        abstain_reason=None,
+        adopted_component_kind="system_prompt",
+        adopted_content="adopted prompt",
+    )
+    port = RecordedEnginePort(
+        {
+            "answers": [
+                {
+                    "method": "log",
+                    "params": {"op": "HarnessAdoption"},
+                    "answer": {
+                        "outcome": "committed",
+                        "record_digest": "adoption-record-1",
+                        "payload": {
+                            "adoption_ref": "eg:adoption/1",
+                            "contrast_ref": "eg:contrast/1",
+                            "lesson_ref": "eg:lesson/1",
+                        },
+                    },
+                }
+            ]
+        }
+    )
+    support.register_engine_decision_port(port)
+    real_apply = cycle.apply_edits
+    apply_calls: list[int] = []
+
+    def spy_apply(edits, root=".", *, dry_run=False):
+        apply_calls.append(len(port.calls))
+        return real_apply(edits, root=root, dry_run=dry_run)
+
+    monkeypatch.setattr(cycle, "apply_edits", spy_apply)
+    writes: list[dict] = []
+
+    version_ref, contrast_ref, lesson_ref = await persist(
+        task_ref="task-1",
+        task_class="classification",
+        decision_record_digest="contrast-record-1",
+        conditions_digest_value="digest-1",
+        adopted=adopted,
+        answer=answer,
+        evidence_run_ids=("task-1:probe:current", "task-1:probe:task-1:candidate:0"),
+        ports=support.PORTS,
+        run_ref="task-1",
+        write_envelope=writes.append,
+        root=tmp_path,
+    )
+
+    assert (version_ref, contrast_ref, lesson_ref) == (
+        "eg:adoption/1",
+        "eg:contrast/1",
+        "eg:lesson/1",
+    )
+    # One log call, and one apply_edits call after it — the switch
+    # happens only after the commit, never before.
+    assert [call[0] for call in port.calls] == ["log"]
+    assert apply_calls == [1]
+    assert (tmp_path / ".harness" / "system_prompt.md").read_text(
+        encoding="utf-8"
+    ) == "adopted prompt"
+    # The adoption envelope carries the harness-authored lesson.
+    assert len(writes) == 1
+    assert writes[0]["adopted_version_ref"] == adopted.component_version_ref
+    assert writes[0]["decision_record_digest"] == "contrast-record-1"
+    assert writes[0]["lesson"]["changed_component_kind"] == "system_prompt"
+    assert writes[0]["lesson"]["what_changed"] == adopted.component_version_ref
+    assert writes[0]["lesson"]["evidence_run_ids"] == [
+        "task-1:probe:current",
+        "task-1:probe:task-1:candidate:0",
+    ]
+
+    # Passed-through engine codes: no edit and no switch on a refusal.
+    for code in (
+        "LessonWithoutEvidence",
+        "ContrastConditionsMismatch",
+        "AdoptedHarnessNoDecision",
+    ):
+        support.register_engine_decision_port(
+            RecordedEnginePort(
+                {
+                    "answers": [
+                        {
+                            "method": "log",
+                            "params": {"op": "HarnessAdoption"},
+                            "answer": {
+                                "outcome": "abstained",
+                                "refusal_code": code,
+                            },
+                        }
+                    ]
+                }
+            )
+        )
+        with pytest.raises(ConsumerRefused, match=code):
+            await persist(
+                task_ref="task-1",
+                task_class="classification",
+                decision_record_digest="contrast-record-1",
+                conditions_digest_value="digest-1",
+                adopted=adopted,
+                answer=answer,
+                evidence_run_ids=(),
+                ports=support.PORTS,
+                run_ref="task-1",
+                write_envelope=writes.append,
+                root=tmp_path,
+            )
+    assert apply_calls == [1]
+    assert len(writes) == 1
 
 
 def _library() -> list[dict[str, str]]:

@@ -29,6 +29,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final
 
+from meristem.harness.edit_engine import Edit, apply_edits
 from meristem.harness.run_lifecycle import ConsumerRefused
 from meristem.host_ports import HostPorts
 
@@ -406,7 +407,7 @@ async def compose(
 EnvelopeWriter = Callable[[Mapping[str, Any]], str]
 
 
-def persist(
+async def persist(
     *,
     task_ref: str,
     task_class: str,
@@ -414,16 +415,73 @@ def persist(
     conditions_digest_value: str,
     adopted: HarnessCandidate,
     answer: ContrastAnswer,
+    evidence_run_ids: Sequence[str],
+    ports: HostPorts,
+    run_ref: str,
     write_envelope: EnvelopeWriter,
     root: str | Path = ".",
 ) -> tuple[str, str, str]:
-    """Refuse until the engine supplies verifiable adoption and evidence.
+    """Persist the adoption through the engine decision port, then switch.
 
-    A caller-constructed answer is not an owner-issued receipt. The
-    engine decision port must commit the adoption before this step can
-    write or change the in-run harness.
+    One ``HarnessAdoption`` decision-log write carries the task, the
+    decision record digest, the conditions digest, the adopted version
+    and the harness-authored lesson; the engine validates and stores
+    it under the run's delegated principal. On ``committed`` the
+    answer's ``adoption_ref``, ``contrast_ref`` and ``lesson_ref`` are
+    returned, the adoption envelope is written, and the adopted content
+    is switched in under ``.harness/`` with ``apply_edits`` — after the
+    commit, never before. The engine codes ``LessonWithoutEvidence``,
+    ``ContrastConditionsMismatch`` and ``AdoptedHarnessNoDecision``
+    pass through and leave the harness unchanged; an absent port or an
+    ``insufficient_evidence`` answer refuses
+    ``measurement_unavailable`` before any write or switch.
     """
-    raise CycleRefusal("measurement_unavailable")
+    engine = ports.engine_decision_port()
+    if engine is None:
+        raise CycleRefusal("measurement_unavailable")
+    lesson = {
+        "deficiency": (
+            f"the current harness for {task_class} under the shared "
+            f"conditions {conditions_digest_value[:16]}"
+        ),
+        "situation": f"evolution tick for {task_ref}",
+        "changed_component_kind": adopted.component_kind,
+        "what_changed": adopted.component_version_ref,
+        "applicability": task_class,
+        "evidence_run_ids": list(evidence_run_ids),
+    }
+    write = {
+        "kind": "harness_adoption",
+        "task_ref": task_ref,
+        "task_class": task_class,
+        "decision_record_digest": decision_record_digest,
+        "conditions_digest": conditions_digest_value,
+        "adopted_version_ref": adopted.component_version_ref,
+        "lesson": lesson,
+    }
+    log_answer = await engine.log("HarnessAdoption", run_ref=run_ref)
+    if log_answer.refusal_code is not None:
+        if log_answer.refusal_code == "insufficient_evidence":
+            raise CycleRefusal("measurement_unavailable")
+        raise ConsumerRefused(log_answer.refusal_code)
+    if log_answer.outcome != "committed":
+        raise CycleRefusal("measurement_unavailable")
+    payload = log_answer.payload
+    version_ref = str(payload.get("adoption_ref") or "")
+    contrast_ref = str(payload.get("contrast_ref") or "")
+    lesson_ref = str(payload.get("lesson_ref") or "")
+    if not (version_ref and contrast_ref and lesson_ref):
+        raise CycleRefusal("measurement_unavailable")
+    write_envelope(write)
+    edit = Edit(
+        path=f".harness/{adopted.component_kind}.md",
+        search="",
+        replace=answer.adopted_content,
+    )
+    result = apply_edits([edit], root=root)
+    if not result.ok:
+        raise ValueError(f"the adoption switch failed: {result.failures}")
+    return version_ref, contrast_ref, lesson_ref
 
 
 def reflect(
@@ -591,13 +649,16 @@ async def run_cycle_tick(
             if baseline is not None
             else (adopted_trace,)
         )
-        version_ref, contrast_ref, lesson_ref = persist(
+        version_ref, contrast_ref, lesson_ref = await persist(
             task_ref=task_ref,
             task_class=task_class,
             decision_record_digest=contrast_record_digest,
             conditions_digest_value=digest,
             adopted=adopted,
             answer=answer,
+            evidence_run_ids=evidence_run_ids,
+            ports=request.ports,
+            run_ref=task_ref,
             write_envelope=write_envelope,
             root=root,
         )
