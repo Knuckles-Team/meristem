@@ -360,6 +360,21 @@ class EngineDecisionRefused(RuntimeError):
         )
 
 
+class EngineRefusal(RuntimeError):
+    """An engine refusal code the harness passes through unchanged.
+
+    The harness neither maps nor swallows a refusal the engine issued
+    under one of its own codes; the caller sees the engine's code.
+    """
+
+    def __init__(self, code: str, *, method: str) -> None:
+        if type(code) is not str or not code.strip():
+            raise ValueError("an engine refusal carries the engine's code")
+        self.code = code
+        self.method = method
+        super().__init__(f"engine_refused: {code} ({method})")
+
+
 class DurableRunEventPublisher(Protocol):
     """One host-owned durable writer bound to the admitted run."""
 
