@@ -628,6 +628,96 @@ async def test_refusals_keep_harness(tmp_path, monkeypatch) -> None:
     assert component.read_text(encoding="utf-8") == "current prompt"
 
 
+@pytest.mark.spec("MERISTEM-HARNESS-CYCLE-R001.15")
+async def test_slot_bounds_come_from_the_plan_budget(tmp_path) -> None:
+    def model(messages, info):
+        return ModelResponse(parts=[TextPart("done")])
+
+    support.register_run_decision_provider(
+        lambda request: RunPlan(
+            model=FunctionModel(model),
+            steps=(request.task,),
+            budget=RunBudget(candidate_slots=2),
+        )
+    )
+    component = tmp_path / "harness" / "system_prompt.md"
+    component.parent.mkdir(parents=True)
+    component.write_text("current prompt", encoding="utf-8")
+
+    def plan(slots, min_slots):
+        return RunPlan(
+            model=FunctionModel(model),
+            steps=("task",),
+            budget=RunBudget(candidate_slots=slots, candidate_slots_min=min_slots),
+        )
+
+    def decide(request):
+        return {
+            "adopted_version_ref": "v-a",
+            "abstain_reason": None,
+            "adopted_component_kind": "system_prompt",
+            "adopted_content": "adopted prompt",
+        }
+
+    def tick(plan_obj, library=None):
+        return run_cycle_tick(
+            _tick_request(),
+            plan_obj,
+            task_class="classification",
+            graph=object(),
+            library_query=library if library is not None else lambda _class: _library(),
+            decide=decide,
+            write_envelope=lambda envelope: "ref",
+            root=tmp_path,
+        )
+
+    # The received bound from the stage allocation governs: it abstains
+    # where the fallback would have admitted the two slots.
+    outcome = await tick(plan(2, 3))
+    assert outcome.abstain_reason == "budget_below_contrast"
+    assert outcome.k == 2
+    assert outcome.adopted_version_ref is None
+
+    # The received bound also admits where the fallback would have
+    # refused: one slot with a received minimum of one.
+    outcome = await tick(plan(1, 1))
+    assert outcome.abstain_reason != "budget_below_contrast"
+    assert outcome.k == 1
+
+    # Without a received minimum the fallback of two slots applies.
+    outcome = await tick(plan(2, None))
+    assert outcome.abstain_reason != "budget_below_contrast"
+    assert outcome.k == 2
+    outcome = await tick(plan(1, None))
+    assert outcome.abstain_reason == "budget_below_contrast"
+    assert outcome.k == 1
+    outcome = await tick(plan(None, None))
+    assert outcome.abstain_reason == "budget_below_contrast"
+    assert outcome.k == 0
+
+    # The tick keeps at most k candidates, never more than the engine
+    # maximum: three library versions under two slots probe two candidates.
+    probes: list[dict[str, object]] = []
+
+    async def counting_probe(**kwargs):
+        probes.append(kwargs)
+        return {"run_id": kwargs["run_id"], "status": "completed", "steps": 1}
+
+    fixture_probe = support.PORTS.harness_probe_provider()
+    support.register_harness_probe_provider(counting_probe)
+    three = _library() + [{"component_kind": "memory", "component_version_ref": "v-c"}]
+    outcome = await tick(plan(2, None), library=lambda _class: three)
+    support.register_harness_probe_provider(fixture_probe)
+    assert outcome.abstain_reason != "budget_below_contrast"
+    # The current-harness probe first, then the k candidates; the third
+    # library version never probes because the engine maximum is k.
+    assert [
+        str(call["metadata"]["harness_probe"]["component_version_ref"])
+        for call in probes
+    ] == ["v-0", "v-a", "v-b"]
+    assert component.read_text(encoding="utf-8") == "current prompt"
+
+
 @pytest.mark.spec("MERISTEM-HARNESS-CYCLE-R001.8")
 async def test_port_fails_closed_without_provider() -> None:
     from meristem.graph.harness_cycle import drive_cycle_tick

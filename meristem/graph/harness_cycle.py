@@ -470,8 +470,9 @@ def reflect(
     )
 
 
-#: The candidate slot count below which the cycle abstains.
-MIN_CANDIDATE_SLOTS = 2
+#: The candidate slot count below which the cycle abstains when the stage
+#: allocation's answer carries no received minimum of its own.
+FALLBACK_MIN_CANDIDATE_SLOTS = 2
 
 
 def _model_ref(model: Any) -> str:
@@ -531,14 +532,19 @@ async def run_cycle_tick(
     """One propose–probe–compose–persist–reflect tick for one task.
 
     Reads the candidate budget k from the candidate slot count of the
-    stage allocation the run decision carries on the budget; below two
-    slots the cycle abstains with ``budget_below_contrast`` and keeps
-    the current harness. Each step refuses with one typed code; a refusal
-    persists nothing and the current harness is kept.
+    stage allocation the run decision carries on the budget. The bound
+    is the allocation's received ``candidate_slots_min`` when it carries
+    one, else the fallback of two slots; below the bound the cycle
+    abstains with ``budget_below_contrast`` and keeps the current
+    harness. Each step refuses with one typed code; a refusal persists
+    nothing and the current harness is kept.
     """
     task_ref = request.run_id
     k = plan.budget.candidate_slots
-    if k is None or k < MIN_CANDIDATE_SLOTS:
+    min_slots = plan.budget.candidate_slots_min
+    if min_slots is None:
+        min_slots = FALLBACK_MIN_CANDIDATE_SLOTS
+    if k is None or k < min_slots:
         return _refused(request.ports, task_ref, k or 0, "budget_below_contrast")
     seed = str(request.metadata.get("harness_seed") or "")
     current_version_ref = str(request.metadata.get("harness_current_version_ref") or "")
@@ -671,8 +677,8 @@ __all__ = [
     "CycleRefusal",
     "EnvelopeWriter",
     "HarnessCandidate",
+    "FALLBACK_MIN_CANDIDATE_SLOTS",
     "LibraryQuery",
-    "MIN_CANDIDATE_SLOTS",
     "ProbeTrace",
     "conditions_digest",
     "compose",
