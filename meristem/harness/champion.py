@@ -79,6 +79,32 @@ async def apply_champion_skill(
     return ChampionRevision(pointer_key=pointer_key, revision_ref=revision_ref), applied
 
 
+async def pin_champion(subject: str, *, ports: HostPorts, run_ref: str) -> str:
+    """Pin one subject's champion revision for one tick.
+
+    One pointer read under ``champion:<subject>`` through the bound
+    engine decision port's read arm; the caller holds the returned
+    revision for the whole tick and compares it again at persist,
+    refusing when the pointer moved. Refusals: engine codes
+    ``PROMOTION_CAS_CONFLICT`` and ``PROMOTION_RECEIPT_MISMATCH`` pass
+    through; with no bound port the step refuses
+    ``engine_decision_unavailable`` and decides nothing; an absent
+    pointer refuses ``champion_missing``.
+    """
+    pointer_key = f"champion:{subject}"
+    answer = await ports.engine_read(
+        "pointer", {"pointer_key": pointer_key}, run_ref=run_ref
+    )
+    if answer.refusal_code is not None:
+        raise ConsumerRefused(answer.refusal_code)
+    if answer.outcome not in ("solved", "committed"):
+        raise ConsumerRefused("champion_missing")
+    revision_ref = str(answer.payload.get("revision_ref") or "")
+    if not revision_ref:
+        raise ConsumerRefused("champion_missing")
+    return revision_ref
+
+
 def champion_on_start(applied: ChampionApplied):
     """The run's ``on_start`` step: read the pointer and apply the revision.
 
@@ -119,4 +145,5 @@ __all__ = [
     "apply_champion_skill",
     "champion_on_start",
     "champion_pointer_key",
+    "pin_champion",
 ]

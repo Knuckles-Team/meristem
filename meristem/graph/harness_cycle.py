@@ -29,6 +29,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final
 
+from meristem.harness.champion import pin_champion
 from meristem.harness.edit_engine import Edit, apply_edits
 from meristem.harness.run_lifecycle import ConsumerRefused
 from meristem.host_ports import EngineDecisionRefused, HostPorts
@@ -44,6 +45,7 @@ ABSTAIN_REASONS: Final[tuple[str, ...]] = (
     "compose_abstention",
     "measurement_unavailable",
     "allocation_missing",
+    "champion_moved",
 )
 
 
@@ -581,14 +583,15 @@ def reflect(
     ports: HostPorts,
     evidence_run_ids: Sequence[str] = (),
     stages: Sequence[Mapping[str, Any]] = (),
+    champion_pin: str = "",
 ) -> None:
     """Report one tick's outcome through the existing run event sink.
 
     Submits the lesson only when the compose step adopted a candidate,
     citing the evidence runs by trace id; an abstained tick reports its
     refusal code and submits no lesson. The tick trace carries one cost
-    entry per stage the stage allocation ran. A no-op without a
-    registered host sink.
+    entry per stage the stage allocation ran, and the pinned champion
+    revision the tick held. A no-op without a registered host sink.
     """
     ports.emit_run_event(
         {
@@ -605,6 +608,7 @@ def reflect(
                 else []
             ),
             "stage_allocations": [dict(stage) for stage in stages],
+            "champion_pin": champion_pin,
         }
     )
 
@@ -646,6 +650,7 @@ def _refused(
     k: int,
     code: str,
     stages: Sequence[Mapping[str, Any]] = (),
+    champion_pin: str = "",
 ) -> CycleOutcome:
     """The abstained outcome: the current harness is kept, nothing persisted."""
     outcome = CycleOutcome(
@@ -656,7 +661,7 @@ def _refused(
         contrast_ref=None,
         lesson_ref=None,
     )
-    reflect(outcome, ports=ports, stages=stages)
+    reflect(outcome, ports=ports, stages=stages, champion_pin=champion_pin)
     return outcome
 
 
@@ -699,12 +704,17 @@ async def run_cycle_tick(
     budget_ref = _budget_ref(plan.budget)
     try:
         tick_trace: list[dict[str, Any]] = []
+        champion_pin = ""
         if "stage_allocation" in plan.harness.consumers:
             allocation = await _resolve_stage_allocation(
                 request.ports, task_ref=task_ref, budget_ref=budget_ref
             )
         else:
             allocation = None
+        if "champion_pin" in plan.harness.consumers:
+            champion_pin = await pin_champion(
+                f"{task_class}:{task_ref}", ports=request.ports, run_ref=task_ref
+            )
         candidates = await run_stage(
             "propose",
             allocation,
@@ -771,6 +781,12 @@ async def run_cycle_tick(
             if baseline is not None
             else (adopted_trace,)
         )
+        if champion_pin:
+            current_pin = await pin_champion(
+                f"{task_class}:{task_ref}", ports=request.ports, run_ref=task_ref
+            )
+            if current_pin != champion_pin:
+                raise CycleRefusal("champion_moved")
         version_ref, contrast_ref, lesson_ref = await run_stage(
             "persist",
             allocation,
@@ -805,10 +821,13 @@ async def run_cycle_tick(
             ports=request.ports,
             evidence_run_ids=evidence_run_ids,
             stages=tick_trace,
+            champion_pin=champion_pin,
         )
         return outcome
     except CycleRefusal as refusal:
-        return _refused(request.ports, task_ref, k, refusal.code, tick_trace)
+        return _refused(
+            request.ports, task_ref, k, refusal.code, tick_trace, champion_pin
+        )
 
 
 async def drive_cycle_tick(
