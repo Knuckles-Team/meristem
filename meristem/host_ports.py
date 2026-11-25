@@ -282,6 +282,7 @@ ENGINE_READ_METHODS: frozenset[str] = frozenset(
         "TraceCritique",
         "IndexlessRetrieve",
         "UnifiedQuery",
+        "pointer",
     }
 )
 """The served engine read methods the harness may reach; nothing else."""

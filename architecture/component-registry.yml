@@ -27,6 +27,7 @@
         "meristem/harness/__init__.py",
         "meristem/harness/assembly.py",
         "meristem/harness/changeset_loop.py",
+        "meristem/harness/champion.py",
         "meristem/harness/client_capabilities.py",
         "meristem/harness/command_file.py",
         "meristem/harness/constraint_engine.py",

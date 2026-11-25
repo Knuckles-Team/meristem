@@ -127,6 +127,11 @@
       "owner": "meristem"
     },
     {
+      "path": "meristem/harness/champion.py",
+      "disposition": "keep",
+      "owner": "meristem"
+    },
+    {
       "path": "meristem/harness/client_capabilities.py",
       "disposition": "keep",
       "owner": "meristem"

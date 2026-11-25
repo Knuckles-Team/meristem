@@ -16,6 +16,7 @@ import json
 import uuid
 from collections.abc import AsyncGenerator, AsyncIterable, Awaitable, Callable, Mapping
 from contextlib import aclosing
+from dataclasses import replace
 from typing import Any
 
 from pydantic_ai import Agent, BinaryContent, RunContext
@@ -24,6 +25,7 @@ from pydantic_ai.messages import AgentStreamEvent
 from pydantic_ai.usage import UsageLimits
 
 from meristem import host_ports
+from meristem.harness.champion import ChampionApplied, champion_on_start
 from meristem.harness.conversation_history import (
     decode_completed_history,
     read_run_history,
@@ -335,7 +337,13 @@ async def iterate_run(
             if run_plan.lifecycle is not None
             else RunLifecycle(run_plan.harness.consumers)
         )
+        champion = None
+        if run_plan.lifecycle is None and lifecycle.enabled("champion_skill"):
+            champion = ChampionApplied()
+            lifecycle.add("champion_skill", "on_start", champion_on_start(champion))
         await lifecycle.on_start(request, run_plan)
+        if champion is not None and champion.instructions is not None:
+            run_plan = replace(run_plan, instructions=champion.instructions)
     except Exception as exc:  # noqa: BLE001 - a failed plan is a failed run
         state.status = transition(state.status, RunEvent.FAIL)
         state.error = f"{type(exc).__name__}: {exc}"
