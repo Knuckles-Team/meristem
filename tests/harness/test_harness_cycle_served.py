@@ -22,12 +22,19 @@ class LoopbackEngine:
     ``decide`` replays one recorded fixture per call.
     """
 
-    def __init__(self, decide_cases: list[dict[str, Any]] | None = None) -> None:
+    def __init__(
+        self,
+        task_class: str = "classification",
+        decide_cases: list[dict[str, Any]] | None = None,
+    ) -> None:
+        self.task_class = task_class
         self.decide_cases = list(decide_cases or ())
         self.commits: list[dict[str, Any]] = []
         self.log_payload: dict[str, Any] = {}
         self.log_refusal_code: str | None = None
         self.store: dict[str, list[dict[str, Any]]] = {}
+        #: The lessons the engine holds, per task class.
+        self.lessons: dict[str, dict[str, Any]] = {}
 
     async def decide(
         self, kind: str, params: Mapping[str, Any], *, run_ref: str
@@ -87,6 +94,215 @@ class LoopbackEngine:
         self, method: str, params: Mapping[str, Any], *, run_ref: str
     ) -> hp.EngineAnswer:
         raise AssertionError(f"unexpected write: {method}")
+
+
+@pytest.fixture(autouse=True)
+def _fixture_probe_executor():
+    """The host executor runs each probe through execute_graph."""
+    from meristem.graph.runner import execute_graph
+
+    async def host_probe(*, graph, config, task, budget_ref, **kwargs):
+        return await execute_graph(graph, config, task, **kwargs, ports=support.PORTS)
+
+    support.register_harness_probe_provider(host_probe)
+
+
+@pytest.mark.spec("MERISTEM-HARNESS-CYCLE-R001.9")
+async def test_cycle_double_shows_lesson_to_next_propose(tmp_path) -> None:
+    """The served journey: one tick with two candidates and k = 2.
+
+    The registered host provider drives the tick through
+    drive_cycle_tick; the host executor runs each probe through
+    execute_graph; the loopback engine replays one recorded answer per
+    call and stores the lesson the tick persists for the task class.
+    The test reads the engine through the port and finds the adopted
+    harness, the contrast and the lesson; the next propose query
+    returns the stored lesson.
+    """
+    from pydantic_ai.messages import ModelResponse, TextPart
+    from pydantic_ai.models.function import FunctionModel
+
+    import meristem.graph.harness_cycle as cycle
+    from meristem.graph import RunBudget, RunPlan
+    from meristem.graph.harness_cycle import (
+        conditions_digest,
+        drive_cycle_tick,
+        propose,
+        run_cycle_tick,
+    )
+    from meristem.graph.runner import execute_graph
+
+    def model(messages, info):
+        return ModelResponse(parts=[TextPart("done")])
+
+    request = support.request(
+        task="classify",
+        run_id="task-1",
+        metadata={"harness_seed": "seed-1", "harness_current_version_ref": "v-0"},
+    )
+    plan = RunPlan(
+        model=FunctionModel(model),
+        steps=("classify",),
+        budget=RunBudget(candidate_slots=2),
+    )
+    # One recorded engine answer per call: the contrast adoption, sent
+    # with the trace references the engine measures from.
+    tick_digest = conditions_digest(
+        task="classify",
+        seed="seed-1",
+        model_ref=cycle._model_ref(plan.model),
+        budget_ref=cycle._budget_ref(plan.budget),
+    )
+    contrast_params = {
+        "task_ref": "task-1",
+        "task_class": "classification",
+        "conditions_digest": tick_digest,
+        "candidate_version_refs": ["v-a", "v-b"],
+        "baseline_trace_id": "task-1:probe:current",
+        "probe_trace_ids": [
+            "task-1:probe:task-1:candidate:0",
+            "task-1:probe:task-1:candidate:1",
+        ],
+    }
+    expected_lesson = {
+        "deficiency": (
+            "the current harness for classification under the shared "
+            f"conditions {tick_digest[:16]}"
+        ),
+        "situation": "evolution tick for task-1",
+        "changed_component_kind": "guardrails",
+        "what_changed": "v-b",
+        "applicability": "classification",
+        "evidence_run_ids": [
+            "task-1:probe:current",
+            "task-1:probe:task-1:candidate:1",
+        ],
+    }
+    engine = LoopbackEngine(
+        task_class="classification",
+        decide_cases=[
+            {
+                "method": "harness_contrast",
+                "params": contrast_params,
+                "answer": {
+                    "outcome": "committed",
+                    "record_digest": "contrast-record-journey",
+                    "payload": {
+                        "adopted_version_ref": "v-b",
+                        "adopted_component_kind": "guardrails",
+                        "adopted_content": "tighter guardrails",
+                    },
+                },
+            }
+        ],
+    )
+    engine.log_payload = {
+        "adoption_ref": "eg:adoption/1",
+        "contrast_ref": "eg:contrast/1",
+        "lesson_ref": "eg:lesson/1",
+    }
+    support.register_engine_decision_port(engine)
+
+    # The host routes the adoption write to the engine: the engine
+    # validates and stores the lesson for the task class.
+    writes: list[dict[str, Any]] = []
+
+    def write_envelope(write):
+        writes.append(write)
+        if write["kind"] == "harness_adoption":
+            engine.lessons[engine.task_class] = dict(write["lesson"])
+
+    # The improvement library returns the stored lesson once the tick
+    # has persisted it.
+    def library(task_class):
+        stored = engine.lessons.get(task_class)
+        if stored is not None:
+            return [
+                {
+                    "component_kind": "lesson",
+                    "component_version_ref": "eg:lesson/1",
+                    "lesson": stored,
+                }
+            ]
+        return [
+            {"component_kind": "system_prompt", "component_version_ref": "v-a"},
+            {"component_kind": "guardrails", "component_version_ref": "v-b"},
+        ]
+
+    probe_runs: list[str] = []
+
+    async def host_probe(*, graph, config, task, budget_ref, **kwargs):
+        probe_runs.append(kwargs["run_id"])
+        return await execute_graph(graph, config, task, **kwargs, ports=support.PORTS)
+
+    async def cycle_provider(request_, plan_, **kwargs):
+        return await run_cycle_tick(
+            request_,
+            plan_,
+            library_query=library,
+            write_envelope=write_envelope,
+            **kwargs,
+        )
+
+    support.register_harness_probe_provider(host_probe)
+    support.register_harness_cycle_provider(cycle_provider)
+
+    outcome = await drive_cycle_tick(
+        request,
+        plan,
+        task_class="classification",
+        graph=object(),
+        root=tmp_path,
+    )
+
+    # The tick adopted on the served answers and switched the content.
+    assert outcome.abstain_reason is None
+    assert outcome.adopted_version_ref == "eg:adoption/1"
+    assert outcome.contrast_ref == "eg:contrast/1"
+    assert outcome.lesson_ref == "eg:lesson/1"
+    assert (tmp_path / ".harness" / "guardrails.md").read_text(
+        encoding="utf-8"
+    ) == "tighter guardrails"
+    # The host executor ran the baseline probe and one probe per
+    # candidate through execute_graph; none of them started a tick.
+    assert probe_runs == [
+        "task-1:probe:current",
+        "task-1:probe:task-1:candidate:0",
+        "task-1:probe:task-1:candidate:1",
+    ]
+    # The adoption write carried the lesson the harness authored for
+    # the tick's conditions and evidence.
+    assert len(writes) == 1
+    assert writes[0]["adopted_version_ref"] == "v-b"
+    assert writes[0]["decision_record_digest"] == "contrast-record-journey"
+    assert writes[0]["conditions_digest"] == tick_digest
+    assert writes[0]["lesson"] == expected_lesson
+    # The engine stored the lesson for the task class.
+    assert engine.lessons["classification"] == expected_lesson
+    # A read through the port finds the adopted harness, the contrast
+    # and the lesson.
+    port = support.PORTS.engine_decision_port()
+    read_answer = await port.read(
+        "GetNodesByLabel", {"label": "HarnessAdoption"}, run_ref="task-1"
+    )
+    assert len(read_answer.payload["nodes"]) == 1
+    node = read_answer.payload["nodes"][0]
+    assert node["adoption_ref"] == "eg:adoption/1"
+    assert node["contrast_ref"] == "eg:contrast/1"
+    assert node["lesson_ref"] == "eg:lesson/1"
+    # The next propose query returns the stored lesson.
+    candidates = propose(
+        task_ref="task-1",
+        task_class="classification",
+        library=library,
+        seed="seed-1",
+        model_ref=cycle._model_ref(plan.model),
+        budget_ref=cycle._budget_ref(plan.budget),
+        k=2,
+    )
+    assert len(candidates) == 1
+    assert candidates[0].component_kind == "lesson"
+    assert candidates[0].component_version_ref == "eg:lesson/1"
 
 
 @pytest.mark.spec("MERISTEM-HARNESS-CYCLE-R001.11")
