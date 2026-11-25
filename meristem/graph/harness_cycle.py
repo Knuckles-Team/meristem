@@ -31,7 +31,7 @@ from typing import Any, Final
 
 from meristem.harness.edit_engine import Edit, apply_edits
 from meristem.harness.run_lifecycle import ConsumerRefused
-from meristem.host_ports import HostPorts
+from meristem.host_ports import EngineDecisionRefused, HostPorts
 
 from .checkpoint import RUN_STATE_UNKNOWN, CheckpointUnavailable
 from .state import RunBudget, RunPlan, RunRequest, RunStatus
@@ -43,6 +43,7 @@ ABSTAIN_REASONS: Final[tuple[str, ...]] = (
     "probe_trace_missing",
     "compose_abstention",
     "measurement_unavailable",
+    "allocation_missing",
 )
 
 
@@ -318,6 +319,96 @@ def collect_trace_refs(
     )
 
 
+#: The closed stage order of one evolution tick.
+STAGES: Final[tuple[str, ...]] = (
+    "propose",
+    "probe",
+    "compose",
+    "persist",
+    "reflect",
+)
+
+#: The decision kind of one tick's stage allocation.
+STAGE_ALLOCATION_KIND = "StageAllocation"
+
+
+@dataclass(frozen=True)
+class StageAllocation:
+    """One tick's received stage allocation.
+
+    ``stage_models`` maps each tick stage to the model reference the
+    engine allocated it; the cycle runs each stage on its allocated
+    model and ranks nothing of its own.
+    """
+
+    stage_models: Mapping[str, str]
+
+
+async def _resolve_stage_allocation(
+    ports: HostPorts, *, task_ref: str, budget_ref: str
+) -> StageAllocation:
+    """One StageAllocation decide per tick, on the bound engine port.
+
+    The engine allocates one model per tick stage; with no bound port
+    the step refuses engine_decision_unavailable and decides nothing,
+    an engine refusal code passes through, and an abstaining engine or
+    an answer without stage models leaves the tick without an
+    allocation, which refuses allocation_missing at the first stage.
+    """
+    engine = ports.engine_decision_port()
+    if engine is None:
+        raise EngineDecisionRefused("engine_decision_unavailable")
+    answer = await engine.decide(
+        STAGE_ALLOCATION_KIND,
+        {"task_ref": task_ref, "budget_ref": budget_ref, "stages": list(STAGES)},
+        run_ref=task_ref,
+    )
+    if answer.refusal_code is not None:
+        raise ConsumerRefused(answer.refusal_code)
+    if answer.outcome not in ("solved", "committed"):
+        raise CycleRefusal("allocation_missing")
+    stage_models = answer.payload.get("stage_models")
+    if not isinstance(stage_models, Mapping) or not stage_models:
+        raise CycleRefusal("allocation_missing")
+    return StageAllocation(
+        stage_models={str(stage): str(model) for stage, model in stage_models.items()}
+    )
+
+
+async def run_stage(
+    stage: str,
+    allocation: StageAllocation | None,
+    body: Callable[..., Any],
+    trace: list[dict[str, Any]],
+    *args: Any,
+    **kwargs: Any,
+) -> Any:
+    """Run one tick stage on the allocated model and record its cost.
+
+    With an allocation the stage must be named in ``stage_models`` or
+    the tick refuses allocation_missing; one cost entry per stage —
+    the stage, its model reference, tokens and cost — enters the tick
+    trace. Without an allocation (the consumer is not enabled for the
+    run) the stage body runs unchanged.
+    """
+    entry: dict[str, Any] | None = None
+    if allocation is not None:
+        if stage not in STAGES:
+            raise ValueError(f"open stage: {stage!r}")
+        model_ref = allocation.stage_models.get(stage)
+        if not model_ref:
+            raise CycleRefusal("allocation_missing")
+        entry = {"stage": stage, "model_ref": model_ref, "tokens": 0, "cost": 0}
+        trace.append(entry)
+    result = body(*args, **kwargs)
+    if inspect.isawaitable(result):
+        result = await result
+    if entry is not None and isinstance(result, Mapping):
+        entry["tokens"] = int(result.get("tokens") or 0)
+        entry["cost"] = result.get("cost") or 0
+    return result
+
+
 @dataclass(frozen=True)
 class ContrastAnswer:
     """The engine's answer: one adoption or one abstention, never both.
@@ -489,13 +580,15 @@ def reflect(
     *,
     ports: HostPorts,
     evidence_run_ids: Sequence[str] = (),
+    stages: Sequence[Mapping[str, Any]] = (),
 ) -> None:
     """Report one tick's outcome through the existing run event sink.
 
     Submits the lesson only when the compose step adopted a candidate,
     citing the evidence runs by trace id; an abstained tick reports its
-    refusal code and submits no lesson. A no-op without a registered
-    host sink.
+    refusal code and submits no lesson. The tick trace carries one cost
+    entry per stage the stage allocation ran. A no-op without a
+    registered host sink.
     """
     ports.emit_run_event(
         {
@@ -511,6 +604,7 @@ def reflect(
                 if outcome.adopted_version_ref is not None
                 else []
             ),
+            "stage_allocations": [dict(stage) for stage in stages],
         }
     )
 
@@ -546,7 +640,13 @@ def _budget_ref(budget: RunBudget) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
-def _refused(ports: HostPorts, task_ref: str, k: int, code: str) -> CycleOutcome:
+def _refused(
+    ports: HostPorts,
+    task_ref: str,
+    k: int,
+    code: str,
+    stages: Sequence[Mapping[str, Any]] = (),
+) -> CycleOutcome:
     """The abstained outcome: the current harness is kept, nothing persisted."""
     outcome = CycleOutcome(
         task_ref=task_ref,
@@ -556,7 +656,7 @@ def _refused(ports: HostPorts, task_ref: str, k: int, code: str) -> CycleOutcome
         contrast_ref=None,
         lesson_ref=None,
     )
-    reflect(outcome, ports=ports)
+    reflect(outcome, ports=ports, stages=stages)
     return outcome
 
 
@@ -581,7 +681,10 @@ async def run_cycle_tick(
     one, else the fallback of two slots; below the bound the cycle
     abstains with ``budget_below_contrast`` and keeps the current
     harness. Each step refuses with one typed code; a refusal persists
-    nothing and the current harness is kept.
+    nothing and the current harness is kept. When the run admits the
+    ``stage_allocation`` consumer, one StageAllocation decide names one
+    model per tick stage and each stage records its cost entry in the
+    tick trace the reflect event carries.
     """
     task_ref = request.run_id
     k = plan.budget.candidate_slots
@@ -595,7 +698,18 @@ async def run_cycle_tick(
     model_ref = _model_ref(plan.model)
     budget_ref = _budget_ref(plan.budget)
     try:
-        candidates = propose(
+        tick_trace: list[dict[str, Any]] = []
+        if "stage_allocation" in plan.harness.consumers:
+            allocation = await _resolve_stage_allocation(
+                request.ports, task_ref=task_ref, budget_ref=budget_ref
+            )
+        else:
+            allocation = None
+        candidates = await run_stage(
+            "propose",
+            allocation,
+            propose,
+            tick_trace,
             task_ref=task_ref,
             task_class=task_class,
             library=library_query,
@@ -604,7 +718,11 @@ async def run_cycle_tick(
             budget_ref=budget_ref,
             k=k,
         )
-        traces = await probe_candidates(
+        traces = await run_stage(
+            "probe",
+            allocation,
+            probe_candidates,
+            tick_trace,
             graph=graph,
             config=config,
             task=request.task,
@@ -623,7 +741,11 @@ async def run_cycle_tick(
         )
         by_id = {trace.candidate_id: trace for trace in traces}
         digest = traces[0].conditions_digest
-        answer, contrast_record_digest = await compose(
+        answer, contrast_record_digest = await run_stage(
+            "compose",
+            allocation,
+            compose,
+            tick_trace,
             task_ref=task_ref,
             task_class=task_class,
             conditions_digest_value=digest,
@@ -649,7 +771,11 @@ async def run_cycle_tick(
             if baseline is not None
             else (adopted_trace,)
         )
-        version_ref, contrast_ref, lesson_ref = await persist(
+        version_ref, contrast_ref, lesson_ref = await run_stage(
+            "persist",
+            allocation,
+            persist,
+            tick_trace,
             task_ref=task_ref,
             task_class=task_class,
             decision_record_digest=contrast_record_digest,
@@ -670,10 +796,19 @@ async def run_cycle_tick(
             contrast_ref=contrast_ref,
             lesson_ref=lesson_ref,
         )
-        reflect(outcome, ports=request.ports, evidence_run_ids=evidence_run_ids)
+        await run_stage(
+            "reflect",
+            allocation,
+            reflect,
+            tick_trace,
+            outcome,
+            ports=request.ports,
+            evidence_run_ids=evidence_run_ids,
+            stages=tick_trace,
+        )
         return outcome
     except CycleRefusal as refusal:
-        return _refused(request.ports, task_ref, k, refusal.code)
+        return _refused(request.ports, task_ref, k, refusal.code, tick_trace)
 
 
 async def drive_cycle_tick(
@@ -726,6 +861,9 @@ __all__ = [
     "HarnessCandidate",
     "LibraryQuery",
     "ProbeTrace",
+    "STAGES",
+    "STAGE_ALLOCATION_KIND",
+    "StageAllocation",
     "TraceRefs",
     "collect_trace_refs",
     "conditions_digest",
@@ -736,4 +874,5 @@ __all__ = [
     "propose",
     "reflect",
     "run_cycle_tick",
+    "run_stage",
 ]
