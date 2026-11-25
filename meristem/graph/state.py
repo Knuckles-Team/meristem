@@ -311,6 +311,13 @@ class GraphState:
     scaffold: PlanState | None = None
     metrics: RunMetrics = field(default_factory=RunMetrics)
     event_sequence: int = 0
+    # Question kind to record digest of the engine decision applied for it.
+    engine_records: dict[str, str] = field(default_factory=dict)
+
+    def note_record(self, kind: str, digest: str) -> None:
+        """Store the digest of one applied engine decision under its kind."""
+        """Store the digest of one applied engine decision under its kind."""
+        self.engine_records[kind] = digest
 
     def add_usage(self, usage: Any) -> None:
         for key in ("requests", "tool_calls", "input_tokens", "output_tokens"):

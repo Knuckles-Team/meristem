@@ -93,9 +93,15 @@ class RecordedEnginePort:
         """Replay the recorded assembly answer for one request."""
         return self._replay("assemble", request)
 
-    async def log(self, op: str, *, run_ref: str) -> hp.EngineAnswer:
+    async def log(
+        self,
+        op: str,
+        *,
+        run_ref: str,
+        params: Mapping[str, Any] | None = None,
+    ) -> hp.EngineAnswer:
         """Replay the recorded answer for one decision-log operation."""
-        return self._replay("log", {"op": op})
+        return self._replay("log", {**dict(params or {}), "op": op})
 
     async def put_blob(self, data: bytes, *, run_ref: str) -> hp.EngineAnswer:
         """Replay the recorded answer for one blob, keyed by its digest."""

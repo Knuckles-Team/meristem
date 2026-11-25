@@ -323,8 +323,15 @@ class EngineDecisionPort(Protocol):
         """One served assembly answer for a received request."""
         ...
 
-    async def log(self, op: str, *, run_ref: str) -> EngineAnswer:
-        """One served decision-log write under a closed operation."""
+    async def log(
+        self, op: str, *, run_ref: str, params: Mapping[str, Any] | None = None
+    ) -> EngineAnswer:
+        """One served decision-log write under a closed operation.
+
+        ``params`` carries the operation's public fields (record id,
+        evaluation id, outcome value); the host binding fills identity and
+        lease fields from the run principal.
+        """
         ...
 
     async def put_blob(self, data: bytes, *, run_ref: str) -> EngineAnswer:
