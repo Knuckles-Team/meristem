@@ -89,6 +89,70 @@ class LoopbackEngine:
         raise AssertionError(f"unexpected write: {method}")
 
 
+@pytest.mark.spec("MERISTEM-HARNESS-CYCLE-R001.11")
+async def test_host_registration_and_tick_trigger() -> None:
+    """Without the registered provider the tick never runs; with it, the
+    registered cycle provider drives one tick, and every probe run
+    carries the harness_probe metadata without starting a tick of its
+    own."""
+    from meristem.graph import RunBudget, RunPlan
+    from meristem.graph.harness_cycle import drive_cycle_tick, run_cycle_tick
+
+    # Without a registered provider the tick fails closed: no run drives it.
+    with pytest.raises(RuntimeError, match="arbora"):
+        await drive_cycle_tick(
+            support.request(task="classify"),
+            RunPlan(model="m-1"),
+            task_class="classification",
+            graph=object(),
+        )
+
+    ticks: list[dict] = []
+    probes: list[dict] = []
+
+    async def host_probe(**kwargs):
+        probes.append(kwargs)
+        return {"run_id": kwargs["run_id"], "status": "completed", "steps": 1}
+
+    async def cycle_provider(request, plan, **kwargs):
+        ticks.append(kwargs)
+        return await run_cycle_tick(
+            request,
+            plan,
+            library_query=lambda _class: [
+                {"component_kind": "system_prompt", "component_version_ref": "v-a"},
+                {"component_kind": "guardrails", "component_version_ref": "v-b"},
+            ],
+            write_envelope=lambda envelope: "ref",
+            **kwargs,
+        )
+
+    support.register_harness_probe_provider(host_probe)
+    support.register_harness_cycle_provider(cycle_provider)
+    request = support.request(
+        task="classify", run_id="task-1", metadata={"harness_seed": "seed-1"}
+    )
+    outcome = await drive_cycle_tick(
+        request,
+        RunPlan(model="m-1", budget=RunBudget(candidate_slots=2)),
+        task_class="classification",
+        graph=object(),
+    )
+
+    # The tick ran exactly once, driven by the registered provider.
+    assert len(ticks) == 1
+    assert ticks[0]["task_class"] == "classification"
+    # The probe runs carry the harness_probe metadata; none of them
+    # started a tick.
+    assert [call["run_id"] for call in probes] == [
+        "task-1:probe:task-1:candidate:0",
+        "task-1:probe:task-1:candidate:1",
+    ]
+    for probe in probes:
+        assert probe["metadata"]["harness_probe"]["seed"] == "seed-1"
+    assert outcome.abstain_reason == "measurement_unavailable"
+
+
 def _adopted() -> HarnessCandidate:
     return HarnessCandidate(
         candidate_id="task-1:candidate:0",
