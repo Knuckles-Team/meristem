@@ -644,10 +644,12 @@ async def test_persist_logs_one_adoption_then_switches(tmp_path, monkeypatch) ->
     assert (tmp_path / ".harness" / "system_prompt.md").read_text(
         encoding="utf-8"
     ) == "adopted prompt"
-    # The adoption envelope carries the harness-authored lesson.
-    assert len(writes) == 1
+    # The adoption envelope carries the harness-authored lesson; the
+    # progress-facts record follows it through the same writer.
+    assert len(writes) == 2
     assert writes[0]["adopted_version_ref"] == adopted.component_version_ref
     assert writes[0]["decision_record_digest"] == "contrast-record-1"
+    assert writes[1]["kind"] == "harness_evolution_progress"
     assert writes[0]["lesson"]["changed_component_kind"] == "system_prompt"
     assert writes[0]["lesson"]["what_changed"] == adopted.component_version_ref
     assert writes[0]["lesson"]["evidence_run_ids"] == [
@@ -692,7 +694,9 @@ async def test_persist_logs_one_adoption_then_switches(tmp_path, monkeypatch) ->
                 root=tmp_path,
             )
     assert apply_calls == [1]
-    assert len(writes) == 1
+    # The refusals wrote nothing; only the committed tick's two envelopes
+    # stand.
+    assert len(writes) == 2
 
 
 def _library() -> list[dict[str, str]]:

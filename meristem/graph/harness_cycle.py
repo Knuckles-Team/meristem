@@ -24,6 +24,7 @@ from __future__ import annotations
 import hashlib
 import inspect
 import json
+import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -521,9 +522,12 @@ async def persist(
     and the harness-authored lesson; the engine validates and stores
     it under the run's delegated principal. On ``committed`` the
     answer's ``adoption_ref``, ``contrast_ref`` and ``lesson_ref`` are
-    returned, the adoption envelope is written, and the adopted content
-    is switched in under ``.harness/`` with ``apply_edits`` — after the
-    commit, never before. The engine codes ``LessonWithoutEvidence``,
+    returned, the adoption envelope and one evolution-proposal
+    progress-facts record — proposal id and revision, prompt version
+    and revision, the ordered source run ids, state and observation
+    time — are written through the envelope writer, and the adopted
+    content is switched in under ``.harness/`` with ``apply_edits`` —
+    after the commit, never before. The engine codes ``LessonWithoutEvidence``,
     ``ContrastConditionsMismatch`` and ``AdoptedHarnessNoDecision``
     pass through and leave the harness unchanged; an absent port or an
     ``insufficient_evidence`` answer refuses
@@ -566,6 +570,20 @@ async def persist(
     if not (version_ref and contrast_ref and lesson_ref):
         raise CycleRefusal("measurement_unavailable")
     write_envelope(write)
+    # One evolution-proposal progress-facts record, in source-run order;
+    # medulla joins them to the run trace identifiers.
+    write_envelope(
+        {
+            "kind": "harness_evolution_progress",
+            "proposal_id": task_ref,
+            "proposal_revision": 1,
+            "prompt_version_id": adopted.component_version_ref,
+            "prompt_revision": 1,
+            "source_run_ids": list(evidence_run_ids),
+            "state": "adopted",
+            "observed_at": time.time(),
+        }
+    )
     edit = Edit(
         path=f".harness/{adopted.component_kind}.md",
         search="",

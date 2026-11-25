@@ -271,8 +271,9 @@ async def test_cycle_double_shows_lesson_to_next_propose(tmp_path) -> None:
         "task-1:probe:task-1:candidate:1",
     ]
     # The adoption write carried the lesson the harness authored for
-    # the tick's conditions and evidence.
-    assert len(writes) == 1
+    # the tick's conditions and evidence; the progress-facts record
+    # follows it through the same writer.
+    assert len(writes) == 2
     assert writes[0]["adopted_version_ref"] == "v-b"
     assert writes[0]["decision_record_digest"] == "contrast-record-journey"
     assert writes[0]["conditions_digest"] == tick_digest
@@ -443,7 +444,8 @@ async def test_persist_writes_adoption_through_the_bound_port(tmp_path) -> None:
     assert (tmp_path / ".harness" / "system_prompt.md").read_text(
         encoding="utf-8"
     ) == "adopted prompt"
-    assert len(writes) == 1
+    assert len(writes) == 2
+    assert writes[1]["kind"] == "harness_evolution_progress"
 
 
 @pytest.mark.spec("MERISTEM-HARNESS-CYCLE-R001.10")
