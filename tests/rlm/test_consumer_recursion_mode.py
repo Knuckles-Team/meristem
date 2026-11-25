@@ -98,6 +98,15 @@ async def test_each_mode_runs_as_decided():
                     },
                 },
                 {
+                    "method": "ResearchNext",
+                    "params": {},
+                    "answer": {
+                        "outcome": "committed",
+                        "record_digest": "research-next-1",
+                        "payload": {"source": "abcd"},
+                    },
+                },
+                {
                     "method": "recursion_mode",
                     "params": _signals("abcd", "read_input"),
                     "answer": {"outcome": "committed", "payload": {"mode": "direct"}},
@@ -139,6 +148,7 @@ async def test_each_mode_runs_as_decided():
     assert child_calls == ["child"]
     assert port.calls == [
         ("context_budget", params_digest(_fit_params(1))),
+        ("ResearchNext", params_digest({})),
         ("recursion_mode", params_digest(_signals("abcd", "read_input"))),
         (
             "recursion_mode",

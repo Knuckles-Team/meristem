@@ -34,6 +34,8 @@ from meristem.harness.conversation_history import read_recursive_run_history
 from meristem.harness.run_lifecycle import ConsumerRefused
 from meristem.host_ports import EngineDecisionRefused, HostPorts
 
+from .research_steps import next_read
+from .span_reads import read_span
 from .telemetry import SandboxFatalError, classify_failure
 
 ROOT_INSTRUCTIONS = (
@@ -77,6 +79,12 @@ class _Env:
     """The last engine-decided mode, direct or recursive, or None."""
     sub_call_signature: Mapping[str, Any] | None = None
     """The host-provided sub-call signature; admission is signed-only."""
+    document_id: str | None = None
+    """The document one document-reference run reads through ReadSpan."""
+    document_revision: str = "1"
+    """The document revision the run reads."""
+    toc_digest: str | None = None
+    """The received toc digest ReadSpan reads travel with."""
 
 
 def _emit_lineage(
@@ -148,9 +156,30 @@ def _agent(
         ctx.deps.tool_call_ref = "read_input"
         stop = end or start + ctx.deps.config.max_slice_chars
         stop = min(stop, start + ctx.deps.config.max_slice_chars)
-        out = ctx.deps.text[start:stop]
-        if ctx.deps.ports.engine_decision_port() is not None:
-            await choose_mode(ctx.deps, out, ctx.deps.ports)
+        ports = ctx.deps.ports
+        bound = ports.engine_decision_port() is not None
+        if bound:
+            step = await next_read(ctx.deps)
+            if step.action == "stop":
+                out = f"research ended: {step.reason}"
+            elif ctx.deps.document_id is not None:
+                out = await read_span(
+                    ctx.deps,
+                    ctx.deps.document_id,
+                    ctx.deps.document_revision,
+                    start,
+                    stop,
+                )
+            else:
+                out = ctx.deps.text[start:stop]
+        elif ctx.deps.document_id is not None:
+            out = await read_span(
+                ctx.deps, ctx.deps.document_id, ctx.deps.document_revision, start, stop
+            )
+        else:
+            out = ctx.deps.text[start:stop]
+        if bound:
+            await choose_mode(ctx.deps, out, ports)
         return out
 
     @agent.tool
@@ -319,9 +348,15 @@ async def run_rlm(
     lineage: LineageBinding | None = None,
     child_identity_provider: Callable[[LineageBinding, str], LineageBinding | None]
     | None = None,
+    document: Mapping[str, Any] | None = None,
     ports: HostPorts | None = None,
 ) -> dict[str, Any]:
     """Run one recursive task over ``input_text``.
+
+    ``document`` names a served document reference
+    (``document_id``, optional ``revision`` and ``toc_digest``); with it,
+    ``read_input`` reads through the engine's ``ReadSpan`` instead of
+    slicing ``input_text``.
 
     Returns ``{"ok": True, "result", "task", "usage", "max_depth"}`` or
     ``{"ok": False, "error", "failure_class", "task"}``. A
@@ -365,6 +400,20 @@ async def run_rlm(
         )
         if child_identity_provider is not None and lineage is None:
             raise ValueError("child identity provider requires a root lineage")
+        document_id: str | None = None
+        document_revision = "1"
+        toc_digest: str | None = None
+        if document is not None:
+            document_id = document.get("document_id")
+            if not isinstance(document_id, str) or not document_id:
+                raise ValueError("a document reference needs a document_id")
+            document_revision = document.get("revision", "1")
+            if not isinstance(document_revision, str) or not document_revision:
+                raise ValueError("a document reference needs a revision")
+            toc_raw = document.get("toc_digest")
+            if toc_raw is not None and (not isinstance(toc_raw, str) or not toc_raw):
+                raise ValueError("a document reference's toc_digest must be a string")
+            toc_digest = toc_raw
         env = _Env(
             text=input_text,
             depth=0,
@@ -373,6 +422,9 @@ async def run_rlm(
             ports=ports,
             lineage=lineage,
             child_identity_provider=child_identity_provider,
+            document_id=document_id,
+            document_revision=document_revision,
+            toc_digest=toc_digest,
         )
         _emit_lineage(env, "run_started")
         split = PlanSplitResult(False, None, 0, None)

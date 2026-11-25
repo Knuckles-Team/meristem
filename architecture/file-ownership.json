@@ -197,7 +197,17 @@
       "owner": "meristem"
     },
     {
+      "path": "meristem/rlm/research_steps.py",
+      "disposition": "keep",
+      "owner": "meristem"
+    },
+    {
       "path": "meristem/rlm/runner.py",
+      "disposition": "keep",
+      "owner": "meristem"
+    },
+    {
+      "path": "meristem/rlm/span_reads.py",
       "disposition": "keep",
       "owner": "meristem"
     },
