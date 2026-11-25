@@ -29,6 +29,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final
 
+from meristem.harness.run_lifecycle import ConsumerRefused
 from meristem.host_ports import HostPorts
 
 from .checkpoint import RUN_STATE_UNKNOWN, CheckpointUnavailable
@@ -265,34 +266,55 @@ async def probe_candidates(
 
 
 @dataclass(frozen=True)
-class ContrastDelta:
-    """One candidate's measured contrast against the current harness's probe.
-
-    The deltas are measurements the engine decides on: retry, tool
-    selection, eval score and cost, each the candidate probe minus the
-    current-harness probe. A positive eval score delta is the improvement
-    the engine adopts on.
-    """
-
-    candidate_id: str
-    run_a_trace_id: str
-    run_b_trace_id: str
-    retry_delta: int
-    tool_selection_delta: int
-    eval_score_delta: int
-    cost_delta: int
-
-
-@dataclass(frozen=True)
 class ContrastRequest:
-    """The payload of one served contrast decision call per tick."""
+    """The payload of one served contrast decision call per tick.
+
+    It carries trace references only: the engine measures the retry,
+    tool-selection, evaluation-score and cost deltas from the stored
+    traces and answers one adoption or one abstention.
+    """
 
     task_ref: str
     task_class: str
     conditions_digest: str
     candidate_version_refs: tuple[str, ...]
+    baseline_trace_id: str
     probe_trace_ids: tuple[str, ...]
-    contrasts: tuple[ContrastDelta, ...]
+
+
+@dataclass(frozen=True)
+class TraceRefs:
+    """The trace references one contrast decision measures against.
+
+    One probe of the current harness plus one probe per candidate, all
+    under the tick's shared conditions digest.
+    """
+
+    baseline_trace_id: str
+    candidate_version_refs: tuple[str, ...]
+    probe_trace_ids: tuple[str, ...]
+
+
+def collect_trace_refs(
+    *,
+    baseline: ProbeTrace | None,
+    candidates: Sequence[HarnessCandidate],
+    traces: Mapping[str, ProbeTrace],
+) -> TraceRefs:
+    """Collect the trace references the engine measures from.
+
+    The request carries these ids and no delta of its own: the engine
+    reads the stored traces and computes the deltas itself.
+    """
+    return TraceRefs(
+        baseline_trace_id=baseline.trace_id if baseline is not None else "",
+        candidate_version_refs=tuple(
+            candidate.component_version_ref for candidate in candidates
+        ),
+        probe_trace_ids=tuple(
+            traces[candidate.candidate_id].trace_id for candidate in candidates
+        ),
+    )
 
 
 @dataclass(frozen=True)
@@ -311,69 +333,13 @@ class ContrastAnswer:
     adopted_content: str = ""
 
 
-#: The served contrast decision, driven by the host: one Decide call under
-#: the contrast question kind per tick; the answer may be awaitable.
-ContrastDecision = Callable[[ContrastRequest], Any]
-
-
-def measure_contrasts(
-    *,
-    baseline: ProbeTrace | None,
-    candidates: Sequence[HarnessCandidate],
-    traces: Mapping[str, ProbeTrace],
-) -> tuple[ContrastDelta, ...]:
-    """Refuse until the owner supplies authenticated contrast measurements.
-
-    Probe usage counts and completion status do not establish retry count,
-    tool-selection quality, evaluation score or cost. A missing baseline is
-    not a measured run. None of these inputs currently carries the required
-    engine-owned measurement evidence.
-    """
-    raise CycleRefusal("measurement_unavailable")
+#: The served contrast decision's closed question kind.
+CONTRAST_KIND = "harness_contrast"
 
 
 def _field(value: Any, name: str) -> Any:
     """One duck-typed field of an answer the engine types itself."""
     return getattr(value, name, None)
-
-
-def _normalize_answer(answer: Any) -> ContrastAnswer:
-    if isinstance(answer, ContrastAnswer):
-        normalized = answer
-    elif isinstance(answer, Mapping):
-        normalized = ContrastAnswer(
-            adopted_version_ref=None
-            if answer.get("adopted_version_ref") is None
-            else str(answer["adopted_version_ref"]),
-            abstain_reason=None
-            if answer.get("abstain_reason") is None
-            else str(answer["abstain_reason"]),
-            adopted_component_kind=str(answer.get("adopted_component_kind") or ""),
-            adopted_content=str(answer.get("adopted_content") or ""),
-        )
-    else:
-        normalized = ContrastAnswer(
-            adopted_version_ref=None
-            if _field(answer, "adopted_version_ref") is None
-            else str(_field(answer, "adopted_version_ref")),
-            abstain_reason=None
-            if _field(answer, "abstain_reason") is None
-            else str(_field(answer, "abstain_reason")),
-            adopted_component_kind=str(_field(answer, "adopted_component_kind") or ""),
-            adopted_content=str(_field(answer, "adopted_content") or ""),
-        )
-    if normalized.adopted_version_ref is None and normalized.abstain_reason is None:
-        raise ValueError(
-            "the contrast decision answered with neither adoption nor abstention"
-        )
-    if (
-        normalized.adopted_version_ref is not None
-        and normalized.abstain_reason is not None
-    ):
-        raise ValueError(
-            "the contrast decision answered with an adoption and an abstention"
-        )
-    return normalized
 
 
 async def compose(
@@ -384,34 +350,55 @@ async def compose(
     candidates: Sequence[HarnessCandidate],
     baseline: ProbeTrace | None,
     traces: Mapping[str, ProbeTrace],
-    decide: ContrastDecision,
-) -> ContrastAnswer:
-    """Delegate a measured contrast to the engine when evidence is available.
+    ports: HostPorts,
+    run_ref: str,
+) -> tuple[ContrastAnswer, str | None]:
+    """Send one contrast decision to the engine with trace references only.
 
-    Until the owner supplies that evidence, refuse before calling ``decide``.
+    The engine measures the deltas from the stored traces and answers one
+    adoption or one abstention; the answer's record digest enters the
+    outcome's contrast reference. An absent port or an
+    ``insufficient_evidence`` refusal refuses ``measurement_unavailable``
+    before the decision; an answer without an adoption refuses
+    ``compose_abstention``; engine codes such as
+    ``HARNESS_CONTRAST_TRACE_MISMATCH`` and
+    ``HARNESS_COMPONENT_VERSION_UNKNOWN`` pass through unchanged.
     """
-    contrasts = measure_contrasts(
-        baseline=baseline, candidates=candidates, traces=traces
-    )
+    engine = ports.engine_decision_port()
+    if engine is None:
+        raise CycleRefusal("measurement_unavailable")
+    refs = collect_trace_refs(baseline=baseline, candidates=candidates, traces=traces)
     request = ContrastRequest(
         task_ref=task_ref,
         task_class=task_class,
         conditions_digest=conditions_digest_value,
-        candidate_version_refs=tuple(
-            candidate.component_version_ref for candidate in candidates
-        ),
-        probe_trace_ids=tuple(
-            traces[candidate.candidate_id].trace_id for candidate in candidates
-        ),
-        contrasts=contrasts,
+        candidate_version_refs=refs.candidate_version_refs,
+        baseline_trace_id=refs.baseline_trace_id,
+        probe_trace_ids=refs.probe_trace_ids,
     )
-    answer = decide(request)
-    if inspect.isawaitable(answer):
-        answer = await answer
-    normalized = _normalize_answer(answer)
-    if normalized.abstain_reason is not None:
+    params = {
+        "task_ref": request.task_ref,
+        "task_class": request.task_class,
+        "conditions_digest": request.conditions_digest,
+        "candidate_version_refs": list(request.candidate_version_refs),
+        "baseline_trace_id": request.baseline_trace_id,
+        "probe_trace_ids": list(request.probe_trace_ids),
+    }
+    answer = await engine.decide(CONTRAST_KIND, params, run_ref=run_ref)
+    if answer.refusal_code is not None:
+        if answer.refusal_code == "insufficient_evidence":
+            raise CycleRefusal("measurement_unavailable")
+        raise ConsumerRefused(answer.refusal_code)
+    adopted_ref = answer.payload.get("adopted_version_ref")
+    if adopted_ref is None:
         raise CycleRefusal("compose_abstention")
-    return normalized
+    normalized = ContrastAnswer(
+        adopted_version_ref=str(adopted_ref),
+        abstain_reason=None,
+        adopted_component_kind=str(answer.payload.get("adopted_component_kind") or ""),
+        adopted_content=str(answer.payload.get("adopted_content") or ""),
+    )
+    return normalized, answer.record_digest
 
 
 #: The generated-client envelope writer, driven by the host: one graph-fact
@@ -423,18 +410,18 @@ def persist(
     *,
     task_ref: str,
     task_class: str,
+    decision_record_digest: str | None,
     conditions_digest_value: str,
     adopted: HarnessCandidate,
-    contrast: ContrastDelta,
     answer: ContrastAnswer,
     write_envelope: EnvelopeWriter,
     root: str | Path = ".",
 ) -> tuple[str, str, str]:
     """Refuse until the engine supplies verifiable adoption and evidence.
 
-    A caller-constructed contrast and answer are not owner-issued receipts.
-    The future owner contract must provide a verifiable receipt before this
-    step can write or change the in-run harness.
+    A caller-constructed answer is not an owner-issued receipt. The
+    engine decision port must commit the adoption before this step can
+    write or change the in-run harness.
     """
     raise CycleRefusal("measurement_unavailable")
 
@@ -523,7 +510,6 @@ async def run_cycle_tick(
     graph: Any,
     config: Mapping[str, Any] | None = None,
     library_query: LibraryQuery,
-    decide: ContrastDecision,
     write_envelope: EnvelopeWriter,
     root: str | Path = ".",
     mode: str = "ask",
@@ -579,14 +565,15 @@ async def run_cycle_tick(
         )
         by_id = {trace.candidate_id: trace for trace in traces}
         digest = traces[0].conditions_digest
-        answer = await compose(
+        answer, contrast_record_digest = await compose(
             task_ref=task_ref,
             task_class=task_class,
             conditions_digest_value=digest,
             candidates=candidates,
             baseline=baseline,
             traces=by_id,
-            decide=decide,
+            ports=request.ports,
+            run_ref=task_ref,
         )
         try:
             adopted = next(
@@ -598,15 +585,18 @@ async def run_cycle_tick(
             raise ValueError(
                 "the engine adopted a version outside the presented candidates"
             ) from None
-        contrast = measure_contrasts(
-            baseline=baseline, candidates=[adopted], traces=by_id
-        )[0]
+        adopted_trace = by_id[adopted.candidate_id].trace_id
+        evidence_run_ids = (
+            (baseline.trace_id, adopted_trace)
+            if baseline is not None
+            else (adopted_trace,)
+        )
         version_ref, contrast_ref, lesson_ref = persist(
             task_ref=task_ref,
             task_class=task_class,
+            decision_record_digest=contrast_record_digest,
             conditions_digest_value=digest,
             adopted=adopted,
-            contrast=contrast,
             answer=answer,
             write_envelope=write_envelope,
             root=root,
@@ -619,11 +609,7 @@ async def run_cycle_tick(
             contrast_ref=contrast_ref,
             lesson_ref=lesson_ref,
         )
-        reflect(
-            outcome,
-            ports=request.ports,
-            evidence_run_ids=(contrast.run_a_trace_id, contrast.run_b_trace_id),
-        )
+        reflect(outcome, ports=request.ports, evidence_run_ids=evidence_run_ids)
         return outcome
     except CycleRefusal as refusal:
         return _refused(request.ports, task_ref, k, refusal.code)
@@ -668,23 +654,23 @@ async def drive_cycle_tick(
 
 __all__ = [
     "ABSTAIN_REASONS",
+    "CONTRAST_KIND",
     "CURRENT_PROBE_ID",
     "ContrastAnswer",
-    "ContrastDecision",
-    "ContrastDelta",
     "ContrastRequest",
     "CycleOutcome",
     "CycleRefusal",
     "EnvelopeWriter",
-    "HarnessCandidate",
     "FALLBACK_MIN_CANDIDATE_SLOTS",
+    "HarnessCandidate",
     "LibraryQuery",
     "ProbeTrace",
+    "TraceRefs",
+    "collect_trace_refs",
     "conditions_digest",
     "compose",
-    "measure_contrasts",
-    "persist",
     "drive_cycle_tick",
+    "persist",
     "probe_candidates",
     "propose",
     "reflect",

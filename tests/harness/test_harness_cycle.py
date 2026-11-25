@@ -8,26 +8,26 @@ import ports_support as support
 import pytest
 from pydantic_ai.messages import ModelResponse, TextPart
 from pydantic_ai.models.function import FunctionModel
+from support.recorded_engine import RecordedEnginePort, params_digest
 
 from meristem.graph import RunBudget, RunPlan, RunRequest, RunStatus
 from meristem.graph.harness_cycle import (
     ABSTAIN_REASONS,
     ContrastAnswer,
-    ContrastDelta,
-    ContrastRequest,
     CycleOutcome,
     CycleRefusal,
     HarnessCandidate,
     ProbeTrace,
+    collect_trace_refs,
     compose,
     conditions_digest,
-    measure_contrasts,
     persist,
     probe_candidates,
     propose,
     reflect,
     run_cycle_tick,
 )
+from meristem.harness.run_lifecycle import ConsumerRefused
 
 
 @pytest.fixture(autouse=True)
@@ -243,114 +243,180 @@ def _trace(
     )
 
 
-def _fixture_contrasts(*, baseline, candidates, traces):
-    """Synthetic measurements for isolated downstream orchestration tests."""
-    return tuple(
-        ContrastDelta(
-            candidate_id=candidate.candidate_id,
-            run_a_trace_id=baseline.trace_id,
-            run_b_trace_id=traces[candidate.candidate_id].trace_id,
-            retry_delta=0,
-            tool_selection_delta=0,
-            eval_score_delta=0,
-            cost_delta=0,
-        )
-        for candidate in candidates
-    )
+def _contrast_params(
+    *,
+    task_ref,
+    task_class,
+    conditions_digest_value,
+    candidates,
+    baseline,
+    traces,
+) -> dict:
+    """The params the compose step sends under the contrast kind."""
+    refs = collect_trace_refs(baseline=baseline, candidates=candidates, traces=traces)
+    return {
+        "task_ref": task_ref,
+        "task_class": task_class,
+        "conditions_digest": conditions_digest_value,
+        "candidate_version_refs": list(refs.candidate_version_refs),
+        "baseline_trace_id": refs.baseline_trace_id,
+        "probe_trace_ids": list(refs.probe_trace_ids),
+    }
 
 
 @pytest.mark.spec("MERISTEM-HARNESS-CYCLE-R001.12")
 @pytest.mark.parametrize("has_baseline", [False, True])
-async def test_compose_refuses_unverified_measurements_before_decide(
-    has_baseline,
-) -> None:
+async def test_compose_refuses_unmeasured_contrast_before_decide(has_baseline) -> None:
     candidates = _probe_candidates()
     traces = {
         candidate.candidate_id: _trace(candidate.candidate_id, tool_calls=100)
         for candidate in candidates
     }
     baseline = _trace("current") if has_baseline else None
-    calls: list[ContrastRequest] = []
+    kwargs = {
+        "task_ref": "task-1",
+        "task_class": "classification",
+        "conditions_digest_value": "digest-1",
+        "candidates": candidates,
+        "baseline": baseline,
+        "traces": traces,
+        "ports": support.PORTS,
+        "run_ref": "run-1",
+    }
+
+    # An absent engine port refuses before any Decide call.
+    support.register_engine_decision_port(None)
     with pytest.raises(CycleRefusal, match="measurement_unavailable"):
-        measure_contrasts(baseline=baseline, candidates=candidates, traces=traces)
+        await compose(**kwargs)
+
+    # An insufficient_evidence answer refuses the same way, after one Decide.
+    port = RecordedEnginePort(
+        {
+            "answers": [
+                {
+                    "method": "harness_contrast",
+                    "params": _contrast_params(
+                        task_ref="task-1",
+                        task_class="classification",
+                        conditions_digest_value="digest-1",
+                        candidates=candidates,
+                        baseline=baseline,
+                        traces=traces,
+                    ),
+                    "answer": {
+                        "outcome": "abstained",
+                        "refusal_code": "insufficient_evidence",
+                    },
+                }
+            ]
+        }
+    )
+    support.register_engine_decision_port(port)
     with pytest.raises(CycleRefusal, match="measurement_unavailable"):
-        await compose(
-            task_ref="task-1",
-            task_class="classification",
-            conditions_digest_value="digest-1",
-            candidates=candidates,
-            baseline=baseline,
-            traces=traces,
-            decide=calls.append,
-        )
-    assert calls == []
+        await compose(**kwargs)
+    assert [call[0] for call in port.calls] == ["harness_contrast"]
 
 
 @pytest.mark.spec("MERISTEM-HARNESS-CYCLE-R001.4")
-async def test_compose_delegates_to_engine(monkeypatch) -> None:
-    import meristem.graph.harness_cycle as cycle
-
-    monkeypatch.setattr(cycle, "measure_contrasts", _fixture_contrasts)
+async def test_compose_delegates_to_engine() -> None:
     candidates = _probe_candidates()
     baseline = _trace("current")
     traces = {
         candidate.candidate_id: _trace(candidate.candidate_id)
         for candidate in candidates
     }
-    calls: list[ContrastRequest] = []
-
-    def decide(request: ContrastRequest):
-        calls.append(request)
-        return {
-            "adopted_version_ref": candidates[1].component_version_ref,
-            "abstain_reason": None,
-            "adopted_component_kind": "guardrails",
-            "adopted_content": "new guardrails",
+    params = {
+        "task_ref": "task-1",
+        "task_class": "classification",
+        "conditions_digest": "digest-1",
+        "candidate_version_refs": [
+            candidates[0].component_version_ref,
+            candidates[1].component_version_ref,
+        ],
+        "baseline_trace_id": baseline.trace_id,
+        "probe_trace_ids": [
+            traces[candidates[0].candidate_id].trace_id,
+            traces[candidates[1].candidate_id].trace_id,
+        ],
+    }
+    port = RecordedEnginePort(
+        {
+            "answers": [
+                {
+                    "method": "harness_contrast",
+                    "params": params,
+                    "answer": {
+                        "outcome": "committed",
+                        "record_digest": "contrast-record-1",
+                        "payload": {
+                            "adopted_version_ref": candidates[1].component_version_ref,
+                            "adopted_component_kind": "guardrails",
+                            "adopted_content": "new guardrails",
+                        },
+                    },
+                }
+            ]
         }
+    )
+    support.register_engine_decision_port(port)
 
-    answer = await compose(
+    answer, record_digest = await compose(
         task_ref="task-1",
         task_class="classification",
         conditions_digest_value="digest-1",
         candidates=candidates,
         baseline=baseline,
         traces=traces,
-        decide=decide,
+        ports=support.PORTS,
+        run_ref="run-1",
     )
 
-    assert len(calls) == 1
-    request = calls[0]
-    assert request.task_ref == "task-1"
-    assert request.task_class == "classification"
-    assert request.conditions_digest == "digest-1"
-    # Passed through in candidate order; the cycle ranks nothing.
-    assert request.candidate_version_refs == (
-        candidates[0].component_version_ref,
-        candidates[1].component_version_ref,
-    )
-    assert request.probe_trace_ids == (
-        "run-1:probe:c-0",
-        "run-1:probe:c-1",
-    )
-    assert [delta.candidate_id for delta in request.contrasts] == ["c-0", "c-1"]
-    for delta in request.contrasts:
-        assert delta.run_a_trace_id == baseline.trace_id
-        assert delta.run_b_trace_id in request.probe_trace_ids
-    # The engine's answer stands, even for a later candidate.
+    # One Decide under the contrast kind; the request holds the trace
+    # references in candidate order and no delta — the cycle ranks nothing.
+    assert port.calls == [("harness_contrast", params_digest(params))]
+    for field in (
+        "retry_delta",
+        "tool_selection_delta",
+        "eval_score_delta",
+        "cost_delta",
+        "contrasts",
+    ):
+        assert field not in params
+    # The engine's answer stands, even for a later candidate; its record
+    # digest is the contrast reference.
     assert answer.adopted_version_ref == candidates[1].component_version_ref
     assert answer.abstain_reason is None
+    assert answer.adopted_component_kind == "guardrails"
+    assert answer.adopted_content == "new guardrails"
+    assert record_digest == "contrast-record-1"
 
 
-async def test_compose_abstains_when_engine_abstains(monkeypatch) -> None:
-    import meristem.graph.harness_cycle as cycle
-
-    monkeypatch.setattr(cycle, "measure_contrasts", _fixture_contrasts)
+async def test_compose_abstains_when_engine_abstains() -> None:
     candidates = _probe_candidates()
-    calls: list[ContrastRequest] = []
-
-    async def decide(request: ContrastRequest):
-        calls.append(request)
-        return {"adopted_version_ref": None, "abstain_reason": "no_improvement"}
+    baseline = _trace("current")
+    traces = {
+        candidate.candidate_id: _trace(candidate.candidate_id)
+        for candidate in candidates
+    }
+    port = RecordedEnginePort(
+        {
+            "answers": [
+                {
+                    "method": "harness_contrast",
+                    "params": _contrast_params(
+                        task_ref="task-1",
+                        task_class="classification",
+                        conditions_digest_value="digest-1",
+                        candidates=candidates,
+                        baseline=baseline,
+                        traces=traces,
+                    ),
+                    "answer": {"outcome": "abstained"},
+                }
+            ]
+        }
+    )
+    support.register_engine_decision_port(port)
 
     with pytest.raises(CycleRefusal, match="compose_abstention"):
         await compose(
@@ -358,48 +424,141 @@ async def test_compose_abstains_when_engine_abstains(monkeypatch) -> None:
             task_class="classification",
             conditions_digest_value="digest-1",
             candidates=candidates,
-            baseline=_trace("current"),
-            traces={
-                candidate.candidate_id: _trace(candidate.candidate_id)
-                for candidate in candidates
-            },
-            decide=decide,
+            baseline=baseline,
+            traces=traces,
+            ports=support.PORTS,
+            run_ref="run-1",
         )
-    assert len(calls) == 1
+    assert [call[0] for call in port.calls] == ["harness_contrast"]
+
+
+@pytest.mark.spec("MERISTEM-HARNESS-CYCLE-R001.14")
+async def test_compose_sends_trace_refs_and_maps_answers() -> None:
+    candidates = _probe_candidates()
+    baseline = _trace("current")
+    traces = {
+        candidate.candidate_id: _trace(candidate.candidate_id)
+        for candidate in candidates
+    }
+    params = _contrast_params(
+        task_ref="task-1",
+        task_class="classification",
+        conditions_digest_value="digest-1",
+        candidates=candidates,
+        baseline=baseline,
+        traces=traces,
+    )
+    kwargs = {
+        "task_ref": "task-1",
+        "task_class": "classification",
+        "conditions_digest_value": "digest-1",
+        "candidates": candidates,
+        "baseline": baseline,
+        "traces": traces,
+        "ports": support.PORTS,
+        "run_ref": "run-1",
+    }
+
+    def recorded(answer):
+        support.register_engine_decision_port(
+            RecordedEnginePort(
+                {
+                    "answers": [
+                        {
+                            "method": "harness_contrast",
+                            "params": params,
+                            "answer": answer,
+                        }
+                    ]
+                }
+            )
+        )
+
+    # The adoption answer: the request holds no delta and the answer's
+    # record digest is returned as the contrast reference.
+    recorded(
+        {
+            "outcome": "committed",
+            "record_digest": "contrast-record-9",
+            "payload": {
+                "adopted_version_ref": "v-b",
+                "adopted_component_kind": "guardrails",
+                "adopted_content": "new guardrails",
+            },
+        }
+    )
+    port = support.PORTS.engine_decision_port()
+    answer, record_digest = await compose(**kwargs)
+    assert port.calls == [("harness_contrast", params_digest(params))]
+    assert answer.adopted_version_ref == "v-b"
+    assert record_digest == "contrast-record-9"
+
+    # The abstained answer maps to compose_abstention.
+    recorded({"outcome": "abstained"})
+    with pytest.raises(CycleRefusal, match="compose_abstention"):
+        await compose(**kwargs)
+
+    # insufficient_evidence maps to measurement_unavailable.
+    recorded({"outcome": "abstained", "refusal_code": "insufficient_evidence"})
+    with pytest.raises(CycleRefusal, match="measurement_unavailable"):
+        await compose(**kwargs)
+
+    # Engine codes pass through unchanged.
+    for code in (
+        "HARNESS_CONTRAST_TRACE_MISMATCH",
+        "HARNESS_COMPONENT_VERSION_UNKNOWN",
+    ):
+        recorded({"outcome": "abstained", "refusal_code": code})
+        with pytest.raises(ConsumerRefused, match=code):
+            await compose(**kwargs)
+
+    # An absent port refuses before any Decide call.
+    support.register_engine_decision_port(None)
+    with pytest.raises(CycleRefusal, match="measurement_unavailable"):
+        await compose(**kwargs)
 
 
 @pytest.mark.spec("MERISTEM-HARNESS-CYCLE-R001.12")
-@pytest.mark.parametrize("baseline_trace", ["", "baseline"])
+@pytest.mark.parametrize("port_bound", [False, True])
 def test_persist_refuses_unverified_contrast_before_writes_or_switch(
-    tmp_path, baseline_trace
+    tmp_path, port_bound
 ) -> None:
     component = tmp_path / "harness" / "system_prompt.md"
     component.parent.mkdir(parents=True)
     component.write_text("current prompt", encoding="utf-8")
     writes: list[object] = []
-    contrast = ContrastDelta(
-        candidate_id="c-0",
-        run_a_trace_id=baseline_trace,
-        run_b_trace_id="candidate",
-        retry_delta=-1,
-        tool_selection_delta=1,
-        eval_score_delta=1,
-        cost_delta=-1,
-    )
-    answer = ContrastAnswer(
-        adopted_version_ref="v-a",
-        abstain_reason=None,
-        adopted_component_kind="system_prompt",
-        adopted_content="changed",
-    )
+    if port_bound:
+        support.register_engine_decision_port(
+            RecordedEnginePort(
+                {
+                    "answers": [
+                        {
+                            "method": "log",
+                            "params": {"op": "HarnessAdoption"},
+                            "answer": {
+                                "outcome": "abstained",
+                                "refusal_code": "insufficient_evidence",
+                            },
+                        }
+                    ]
+                }
+            )
+        )
+    else:
+        support.register_engine_decision_port(None)
     with pytest.raises(CycleRefusal, match="measurement_unavailable"):
         persist(
             task_ref="task-1",
             task_class="classification",
+            decision_record_digest="contrast-record-1",
             conditions_digest_value="digest-1",
             adopted=_probe_candidates()[0],
-            contrast=contrast,
-            answer=answer,
+            answer=ContrastAnswer(
+                adopted_version_ref="v-a",
+                abstain_reason=None,
+                adopted_component_kind="system_prompt",
+                adopted_content="changed",
+            ),
             write_envelope=writes.append,
             root=tmp_path,
         )
@@ -445,7 +604,7 @@ async def test_tick_refuses_without_owner_measurements_before_decide_or_persist(
     if has_baseline:
         metadata["harness_current_version_ref"] = "v-0"
     request = support.request(task="classify", run_id="task-1", metadata=metadata)
-    calls: list[object] = []
+    support.register_engine_decision_port(None)
     writes: list[object] = []
     component = tmp_path / "harness" / "system_prompt.md"
     component.parent.mkdir(parents=True)
@@ -457,14 +616,13 @@ async def test_tick_refuses_without_owner_measurements_before_decide_or_persist(
         task_class="classification",
         graph=object(),
         library_query=lambda _class: _library(),
-        decide=calls.append,
         write_envelope=writes.append,
         root=tmp_path,
     )
     assert outcome.abstain_reason == "measurement_unavailable"
     assert outcome.adopted_version_ref is None
     assert outcome.contrast_ref is None and outcome.lesson_ref is None
-    assert calls == [] and writes == []
+    assert writes == []
     assert component.read_text(encoding="utf-8") == "current prompt"
     cycle_events = [
         event for event in events if event.get("type") == "harness_cycle_outcome"
@@ -501,7 +659,7 @@ def test_reflect_reports_adoption_or_abstention(events) -> None:
 
 
 @pytest.mark.spec("MERISTEM-HARNESS-CYCLE-R001.7")
-async def test_refusals_keep_harness(tmp_path, monkeypatch) -> None:
+async def test_refusals_keep_harness(tmp_path) -> None:
     import meristem.graph.harness_cycle as cycle
 
     def model(messages, info):
@@ -537,10 +695,7 @@ async def test_refusals_keep_harness(tmp_path, monkeypatch) -> None:
         written.append(str(envelope["kind"]))
         return f"ref-{envelope['kind']}"
 
-    def abstain(request):
-        return {"adopted_version_ref": None, "abstain_reason": "no_improvement"}
-
-    # budget_below_contrast: an allocation under two candidate slots.
+    # budget_below_contrast: an allocation under the candidate bound.
     for slots in (1, 0, None):
         outcome = await run_cycle_tick(
             _tick_request(),
@@ -548,12 +703,6 @@ async def test_refusals_keep_harness(tmp_path, monkeypatch) -> None:
             task_class="classification",
             graph=object(),
             library_query=library,
-            decide=lambda request: {
-                "adopted_version_ref": "v-a",
-                "abstain_reason": None,
-                "adopted_component_kind": "system_prompt",
-                "adopted_content": "adopted prompt",
-            },
             write_envelope=write_envelope,
             root=tmp_path,
         )
@@ -570,12 +719,6 @@ async def test_refusals_keep_harness(tmp_path, monkeypatch) -> None:
         task_class="classification",
         graph=object(),
         library_query=lambda _class: [],
-        decide=lambda request: {
-            "adopted_version_ref": "v-a",
-            "abstain_reason": None,
-            "adopted_component_kind": "system_prompt",
-            "adopted_content": "adopted prompt",
-        },
         write_envelope=write_envelope,
         root=tmp_path,
     )
@@ -595,12 +738,6 @@ async def test_refusals_keep_harness(tmp_path, monkeypatch) -> None:
         task_class="classification",
         graph=object(),
         library_query=library,
-        decide=lambda request: {
-            "adopted_version_ref": "v-a",
-            "abstain_reason": None,
-            "adopted_component_kind": "system_prompt",
-            "adopted_content": "adopted prompt",
-        },
         write_envelope=write_envelope,
         root=tmp_path,
     )
@@ -609,14 +746,44 @@ async def test_refusals_keep_harness(tmp_path, monkeypatch) -> None:
 
     # compose_abstention: the engine abstains, and no adoption persists.
     support.register_harness_probe_provider(fixture_probe)
-    monkeypatch.setattr(cycle, "measure_contrasts", _fixture_contrasts)
+    plan2 = plan(2)
+    tick_digest = conditions_digest(
+        task="classify",
+        seed="seed-1",
+        model_ref=cycle._model_ref(plan2.model),
+        budget_ref=cycle._budget_ref(plan2.budget),
+    )
+    # propose names its candidates <task_ref>:candidate:<index>.
+    tick_params = {
+        "task_ref": "task-1",
+        "task_class": "classification",
+        "conditions_digest": tick_digest,
+        "candidate_version_refs": ["v-a", "v-b"],
+        "baseline_trace_id": "task-1:probe:current",
+        "probe_trace_ids": [
+            "task-1:probe:task-1:candidate:0",
+            "task-1:probe:task-1:candidate:1",
+        ],
+    }
+    support.register_engine_decision_port(
+        RecordedEnginePort(
+            {
+                "answers": [
+                    {
+                        "method": "harness_contrast",
+                        "params": tick_params,
+                        "answer": {"outcome": "abstained"},
+                    }
+                ]
+            }
+        )
+    )
     outcome = await run_cycle_tick(
         _tick_request(),
         plan(2),
         task_class="classification",
         graph=object(),
         library_query=library,
-        decide=abstain,
         write_envelope=write_envelope,
         root=tmp_path,
     )
@@ -651,14 +818,6 @@ async def test_slot_bounds_come_from_the_plan_budget(tmp_path) -> None:
             budget=RunBudget(candidate_slots=slots, candidate_slots_min=min_slots),
         )
 
-    def decide(request):
-        return {
-            "adopted_version_ref": "v-a",
-            "abstain_reason": None,
-            "adopted_component_kind": "system_prompt",
-            "adopted_content": "adopted prompt",
-        }
-
     def tick(plan_obj, library=None):
         return run_cycle_tick(
             _tick_request(),
@@ -666,7 +825,6 @@ async def test_slot_bounds_come_from_the_plan_budget(tmp_path) -> None:
             task_class="classification",
             graph=object(),
             library_query=library if library is not None else lambda _class: _library(),
-            decide=decide,
             write_envelope=lambda envelope: "ref",
             root=tmp_path,
         )
