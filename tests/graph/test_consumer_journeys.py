@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 
 import ports_support as support
@@ -334,7 +335,7 @@ class WriteOnlyEngine(RecordedEnginePort):
 async def test_manifest_binds_spans_and_sources(events):
     bind_caller()
     walk = {"sections": [{"path": "a.py", "source_revision": "rev1"}]}
-    plan = tool_plan(["walkthrough"], [("open", {"path": "a.py"}), ("close", {})])
+    plan = tool_plan(["walkthrough"], [("open", {"path": "a.py"})])
     accepting = WriteOnlyEngine(outcome="committed", record_digest="m-1")
     support.register_engine_decision_port(accepting)
     result = await execute(plan, {"walkthrough": walk})
@@ -424,3 +425,27 @@ async def test_a_finish_gate_refusal_on_a_dependency_plan_ends_failed_with_the_c
     assert (
         refused["status"] == "failed" and "HELD_ITEM_CONFIRM_FAILED" in refused["error"]
     )
+
+
+@pytest.mark.spec("MERISTEM-HARNESS-CYCLE-R073")
+@pytest.mark.spec("MERISTEM-HARNESS-CYCLE-R070")
+async def test_the_output_call_event_precedes_the_gate_and_the_run_state(events):
+    """The output task's event reports the call; the run state follows the gate."""
+    bind_caller()
+    seen = []
+
+    async def gate_probe(current):
+        seen.append(
+            [e["type"] for e in events if e.get("task_id") == "t0"]
+            + [current.status.value]
+        )
+
+    from meristem.harness.run_lifecycle import RunLifecycle
+
+    lifecycle = RunLifecycle(consumers=("probe",))
+    lifecycle.add("probe", "before_finish", gate_probe)
+    plan = dataclasses.replace(
+        tool_plan(["probe"], [("open", {"path": "a.py"})]), lifecycle=lifecycle
+    )
+    assert (await execute(plan))["status"] == "completed"
+    assert seen == [["task_started", "task_completed", "running"]]
