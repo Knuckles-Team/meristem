@@ -92,3 +92,46 @@ def tool_plan(tool: str, args: dict, seen: list, config: CodingConfig) -> RunPla
         steps=("code",),
         harness=HarnessConfig(coding=config),
     )
+
+
+class LocalSource:
+    """Source and gate runner over a real local workspace root (a control-flow double)."""
+
+    def __init__(self, outcomes) -> None:
+        self.outcomes = iter(outcomes)
+        self.submitted: list[Any] = []
+
+    async def materialize(self, head, workspace):
+        (workspace.backend.root / "a.txt").write_text("before\n")
+
+    async def read_head(self):
+        return "new-head"
+
+    async def submit(self, pending):
+        self.submitted.append(pending)
+        return next(self.outcomes)
+
+    async def run_gate(self, workspace, command):
+        from meristem.runtime.events import CmdRunAction
+
+        return await workspace.act(CmdRunAction(command=command))
+
+    async def apply_edits(self, workspace, edits):
+        from meristem.harness.edit_engine import apply_edits
+
+        root = workspace.backend.root
+        if not apply_edits(list(edits), root=root, dry_run=True).ok:
+            return False
+        return apply_edits(list(edits), root=root).ok
+
+    async def read_files(self, workspace, paths):
+        return tuple(
+            (p, (workspace.backend.root / p).read_text(encoding="utf-8")) for p in paths
+        )
+
+
+def local_workspace(root):
+    from meristem.runtime.local_workspace import LocalWorkspace
+    from meristem.runtime.workspace import DevWorkspace
+
+    return DevWorkspace(LocalWorkspace(root), run_id="run")

@@ -2,11 +2,19 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Literal, Protocol
+from typing import Any, Literal, Protocol
 
+from meristem.harness.adversarial_verifier import (
+    VerifierReceipt,
+    admit_receipt,
+    retest_cases,
+    run_adversarial_verification,
+)
 from meristem.harness.edit_engine import Edit
+from meristem.harness.run_lifecycle import ConsumerRefused
 from meristem.host_ports import HostPorts
 from meristem.runtime.events import CmdOutputObservation
 from meristem.runtime.workspace import DevWorkspace
@@ -209,6 +217,38 @@ async def run_symbol_edit(
     raise AssertionError("unreachable")
 
 
+@dataclass(frozen=True)
+class VerifierSettings:
+    """The received verifier inputs of one cycle (MERISTEM-SCM-R006.1)."""
+
+    cases: tuple[Mapping[str, Any], ...]
+    tests: tuple[str, ...]
+    attack_policy_revision: str | None
+    verifier_revision: str | None
+
+
+async def _verify(
+    settings: VerifierSettings,
+    previous: VerifierReceipt | None,
+    gate_runner: SandboxGateRunner,
+    workspace: DevWorkspace,
+    files: tuple[tuple[str, str], ...],
+) -> VerifierReceipt:
+    async def run_gate(command: str) -> CmdOutputObservation:
+        return await gate_runner.run_gate(workspace, command)
+
+    if previous is not None:
+        return await retest_cases(previous, run_gate, files)
+    return await run_adversarial_verification(
+        settings.cases,
+        run_gate,
+        files,
+        settings.tests,
+        attack_policy_revision=settings.attack_policy_revision,
+        verifier_revision=settings.verifier_revision,
+    )
+
+
 def _safe_paths(root: Path, edits: tuple[Edit, ...]) -> bool:
     try:
         root = root.resolve()
@@ -252,6 +292,7 @@ async def run_changeset_cycle(
     gate_runner: SandboxGateRunner | None = None,
     max_rebases: int = 3,
     ports: HostPorts | None = None,
+    verifier: VerifierSettings | None = None,
 ) -> CycleResult:
     """Apply edits to a host-provided snapshot and submit after sandbox gates.
 
@@ -285,6 +326,7 @@ async def run_changeset_cycle(
     ports = ports if ports is not None else HostPorts()
     await workspace.start()
     head = base_head
+    receipt: VerifierReceipt | None = None
     for attempt in range(max_rebases + 1):
         await submitter.materialize(head, workspace)
         # Snapshot materialization can introduce symlinks, so check again.
@@ -325,6 +367,21 @@ async def run_changeset_cycle(
             return CycleResult("gate_modified_edits")
         if not _valid_files(after_gates, paths) or after_gates != files:
             return CycleResult("gate_modified_edits")
+        if verifier is not None:
+            try:
+                receipt = await _verify(
+                    verifier, receipt, gate_runner, workspace, files
+                )
+            except ConsumerRefused as refused:
+                return CycleResult(refused.code)
+            refusal = await admit_receipt(
+                receipt,
+                ports.engine_decision_port(),
+                run_ref=run_ref,
+                emit=ports.emit_run_event,
+            )
+            if refusal is not None:
+                return CycleResult(refusal)
         outcome = await submitter.submit(
             PendingChangeset(head, edits, run_ref, files, tuple(verdicts))
         )

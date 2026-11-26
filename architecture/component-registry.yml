@@ -34,6 +34,7 @@
         "meristem/harness/edit_round.py",
         "meristem/harness/correction_binding.py",
         "meristem/harness/coding_toolset.py",
+        "meristem/harness/adversarial_verifier.py",
         "meristem/harness/agent_discovery.py",
         "meristem/harness/client_capabilities.py",
         "meristem/harness/command_file.py",
