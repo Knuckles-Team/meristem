@@ -107,11 +107,6 @@
       "owner": "meristem"
     },
     {
-      "path": "meristem/ontology/run_state_machines.ttl",
-      "disposition": "keep",
-      "owner": "meristem"
-    },
-    {
       "path": "meristem/harness/__init__.py",
       "disposition": "keep",
       "owner": "meristem"
@@ -122,12 +117,12 @@
       "owner": "meristem"
     },
     {
-      "path": "meristem/harness/changeset_loop.py",
+      "path": "meristem/harness/champion.py",
       "disposition": "keep",
       "owner": "meristem"
     },
     {
-      "path": "meristem/harness/champion.py",
+      "path": "meristem/harness/changeset_loop.py",
       "disposition": "keep",
       "owner": "meristem"
     },
@@ -147,12 +142,22 @@
       "owner": "meristem"
     },
     {
+      "path": "meristem/harness/context_prose.py",
+      "disposition": "keep",
+      "owner": "meristem"
+    },
+    {
       "path": "meristem/harness/contract_validator.py",
       "disposition": "keep",
       "owner": "meristem"
     },
     {
       "path": "meristem/harness/conversation_history.py",
+      "disposition": "keep",
+      "owner": "meristem"
+    },
+    {
+      "path": "meristem/harness/critique.py",
       "disposition": "keep",
       "owner": "meristem"
     },
@@ -182,12 +187,22 @@
       "owner": "meristem"
     },
     {
+      "path": "meristem/harness/replay.py",
+      "disposition": "keep",
+      "owner": "meristem"
+    },
+    {
       "path": "meristem/harness/rules.py",
       "disposition": "keep",
       "owner": "meristem"
     },
     {
       "path": "meristem/harness/run_lifecycle.py",
+      "disposition": "keep",
+      "owner": "meristem"
+    },
+    {
+      "path": "meristem/harness/search_state.py",
       "disposition": "keep",
       "owner": "meristem"
     },
@@ -213,6 +228,11 @@
     },
     {
       "path": "meristem/host_ports.py",
+      "disposition": "keep",
+      "owner": "meristem"
+    },
+    {
+      "path": "meristem/ontology/run_state_machines.ttl",
       "disposition": "keep",
       "owner": "meristem"
     },
