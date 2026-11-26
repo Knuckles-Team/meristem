@@ -8,16 +8,19 @@ lifecycle points.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Awaitable, Callable
 from time import perf_counter_ns
 from typing import Any
 
+from meristem.harness import engine_step
 from meristem.harness.certification import submit_certification_receipt
 from meristem.harness.context_prose import compile_context, read_facts, render_facts
 from meristem.harness.critique import read_critique
 from meristem.harness.held_item import apply_held_item
 from meristem.harness.ingest_readback import verify_ingest_readback
 from meristem.harness.nary_proposals import read_nary_proposals
+from meristem.harness.org_runtime import advance_instance, staff_run
 from meristem.harness.replay import first_divergence
 from meristem.harness.replay_intake import admit_replay_events
 from meristem.harness.retrieval_step import (
@@ -32,6 +35,7 @@ from meristem.harness.search_state import (
     restore_fields,
     save_search_state,
 )
+from meristem.harness.span_export import build_spans, export_spans
 from meristem.harness.summary_receipt import invoke_summary
 from meristem.harness.technique_benchmark import TECHNIQUES, emit_technique_receipts
 from meristem.harness.turn_timing import record_turn_timing
@@ -39,6 +43,7 @@ from meristem.harness.walkthrough import (
     build_walkthrough_manifest,
     send_walkthrough_manifest,
 )
+from meristem.runtime.liveness import LivenessMonitor, liveness_interval
 
 CONTEXT_FACTS = "context_facts"
 TRACE_CRITIQUE = "trace_critique"
@@ -59,6 +64,9 @@ SUMMARY_RECEIPT = "summary_receipt"
 INGEST_READBACK = "ingest_readback"
 WALKTHROUGH = "walkthrough"
 RUN_TRACE = "run_trace"
+SPAN_EXPORT = "span_export"
+ORG_RUNTIME = "org_runtime"
+SANDBOX_LIVENESS = "sandbox_liveness"
 
 #: The monotonic clock of the turn-timing step; a test replaces it.
 CLOCK: Callable[[], int] = perf_counter_ns
@@ -247,7 +255,11 @@ def bind_default_consumers(
 
 
 def _before_finish(
-    lifecycle: RunLifecycle, name: str, hook: Callable[[Any], Awaitable[None]]
+    lifecycle: RunLifecycle,
+    name: str,
+    hook: Callable[[Any], Awaitable[None]],
+    *,
+    result_key: str | None = None,
 ) -> None:
     """Run ``hook`` once, after the last step and before the run finishes.
 
@@ -264,7 +276,7 @@ def _before_finish(
             await settle(current)
 
     async def settle(current: Any, *_rest: Any) -> None:
-        if name not in current.consumer_results:
+        if (result_key or name) not in current.consumer_results:
             await hook(current)
 
     lifecycle.add(name, "on_start", planned)
@@ -390,8 +402,60 @@ def _bind_engine_consumers(lifecycle: RunLifecycle, request: Any, state: Any) ->
         lifecycle.add(TURN_TIMING, "before_step", timing_start)
         lifecycle.add(TURN_TIMING, "after_step", timing_end)
 
+    if lifecycle.enabled(ORG_RUNTIME) and (org := _received(request, ORG_RUNTIME)):
+
+        async def staffing_step(current: Any) -> None:
+            port = ports.engine_decision_port()
+            staffing = await staff_run(
+                port, org["recruit"], org["allocate"], run_ref=run_ref
+            )
+            state_after = await advance_instance(
+                port, org["instance_id"], "staffed", run_ref=run_ref
+            )
+            current.consumer_results[ORG_RUNTIME] = staffing
+            ports.emit_run_event(
+                {
+                    "type": "staffing_applied",
+                    "recruited": list(staffing.recruited),
+                    "allocation": dict(staffing.allocation),
+                    "instance_state": state_after,
+                }
+            )
+
+        async def drain_step(current: Any) -> None:
+            drained = await advance_instance(
+                ports.engine_decision_port(),
+                org["instance_id"],
+                "drain",
+                run_ref=run_ref,
+            )
+            current.consumer_results["org_runtime_drain"] = drained
+            ports.emit_run_event(
+                {"type": "instance_drained", "instance_state": drained}
+            )
+
+        once(ORG_RUNTIME, "before_step", staffing_step)
+        _before_finish(
+            lifecycle, ORG_RUNTIME, drain_step, result_key="org_runtime_drain"
+        )
+
+    if lifecycle.enabled(SPAN_EXPORT):
+        if state.event_log is None:
+            state.event_log = []
+
+        async def span_step(current: Any) -> None:
+            spans = build_spans(run_ref, list(current.event_log or ()))
+            digests = await export_spans(
+                ports.engine_decision_port(), spans, run_ref=run_ref
+            )
+            current.consumer_results[SPAN_EXPORT] = digests
+            ports.emit_run_event({"type": "spans_exported", "count": len(digests)})
+
+        _before_finish(lifecycle, SPAN_EXPORT, span_step)
+
     if lifecycle.enabled(WALKTHROUGH) and (walk := _received(request, WALKTHROUGH)):
-        state.event_log = []
+        if state.event_log is None:
+            state.event_log = []
 
         async def walkthrough_step(current: Any) -> None:
             manifest = build_walkthrough_manifest(
@@ -481,6 +545,46 @@ def _bind_host_consumers(lifecycle: RunLifecycle, request: Any, state: Any) -> N
             )
 
         lifecycle.add(TECHNIQUE_BENCHMARK, "before_step", benchmark_step)
+
+    if lifecycle.enabled(SANDBOX_LIVENESS):
+        liveness = _received(request, SANDBOX_LIVENESS) or {}
+        watchers: list[asyncio.Task[None]] = []
+        monitors: list[LivenessMonitor] = []
+
+        async def liveness_start(_request: Any, _plan: Any) -> None:
+            if ports.sandbox_processes is None or ports.liveness_wait is None:
+                raise ConsumerRefused("liveness_unavailable")
+
+            async def log_evidence(body: Any) -> Any:
+                answer = await engine_step.record(
+                    ports.engine_decision_port(), "Evaluate", body, run_ref=run_ref
+                )
+                return answer.payload
+
+            monitor = LivenessMonitor(
+                log_evidence,
+                ports.confirm,
+                ports.sandbox_processes(run_ref),
+                run_id=run_ref,
+                interval_s=liveness_interval(liveness.get("interval_s")),
+            )
+            monitors.append(monitor)
+            watchers.append(asyncio.create_task(monitor.watch(ports.liveness_wait)))
+
+        async def liveness_gate(current: Any) -> None:
+            current.consumer_results[SANDBOX_LIVENESS] = True
+            if monitors and monitors[0].refusal is not None:
+                raise ConsumerRefused(monitors[0].refusal.code)
+
+        async def liveness_stop(_current: Any) -> None:
+            while watchers:
+                task = watchers.pop()
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+
+        lifecycle.add(SANDBOX_LIVENESS, "on_start", liveness_start)
+        _before_finish(lifecycle, SANDBOX_LIVENESS, liveness_gate)
+        lifecycle.add(SANDBOX_LIVENESS, "on_end", liveness_stop)
 
     if lifecycle.enabled(RUN_TRACE):
 

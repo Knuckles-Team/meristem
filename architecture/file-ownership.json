@@ -267,7 +267,17 @@
       "owner": "meristem"
     },
     {
+      "path": "meristem/harness/org_runtime.py",
+      "disposition": "keep",
+      "owner": "meristem"
+    },
+    {
       "path": "meristem/harness/risk_order.py",
+      "disposition": "keep",
+      "owner": "meristem"
+    },
+    {
+      "path": "meristem/harness/span_export.py",
       "disposition": "keep",
       "owner": "meristem"
     },
@@ -473,6 +483,11 @@
     },
     {
       "path": "meristem/runtime/events.py",
+      "disposition": "keep",
+      "owner": "meristem"
+    },
+    {
+      "path": "meristem/runtime/liveness.py",
       "disposition": "keep",
       "owner": "meristem"
     },
