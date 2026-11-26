@@ -826,3 +826,60 @@ class HostPorts:
             return
         async with factory(request, plan) as checkpoint:
             yield checkpoint
+
+
+@dataclass(frozen=True, slots=True)
+class EnvironmentDeclaration:
+    """One environment name the harness reads, declared without its value."""
+
+    name: str
+    component: str
+    type: Literal["string", "int", "bool", "secret_reference", "enum"]
+    required_when: str | None
+    default: str | None
+    sensitive: bool
+    call_sites: tuple[str, ...]
+    source_revision: str = ""
+    schema_version: int = 1
+
+
+_PATHS = "meristem/core/paths.py"
+#: Every environment name the package reads, with the one module that reads it.
+#: The census test fails when a read appears that this list does not name.
+_ENVIRONMENT_READS: tuple[tuple[str, str], ...] = (
+    ("ARBORA_CACHE_DIR", _PATHS),
+    ("ARBORA_CONFIG_DIR", _PATHS),
+    ("ARBORA_DATA_DIR", _PATHS),
+    ("ARBORA_LOG_DIR", _PATHS),
+    ("ARBORA_MEMORY_DIR", _PATHS),
+    ("ARBORA_PROMPTS_DIR", _PATHS),
+    ("ARBORA_SKILLS_DIR", _PATHS),
+    ("XDG_CONFIG_HOME", _PATHS),
+)
+#: The one path that forwards the inherited environment to a child process.
+#: It reads no name of its own, so no declaration can name what it passes on.
+INHERITED_ENVIRONMENT_FORWARDERS: tuple[str, ...] = (
+    "meristem/runtime/local_workspace.py",
+)
+
+
+def environment_declarations(
+    source_revision: str = "",
+) -> tuple[EnvironmentDeclaration, ...]:
+    """The harness's environment reads, sorted by name; no live value is read.
+
+    The host (arbora) composes this list with the SDK's and adds none.
+    """
+    return tuple(
+        EnvironmentDeclaration(
+            name=name,
+            component="meristem",
+            type="string",
+            required_when=None,
+            default=None,
+            sensitive=False,
+            call_sites=(site,),
+            source_revision=source_revision,
+        )
+        for name, site in sorted(_ENVIRONMENT_READS)
+    )
