@@ -36,6 +36,7 @@ from meristem.harness.knowledge_tools import bind_knowledge_tools
 from meristem.harness.plan_runtime import PlanScaffold
 from meristem.harness.program_reuse import report_reuse, reuse_program
 from meristem.harness.run_lifecycle import RunLifecycle
+from meristem.harness.study_intake import STUDY_SOURCE_KINDS, admit_study_sources
 
 from .budget import LiveSharedBudget, SharedBudget, initial_run_usage
 from .checkpoint import RunCheckpoint
@@ -355,6 +356,13 @@ async def iterate_run(
             decision_port=decision_port,
             approval_waiter=approval_waiter,
         )
+        graph_sources = [
+            source
+            for source in run_plan.study_sources
+            if isinstance(source, Mapping) and source.get("kind") in STUDY_SOURCE_KINDS
+        ]
+        if graph_sources:
+            await admit_study_sources(graph_sources, request.ports.study_content)
         refs = request.metadata.get("media_refs")
         if refs and not request.attachments:
             request = replace(

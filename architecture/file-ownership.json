@@ -247,6 +247,61 @@
       "owner": "meristem"
     },
     {
+      "path": "meristem/harness/certification.py",
+      "disposition": "keep",
+      "owner": "meristem"
+    },
+    {
+      "path": "meristem/harness/held_item.py",
+      "disposition": "keep",
+      "owner": "meristem"
+    },
+    {
+      "path": "meristem/harness/ingest_readback.py",
+      "disposition": "keep",
+      "owner": "meristem"
+    },
+    {
+      "path": "meristem/harness/nary_proposals.py",
+      "disposition": "keep",
+      "owner": "meristem"
+    },
+    {
+      "path": "meristem/harness/risk_order.py",
+      "disposition": "keep",
+      "owner": "meristem"
+    },
+    {
+      "path": "meristem/harness/study_intake.py",
+      "disposition": "keep",
+      "owner": "meristem"
+    },
+    {
+      "path": "meristem/harness/summary_receipt.py",
+      "disposition": "keep",
+      "owner": "meristem"
+    },
+    {
+      "path": "meristem/harness/technique_benchmark.py",
+      "disposition": "keep",
+      "owner": "meristem"
+    },
+    {
+      "path": "meristem/harness/tool_action_guard.py",
+      "disposition": "keep",
+      "owner": "meristem"
+    },
+    {
+      "path": "meristem/harness/turn_timing.py",
+      "disposition": "keep",
+      "owner": "meristem"
+    },
+    {
+      "path": "meristem/harness/walkthrough.py",
+      "disposition": "keep",
+      "owner": "meristem"
+    },
+    {
       "path": "meristem/harness/retrieval_step.py",
       "disposition": "keep",
       "owner": "meristem"

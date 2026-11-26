@@ -127,6 +127,7 @@ async def test_producer_wiring() -> None:
     assert transport.requests == 0
 
 
+@pytest.mark.spec("MERISTEM-HARNESS-CYCLE-R076")
 @pytest.mark.spec("MERISTEM-RUN-R002.4")
 async def test_partial_refusal() -> None:
     cases = {
