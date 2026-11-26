@@ -76,6 +76,7 @@ async def stop_after_first(request, plan):
     await events.aclose()
 
 
+@pytest.mark.spec("MERISTEM-RUN-R007")
 async def test_restart_restores_messages_and_skips_completed_model_step():
     port = HostCheckpoint()
     request, plan, prompts = setup(port)

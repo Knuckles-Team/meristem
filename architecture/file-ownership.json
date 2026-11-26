@@ -242,6 +242,21 @@
       "owner": "meristem"
     },
     {
+      "path": "meristem/harness/replay_intake.py",
+      "disposition": "keep",
+      "owner": "meristem"
+    },
+    {
+      "path": "meristem/harness/retrieval_step.py",
+      "disposition": "keep",
+      "owner": "meristem"
+    },
+    {
+      "path": "meristem/harness/delivery_run.py",
+      "disposition": "keep",
+      "owner": "meristem"
+    },
+    {
       "path": "meristem/harness/designation.py",
       "disposition": "keep",
       "owner": "meristem"
