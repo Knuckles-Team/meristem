@@ -424,3 +424,47 @@ async def test_a_finish_gate_refusal_on_a_dependency_plan_ends_failed_with_the_c
     assert (
         refused["status"] == "failed" and "HELD_ITEM_CONFIRM_FAILED" in refused["error"]
     )
+
+
+class DecideRecorder(RecordedEnginePort):
+    """Answers every decide and records the params it received."""
+
+    def __init__(self):
+        super().__init__({"answers": []})
+        self.decided: list[tuple[str, dict]] = []
+        self.written: list[dict] = []
+
+    async def decide(self, kind, params, *, run_ref):
+        self.decided.append((kind, dict(params)))
+        return EngineAnswer(outcome="solved", option_ids=("agent-a",))
+
+    async def write(self, method, params, *, run_ref):
+        self.written.append(dict(params))
+        return EngineAnswer(outcome="committed", payload={"state": "ok"})
+
+
+@pytest.mark.spec("MERISTEM-HARNESS-CYCLE-R015.2")
+async def test_decide_requests_carry_the_assistant_profile_ref():
+    org = {
+        "recruit": {"role": "reviewer"},
+        "allocate": {"budget": 1},
+        "instance_id": "i1",
+    }
+    engine = DecideRecorder()
+    support.register_engine_decision_port(engine)
+    plan = text_plan(["org_runtime"])
+    result = await execute(
+        plan, {"org_runtime": org, "assistant_profile_ref": "profile-7"}
+    )
+    assert result["status"] == "completed"
+    assert [kind for kind, _ in engine.decided] == ["recruit", "allocate"]
+    assert {p["assistant_profile_ref"] for _, p in engine.decided} == {"profile-7"}
+    assert all("assistant_profile_ref" not in w for w in engine.written)
+    # No profile ref received: no key is added; an explicit key is kept.
+    engine.decided.clear()
+    await execute(plan, {"org_runtime": org})
+    assert all("assistant_profile_ref" not in p for _, p in engine.decided)
+    engine.decided.clear()
+    explicit = {**org, "recruit": {"assistant_profile_ref": "own"}}
+    await execute(plan, {"org_runtime": explicit, "assistant_profile_ref": "p"})
+    assert engine.decided[0][1]["assistant_profile_ref"] == "own"

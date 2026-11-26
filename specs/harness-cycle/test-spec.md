@@ -182,3 +182,4 @@ acceptance.
 | T-155 | `MERISTEM-HARNESS-CYCLE-R098` | Planned | The test the row names | Test: `tests/harness/test_skill_eval_run.py::test_golden_mocks_real_live_and_two_separate_fields` (L3). |  |
 | T-156 | `MERISTEM-HARNESS-CYCLE-R099` | Planned | The test the row names | Test: `tests/harness/test_skill_eval_clean_room.py::test_laptop_dependency_ends_the_case_and_attestation_is_sent` (L3). |  |
 | T-157 | `MERISTEM-HARNESS-CYCLE-R100` | Planned | The test the row names | Test: `tests/harness/test_skill_ablation_arms.py::test_arms_remove_what_they_name_and_hide_the_label` (L3). |  |
+| T-158 | `MERISTEM-HARNESS-CYCLE-R015.2` | Planned | The test the row names | Test: `tests/graph/test_consumer_journeys.py::test_decide_requests_carry_the_assistant_profile_ref` (L3). |  |

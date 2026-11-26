@@ -32,6 +32,7 @@ from meristem.harness.conversation_history import (
     trim_history,
 )
 from meristem.harness.default_consumers import TOOL_ACTION_GUARD, bind_default_consumers
+from meristem.harness.engine_step import with_assistant_profile
 from meristem.harness.knowledge_tools import bind_knowledge_tools
 from meristem.harness.plan_runtime import PlanScaffold
 from meristem.harness.program_reuse import report_reuse, reuse_program
@@ -278,6 +279,14 @@ async def iterate_run(
         )
 
     cfg = dict(config or {})
+    profiled = with_assistant_profile(
+        request.ports.engine_decision_port(), request.metadata
+    )
+    if profiled is not request.ports.engine_decision_port():
+        # The run's decide requests carry the received assistant profile ref.
+        request = replace(
+            request, ports=replace(request.ports, engine_decision=profiled)
+        )
     state = GraphState(run_id=request.run_id, query=request.task, mode=request.mode)
     lifecycle: RunLifecycle | None = None
     restore_search_state = None
