@@ -152,3 +152,13 @@ Each task line reads `- [ ] T001 [P] [US1] <ID>-R012.4 description`. The task nu
 - [ ] T145 [US1] MERISTEM-HARNESS-CYCLE-R022.6 Fall back to full planning on abstain or failure. Size: S, 1 PR, 2 hours.
 - [ ] T146 [US1] MERISTEM-HARNESS-CYCLE-R022.7 Trace and report each reuse outcome. Size: S, 1 PR, 2 hours.
 - [ ] T147 [US1] MERISTEM-HARNESS-CYCLE-R022.8 Hot-path proof: a reused program skips planning against served answers. Size: S, 1 PR, 2 hours.
+- [ ] T148 [US1] MERISTEM-HARNESS-CYCLE-R091 Emit a skill invocation event with no prompt text. Size: S, 1 PR, 2 hours.
+- [ ] T149 [US1] MERISTEM-HARNESS-CYCLE-R092 Report the session-cost delta around each skill invocation. Size: S, 1 PR, 2 hours.
+- [ ] T150 [US1] MERISTEM-HARNESS-CYCLE-R093 Bind the flag tool and the friction tool in every run. Size: S, 1 PR, 2 hours.
+- [ ] T151 [US1] MERISTEM-HARNESS-CYCLE-R094 Load a skill in three stages. Size: S, 1 PR, 2 hours.
+- [ ] T152 [US1] MERISTEM-HARNESS-CYCLE-R095 Run a skill in a worker on a received model and return a bounded summary. Size: S, 1 PR, 2 hours.
+- [ ] T153 [US1] MERISTEM-HARNESS-CYCLE-R096 Run the skill load script once at load time. Size: S, 1 PR, 2 hours.
+- [ ] T154 [US1] MERISTEM-HARNESS-CYCLE-R097 Run a code step without a model call. Size: S, 1 PR, 2 hours.
+- [ ] T155 [US1] MERISTEM-HARNESS-CYCLE-R098 Replay one eval case and report trajectory and outcome apart. Size: S, 1 PR, 2 hours.
+- [ ] T156 [US1] MERISTEM-HARNESS-CYCLE-R099 Run every eval case in a clean-room sandbox. Size: S, 1 PR, 2 hours.
+- [ ] T157 [US1] MERISTEM-HARNESS-CYCLE-R100 Apply a received ablation arm with a blind label. Size: S, 1 PR, 2 hours.
