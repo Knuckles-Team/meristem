@@ -162,6 +162,11 @@
       "owner": "meristem"
     },
     {
+      "path": "meristem/harness/knowledge_tools.py",
+      "disposition": "keep",
+      "owner": "meristem"
+    },
+    {
       "path": "meristem/harness/plan.py",
       "disposition": "keep",
       "owner": "meristem"
@@ -183,6 +188,26 @@
     },
     {
       "path": "meristem/harness/run_lifecycle.py",
+      "disposition": "keep",
+      "owner": "meristem"
+    },
+    {
+      "path": "meristem/harness/skill_eval_run.py",
+      "disposition": "keep",
+      "owner": "meristem"
+    },
+    {
+      "path": "meristem/harness/skill_events.py",
+      "disposition": "keep",
+      "owner": "meristem"
+    },
+    {
+      "path": "meristem/harness/skill_loader.py",
+      "disposition": "keep",
+      "owner": "meristem"
+    },
+    {
+      "path": "meristem/harness/skill_worker.py",
       "disposition": "keep",
       "owner": "meristem"
     },

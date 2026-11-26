@@ -26,6 +26,9 @@ POINTS: tuple[str, ...] = (
     "on_end",
 )
 
+#: The skill span points; they run on demand around one skill invocation.
+SKILL_POINTS: tuple[str, ...] = ("on_skill_start", "on_skill_end")
+
 #: A consumer step body: a callable run at one lifecycle point.
 ConsumerHook = Callable[..., Awaitable[None]]
 
@@ -52,7 +55,7 @@ class RunLifecycle:
     def __init__(self, consumers: Sequence[str] = ()) -> None:
         self._enabled = frozenset(consumers)
         self._steps: dict[str, list[tuple[str, ConsumerHook]]] = {
-            point: [] for point in POINTS
+            point: [] for point in (*POINTS, *SKILL_POINTS)
         }
 
     @property
@@ -66,7 +69,7 @@ class RunLifecycle:
 
     def add(self, name: str, point: str, hook: ConsumerHook) -> None:
         """Record one consumer step; it runs only when its name is admitted."""
-        if point not in POINTS:
+        if point not in POINTS and point not in SKILL_POINTS:
             raise ValueError(f"unknown lifecycle point: {point!r}")
         if type(name) is not str or not name.strip():
             raise ValueError("a consumer step needs a closed name")
@@ -100,9 +103,18 @@ class RunLifecycle:
         """Run the admitted ``on_end`` steps at every terminal status."""
         await self._dispatch("on_end", state)
 
+    async def on_skill_start(self, span: Any) -> None:
+        """Run the admitted ``on_skill_start`` steps when a skill starts."""
+        await self._dispatch("on_skill_start", span)
+
+    async def on_skill_end(self, span: Any) -> None:
+        """Run the admitted ``on_skill_end`` steps when a skill ends."""
+        await self._dispatch("on_skill_end", span)
+
 
 __all__ = [
     "POINTS",
+    "SKILL_POINTS",
     "ConsumerHook",
     "ConsumerRefused",
     "RunLifecycle",

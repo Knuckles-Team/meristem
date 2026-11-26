@@ -1125,3 +1125,41 @@ __all__ = [
     "submit_insight",
     "verify_step",
 ]
+
+
+CODE_STEP_RETURN_TOO_LARGE = "CODE_STEP_RETURN_TOO_LARGE"
+CODE_STEP_RETURN_MAX_BYTES = 16384
+CODE_STEP_TIMEOUT_SECONDS = 60.0
+
+
+@dataclass(frozen=True, slots=True)
+class CodeStepResult:
+    """The outcome of one code step: only ``value`` reaches the model context."""
+
+    status: str
+    value: str = ""
+    code: str | None = None
+
+
+async def run_code_step(
+    step: Mapping[str, Any],
+    workspace: Any,
+    *,
+    return_max_bytes: int = CODE_STEP_RETURN_MAX_BYTES,
+) -> CodeStepResult:
+    """Run a received compiled script in the sandbox; make no model call.
+
+    The script calls served operations by operation id from inside the
+    sandbox. Its standard output is the return value. Intermediate results
+    stay in the sandbox; a return above ``return_max_bytes`` fails the step.
+    """
+    if step.get("mode") != "code":
+        raise ValueError("run_code_step needs a step with mode code")
+    exit_code, out, _err = await workspace.exec_shell(
+        str(step["script"]), {}, CODE_STEP_TIMEOUT_SECONDS
+    )
+    if exit_code != 0:
+        return CodeStepResult("failed", code=f"EXIT_{exit_code}")
+    if len(out.encode()) > return_max_bytes:
+        return CodeStepResult("failed", code=CODE_STEP_RETURN_TOO_LARGE)
+    return CodeStepResult("completed", value=out)

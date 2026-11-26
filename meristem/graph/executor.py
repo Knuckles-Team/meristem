@@ -30,6 +30,7 @@ from meristem.harness.conversation_history import (
     decode_completed_history,
     read_run_history,
 )
+from meristem.harness.knowledge_tools import bind_knowledge_tools
 from meristem.harness.plan_runtime import PlanScaffold
 from meristem.harness.run_lifecycle import RunLifecycle
 
@@ -67,13 +68,13 @@ async def resolve_plan(request: RunRequest, config: Mapping[str, Any]) -> RunPla
     """The host's plan for ``request``, else the fallback plan."""
     provider = request.ports.run_decision_provider()
     if provider is None:
-        return default_run_plan(request, config)
+        return bind_knowledge_tools(default_run_plan(request, config), request.ports)
     plan = provider(request)
     if inspect.isawaitable(plan):
         plan = await plan
     if not isinstance(plan, RunPlan):
         raise TypeError("the run decision provider must return a RunPlan")
-    return plan
+    return bind_knowledge_tools(plan, request.ports)
 
 
 def build_agent(
