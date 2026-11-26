@@ -147,3 +147,9 @@ field = "engine_decision"
 
 [[added]]
 field = "media_resolver"
+
+[[added]]
+field = "changeset_submitter"
+
+[[added]]
+field = "gate_runner"

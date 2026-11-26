@@ -9,12 +9,11 @@ returns ``submitter_unavailable`` or ``sandbox_unavailable``.
 from __future__ import annotations
 
 from collections.abc import Awaitable, Mapping, Sequence
-from dataclasses import asdict
+from dataclasses import asdict, dataclass, field
 from typing import Any
 
 from pydantic_ai.toolsets import FunctionToolset
 
-from meristem.graph.state import CodingConfig
 from meristem.harness import (
     agent_discovery,
     correction_binding,
@@ -25,9 +24,39 @@ from meristem.harness import (
 from meristem.harness.changeset_loop import run_changeset_cycle
 from meristem.harness.edit_engine import Edit
 from meristem.harness.run_lifecycle import ConsumerRefused
+from meristem.harness.task_run import TaskRunContext
 from meristem.host_ports import HostPorts
 from meristem.runtime.local_workspace import LocalWorkspace
 from meristem.runtime.workspace import DevWorkspace
+
+
+@dataclass(frozen=True)
+class CodingConfig:
+    """Coding-step settings the host receives for one run.
+
+    Empty ``tasks`` and ``verifier_cases`` leave those steps off; the
+    bounds apply once the host enables the step.
+    """
+
+    agent_names: tuple[str, ...] = ("claude", "opencode", "gemini")
+    agent_capabilities: Mapping[str, Any] = field(default_factory=dict)
+    preplan_command: str | None = None
+    preplan_artifacts: tuple[str, ...] = ()
+    tasks: Mapping[str, str] = field(default_factory=dict)
+    verifier_cases: tuple[Mapping[str, Any], ...] = ()
+    regression_command: str | None = None
+    attack_policy_revision: str | None = None
+    verifier_revision: str | None = None
+    task_run: TaskRunContext | None = None
+
+    def __post_init__(self) -> None:
+        if not 1 <= len(self.agent_names) <= 16:
+            raise ValueError("agent_names must carry 1 to 16 names")
+        if len(self.tasks) > 256:
+            raise ValueError("tasks may carry at most 256 entries")
+        if len(self.verifier_cases) > 64:
+            raise ValueError("verifier_cases may carry at most 64 cases")
+
 
 _EDIT_KEYS = frozenset({"path", "search", "replace"})
 

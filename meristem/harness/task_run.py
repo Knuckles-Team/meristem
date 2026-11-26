@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
+from types import MappingProxyType
 from typing import Any
 
 from meristem.harness.changeset_loop import (
@@ -58,14 +59,16 @@ class TaskRunResult:
 
 
 #: The cycle reasons that name a stage; any other reason is an edit-stage failure.
-_STAGES = {
-    "gate_failed": "gate",
-    "gate_modified_edits": "gate",
-    "sandbox_unavailable": "gate",
-    "conflict_retry_exhausted": "submit",
-    "submitter_unavailable": "submit",
-    "submit_refused": "submit",
-}
+_STAGES: Mapping[str, str] = MappingProxyType(
+    {
+        "gate_failed": "gate",
+        "gate_modified_edits": "gate",
+        "sandbox_unavailable": "gate",
+        "conflict_retry_exhausted": "submit",
+        "submitter_unavailable": "submit",
+        "submit_refused": "submit",
+    }
+)
 
 
 async def run_task_run(
