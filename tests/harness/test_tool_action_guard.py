@@ -7,7 +7,6 @@ import pytest
 from meristem.harness.tool_action_guard import ToolActionRefused, admit_tool_action
 from meristem.host_ports import ConfirmVerdict
 
-SPEC = "MERISTEM-HARNESS-CYCLE-R055"
 ARGS = {"run_ref": "r1", "tool": "send", "arguments_digest": "d" * 64}
 
 
@@ -23,7 +22,7 @@ def confirm_with(verdict):
     return confirm, asked
 
 
-@pytest.mark.spec(SPEC)
+@pytest.mark.spec("MERISTEM-HARNESS-CYCLE-R055")
 async def test_refusal_denies_and_admit_runs_tool():
     confirm, asked = confirm_with(ConfirmVerdict("admit", ref="appr-1"))
     admission = await admit_tool_action(
@@ -48,7 +47,7 @@ async def test_refusal_denies_and_admit_runs_tool():
         )
 
 
-@pytest.mark.spec(SPEC)
+@pytest.mark.spec("MERISTEM-HARNESS-CYCLE-R055")
 @pytest.mark.parametrize(
     ("tool_class", "untrusted"), [("read", True), ("egress", False)]
 )

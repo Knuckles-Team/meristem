@@ -7,8 +7,6 @@ import pytest
 from meristem.harness.held_item import HeldItemRefused, apply_held_item
 from meristem.host_ports import ConfirmVerdict
 
-SPEC = "MERISTEM-HARNESS-CYCLE-R056"
-
 
 async def run_item(verdict):
     applied = []
@@ -28,7 +26,7 @@ async def run_item(verdict):
     return outcome, applied
 
 
-@pytest.mark.spec(SPEC)
+@pytest.mark.spec("MERISTEM-HARNESS-CYCLE-R056")
 async def test_refused_item_is_not_applied():
     outcome, applied = await run_item(ConfirmVerdict("admitted", ref="v-1"))
     assert outcome.applied and applied == [True] and outcome.verdict_ref == "v-1"

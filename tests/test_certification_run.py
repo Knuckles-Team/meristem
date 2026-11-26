@@ -8,7 +8,6 @@ from support.recorded_engine import RecordedEnginePort
 from meristem.harness.certification import submit_certification_receipt
 from meristem.harness.run_lifecycle import ConsumerRefused
 
-SPEC = "MERISTEM-HARNESS-CYCLE-R057"
 PINS = {"skill": "s1", "model": "m1", "dataset": "d1", "criteria": "c1"}
 BODY = {
     "op": "certify_local_skill",
@@ -16,7 +15,7 @@ BODY = {
 }
 
 
-@pytest.mark.spec(SPEC)
+@pytest.mark.spec("MERISTEM-HARNESS-CYCLE-R057")
 async def test_receipt_submitted_and_attestation_applied():
     port = RecordedEnginePort(
         {

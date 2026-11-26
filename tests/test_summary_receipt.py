@@ -11,11 +11,10 @@ from meristem.harness.run_lifecycle import ConsumerRefused
 from meristem.harness.summary_receipt import invoke_summary
 from meristem.host_ports import SummaryProviderDisabled, SummaryResult
 
-SPEC = "MERISTEM-HARNESS-CYCLE-R068"
 CONTEXT = {"records": ["a", "b"]}
 
 
-@pytest.mark.spec(SPEC)
+@pytest.mark.spec("MERISTEM-HARNESS-CYCLE-R068")
 async def test_one_invocation_one_receipt():
     calls = []
 

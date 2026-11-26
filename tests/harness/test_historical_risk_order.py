@@ -10,18 +10,17 @@ from meristem.harness.risk_order import (
     request_historical_risk,
 )
 
-SPEC = "MERISTEM-HARNESS-CYCLE-R065"
 RISK = {"ordering": ["c", "a", "b"], "unknown": ["z"]}
 
 
-@pytest.mark.spec(SPEC)
+@pytest.mark.spec("MERISTEM-HARNESS-CYCLE-R065")
 def test_step_order_follows_received_risk():
     result = order_by_historical_risk(["a", "b", "c", "z", "n"], RISK)
     assert result.ordered == ("c", "a", "b")
     assert result.review == ("z", "n")
 
 
-@pytest.mark.spec(SPEC)
+@pytest.mark.spec("MERISTEM-HARNESS-CYCLE-R065")
 async def test_request_reads_the_served_query():
     query = "PROPAGATE x RISK HISTORY"
     port = RecordedEnginePort(

@@ -8,7 +8,6 @@ from support.recorded_engine import RecordedEnginePort
 from meristem.harness.ingest_readback import verify_ingest_readback
 from meristem.harness.run_lifecycle import ConsumerRefused
 
-SPEC = "MERISTEM-HARNESS-CYCLE-R075"
 REQUEST = {
     "expected_graph_revision": 4,
     "write_receipt_digest": "w" * 64,
@@ -26,7 +25,7 @@ def port_with(answer):
     )
 
 
-@pytest.mark.spec(SPEC)
+@pytest.mark.spec("MERISTEM-HARNESS-CYCLE-R075")
 async def test_success_only_after_matched_readback():
     receipt = await verify_ingest_readback(
         port_with({"outcome": "solved", "payload": {"verdict": "matched"}}),

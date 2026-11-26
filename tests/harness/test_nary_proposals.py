@@ -7,11 +7,10 @@ from support.recorded_engine import RecordedEnginePort
 
 from meristem.harness.nary_proposals import read_nary_proposals
 
-SPEC = "MERISTEM-HARNESS-CYCLE-R066"
 PARAMS = {"request": {"arity": 3}, "source": {"graph": "g"}}
 
 
-@pytest.mark.spec(SPEC)
+@pytest.mark.spec("MERISTEM-HARNESS-CYCLE-R066")
 async def test_hypotheses_stay_proposals():
     port = RecordedEnginePort(
         {

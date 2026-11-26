@@ -8,10 +8,8 @@ from support.recorded_engine import RecordedEnginePort
 from meristem.harness.run_lifecycle import ConsumerRefused
 from meristem.harness.technique_benchmark import TECHNIQUES, emit_technique_receipts
 
-SPEC = "MERISTEM-HARNESS-CYCLE-R062"
 
-
-@pytest.mark.spec(SPEC)
+@pytest.mark.spec("MERISTEM-HARNESS-CYCLE-R062")
 async def test_five_techniques_emit_bound_receipts():
     port = RecordedEnginePort(
         {

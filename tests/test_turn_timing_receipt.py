@@ -7,10 +7,8 @@ from support.recorded_engine import RecordedEnginePort
 
 from meristem.harness.turn_timing import record_turn_timing
 
-SPEC = "MERISTEM-HARNESS-CYCLE-R061"
 
-
-@pytest.mark.spec(SPEC)
+@pytest.mark.spec("MERISTEM-HARNESS-CYCLE-R061")
 async def test_turn_end_records_monotonic_elapsed_with_receipt_ref():
     port = RecordedEnginePort(
         {
@@ -39,7 +37,7 @@ async def test_turn_end_records_monotonic_elapsed_with_receipt_ref():
     assert not {"tokens_per_second", "generation_ms"} & set(body)
 
 
-@pytest.mark.spec(SPEC)
+@pytest.mark.spec("MERISTEM-HARNESS-CYCLE-R061")
 async def test_clock_failure_omits_the_observation():
     def broken():
         raise OSError("clock")

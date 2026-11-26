@@ -7,11 +7,10 @@ from support.recorded_engine import RecordedEnginePort
 
 from meristem.harness.retrieval_step import run_context_compile
 
-SPEC = "MERISTEM-HARNESS-CYCLE-R067"
 REQUEST = {"budget_tokens": 4096}
 
 
-@pytest.mark.spec(SPEC)
+@pytest.mark.spec("MERISTEM-HARNESS-CYCLE-R067")
 async def test_retrieval_step_renders_context_compile_bundle():
     port = RecordedEnginePort(
         {
