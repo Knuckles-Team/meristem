@@ -174,3 +174,9 @@ field = "run_trace"
 
 [[added]]
 field = "technique_measure"
+
+[[added]]
+field = "sandbox_processes"
+
+[[added]]
+field = "liveness_wait"

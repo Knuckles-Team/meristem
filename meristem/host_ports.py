@@ -291,6 +291,23 @@ class SummaryResult:
 SummaryProvider = Callable[[Mapping[str, Any], str], Awaitable[SummaryResult]]
 """``(summary_context, admission_ref) -> SummaryResult``; wrapper retries stay inside."""
 
+
+class SandboxProcess(Protocol):
+    """One process bound to a run's sandbox, as the host exposes it."""
+
+    process_id: str
+
+    async def alive(self) -> bool: ...
+
+    async def kill(self) -> None: ...
+
+
+SandboxProcessProvider = Callable[[str], Sequence[SandboxProcess]]
+"""``(run_id) -> the processes bound to that run's sandbox``."""
+
+LivenessWait = Callable[[float], Awaitable[None]]
+"""``(seconds) -> None``: the host's injected clock or event; the harness never sleeps."""
+
 RunTraceSink = Callable[[Mapping[str, Any]], Awaitable[None]]
 """``(trace) -> None``: the run's tool trace as plain data; arbora encodes and commits it."""
 
@@ -682,6 +699,8 @@ class HostPorts:
     study_content: StudyContentReader | None = None
     run_trace: RunTraceSink | None = None
     technique_measure: TechniqueMeasure | None = None
+    sandbox_processes: SandboxProcessProvider | None = None
+    liveness_wait: LivenessWait | None = None
     approval: ApprovalWaiter | None = None
     models: ModelProvider | None = None
     events: RunEventSink | None = None
