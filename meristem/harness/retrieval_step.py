@@ -11,8 +11,9 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
+from meristem.harness import engine_step
 from meristem.harness.run_lifecycle import ConsumerRefused
-from meristem.host_ports import HostPorts, ToolStepResult
+from meristem.host_ports import EngineDecisionPort, HostPorts, ToolStepResult
 
 CONNECTOR = "medulla"
 
@@ -47,6 +48,29 @@ async def _call(
     if result.outcome != "ok":
         raise ConsumerRefused(result.error or "retrieval_call_refused")
     return result.result
+
+
+async def run_context_compile(
+    port: EngineDecisionPort | None, request: Mapping[str, Any], *, run_ref: str
+) -> str:
+    """Send one ``ContextCompile`` request and render the served bundle.
+
+    Items and citations keep the served order; the step chooses none of them.
+    A refusal code is returned to the model unchanged.
+    """
+    try:
+        answer = await engine_step.read(
+            port, "ContextCompile", {"request": dict(request)}, run_ref=run_ref
+        )
+    except ConsumerRefused as refusal:
+        return refusal.code
+    lines = []
+    for index, item in enumerate(answer.payload.get("items") or (), start=1):
+        citation = item.get("citation")
+        lines.append(
+            f"[{index}] {item.get('text', '')}" + (f" ({citation})" if citation else "")
+        )
+    return "\n".join(lines)
 
 
 async def run_retrieval_round(

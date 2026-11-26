@@ -159,3 +159,12 @@ field = "decision"
 
 [[added]]
 field = "approval"
+
+[[added]]
+field = "confirm"
+
+[[added]]
+field = "summary_provider"
+
+[[added]]
+field = "study_content"

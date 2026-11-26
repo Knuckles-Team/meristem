@@ -498,6 +498,8 @@ class RunPlan:
         default=None, repr=False, compare=False
     )
     input_media_types: tuple[str, ...] = ()
+    #: Received study sources, admitted by ``meristem.harness.study_intake``.
+    study_sources: tuple[Mapping[str, Any], ...] = ()
     media_fallback: Literal["refuse", "text_placeholder"] = "refuse"
     dependency_plan: DependencyPlan | None = None
     initial_usage: RunUsage = field(default_factory=RunUsage)

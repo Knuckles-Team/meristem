@@ -261,6 +261,40 @@ ToolCaller = Callable[[str, str, Mapping[str, Any], str], Awaitable[ToolStepResu
 """``(server, tool, arguments, task_id) -> ToolStepResult`` for one run."""
 
 
+@dataclass(frozen=True, slots=True)
+class ConfirmVerdict:
+    """One ``arbora.plan/confirm`` answer, as the host relays it."""
+
+    verdict: str
+    ref: str | None = None
+    refusal_code: str | None = None
+
+
+PlanConfirmer = Callable[[str, Mapping[str, Any], str], Awaitable[ConfirmVerdict]]
+"""``(confirmation_kind, payload, run_ref) -> ConfirmVerdict``; any raise denies."""
+
+
+class SummaryProviderDisabled(RuntimeError):
+    """The admitted summary provider is disabled; no invocation, no receipt."""
+
+
+@dataclass(frozen=True, slots=True)
+class SummaryResult:
+    """What the admitted summary provider returned for one invocation."""
+
+    output: str
+    provider: str
+    model: str
+    policy_revision: str
+
+
+SummaryProvider = Callable[[Mapping[str, Any], str], Awaitable[SummaryResult]]
+"""``(summary_context, admission_ref) -> SummaryResult``; wrapper retries stay inside."""
+
+StudyContentReader = Callable[[str, str, str, int], Awaitable[bytes]]
+"""``(tenant_id, graph, node, revision) -> body bytes`` of one graph-held source."""
+
+
 DecisionQuestion = Literal["BranchSelect", "DecisionTableEval"]
 
 
@@ -346,6 +380,9 @@ ENGINE_READ_METHODS: frozenset[str] = frozenset(
         "TraceCritique",
         "IndexlessRetrieve",
         "UnifiedQuery",
+        "ContextCompile",
+        "GraphLearnPredictNary",
+        "VerifyIngestReadback",
         "pointer",
     }
 )
@@ -634,6 +671,9 @@ class HostPorts:
     decide: RunDecisionProvider | None = None
     caller: ToolCaller | None = None
     decision: DecisionPort | None = None
+    confirm: PlanConfirmer | None = None
+    summary_provider: SummaryProvider | None = None
+    study_content: StudyContentReader | None = None
     approval: ApprovalWaiter | None = None
     models: ModelProvider | None = None
     events: RunEventSink | None = None
