@@ -153,3 +153,9 @@ field = "changeset_submitter"
 
 [[added]]
 field = "gate_runner"
+
+[[added]]
+field = "decision"
+
+[[added]]
+field = "approval"

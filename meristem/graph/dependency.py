@@ -17,6 +17,8 @@ from pydantic_ai.exceptions import UsageLimitExceeded
 from pydantic_ai.usage import UsageLimits
 
 from meristem.host_ports import (
+    ApprovalWaiter,
+    DecisionPort,
     DurableRunEventPublisher,
     PlanItem,
     ScaffoldPublisher,
@@ -33,7 +35,13 @@ from .live_events import (
     run_step,
 )
 from .state import (
+    ApprovalRejected,
+    ApprovalTimedOut,
+    ApprovalWaiterUnavailable,
     BindingUnresolved,
+    BranchVerdictInvalid,
+    DecisionAbstained,
+    DecisionPortUnavailable,
     DependencyPlan,
     GraphDeps,
     GraphState,
@@ -66,13 +74,21 @@ _TASK_EDGES: tuple[
         TaskStatus.BLOCKED,
         TaskEvent.SKIP,
         TaskStatus.SKIPPED,
-        ("ancestor_failed_or_cancelled", "run_cancelling_or_failed"),
+        (
+            "ancestor_failed_or_cancelled",
+            "run_cancelling_or_failed",
+            "arm_not_taken",
+        ),
     ),
     (
         TaskStatus.READY,
         TaskEvent.SKIP,
         TaskStatus.SKIPPED,
-        ("ancestor_failed_or_cancelled", "run_cancelling_or_failed"),
+        (
+            "ancestor_failed_or_cancelled",
+            "run_cancelling_or_failed",
+            "arm_not_taken",
+        ),
     ),
     (TaskStatus.READY, TaskEvent.DISPATCH, TaskStatus.ACTIVE, ("permit_held",)),
     (TaskStatus.ACTIVE, TaskEvent.COMPLETE, TaskStatus.DONE, ("run_running",)),
@@ -137,6 +153,212 @@ def transition_task(
 class _ToolExecution:
     output: Any
     record: dict[str, Any]
+
+
+#: Seconds an approval waits when the received step carries no timeout.
+DEFAULT_APPROVAL_TIMEOUT_S = 86_400
+
+_BRANCH_KINDS = ("exclusive", "inclusive", "parallel")
+_CONTROL_KEYS = (
+    ("branch", frozenset({"arms", "default_arm", "exhaustive", "kind"})),
+    ("join", frozenset({"branch_task_id"})),
+    ("decision", frozenset({"decision_iri", "inputs"})),
+    ("approval", frozenset({"approver_role", "timeout_s"})),
+)
+_ARM_KEYS = frozenset({"condition", "target_task_id"})
+
+
+def _control_kind(task: RunTask) -> str | None:
+    """The one control kind a received task carries, or ``None``."""
+    for kind, _ in _CONTROL_KEYS:
+        if getattr(task, kind) is not None:
+            return kind
+    return None
+
+
+@dataclass(frozen=True, slots=True)
+class _ControlExecution:
+    """A finished control step: its output and, for a branch, the taken arms."""
+
+    output: Any
+    kind: str
+    taken: tuple[str, ...] | None = None
+
+
+def arm_closure(
+    root: str,
+    nodes: Mapping[str, RunTask],
+    children: Mapping[str, list[str]],
+) -> tuple[tuple[str, ...], tuple[tuple[str, str], ...]]:
+    """The tasks a not-taken arm skips and the joins that survive it.
+
+    Starting at the arm target ``root``, every descendant is skipped except a
+    join: a join survives a skipped parent and only counts that parent as met.
+    Returns ``(skipped, edges)`` where each edge is ``(skipped_parent, join)``.
+    An arm target that is itself a join skips nothing.
+    """
+    if nodes[root].join is not None:
+        return (), ()
+    skipped: list[str] = []
+    edges: list[tuple[str, str]] = []
+    seen = {root}
+    stack = [root]
+    while stack:
+        key = stack.pop()
+        skipped.append(key)
+        for child in children[key]:
+            if nodes[child].join is not None:
+                edges.append((key, child))
+            elif child not in seen:
+                seen.add(child)
+                stack.append(child)
+    return tuple(skipped), tuple(edges)
+
+
+def _decision_inputs(task: RunTask, outputs: Mapping[str, Any]) -> dict[str, Any]:
+    """Bind each declared decision input from a direct prerequisite output."""
+    assert task.decision is not None
+    bound: dict[str, Any] = {}
+    for reference in task.decision.get("inputs") or ():
+        dependency, path = _reference_parts(reference, task.depends_on)
+        bound[path[-1] if path else dependency] = _resolve_reference(
+            reference,
+            task_id=task.task_id,
+            argument=reference,
+            outputs=outputs,
+            direct_prerequisites=task.depends_on,
+        )
+    return bound
+
+
+async def _ask(
+    decision_port: DecisionPort | None,
+    question: Any,
+    payload: Mapping[str, Any],
+    task_id: str,
+) -> Any:
+    if decision_port is None:
+        raise DecisionPortUnavailable("no host DecisionPort is bound")
+    try:
+        verdict = await decision_port(question, payload, task_id)
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:  # noqa: BLE001 - host port owns failure details
+        raise RuntimeError("decision port failed") from exc
+    if verdict.abstention is not None:
+        raise DecisionAbstained(verdict.abstention)
+    return verdict
+
+
+async def _apply_branch(
+    task: RunTask,
+    *,
+    plan_digest: str,
+    outputs: Mapping[str, Any],
+    decision_port: DecisionPort | None,
+    notify: Callable[..., Any],
+) -> _ControlExecution:
+    """Apply a branch step: ask for the verdict and name the taken arms.
+
+    A parallel split takes every arm and never calls the port. Any other kind
+    asks ``BranchSelect`` with the plan digest, the branch task id and the
+    ordered outputs of the direct prerequisites. The harness validates the
+    verdict against the declared arms and decides nothing.
+    """
+    assert task.branch is not None
+    arms = tuple(arm["target_task_id"] for arm in task.branch["arms"])
+    kind = task.branch["kind"]
+    record_id = ""
+    if kind == "parallel":
+        taken = arms
+    else:
+        payload = {
+            "plan_digest": plan_digest,
+            "branch_task_id": task.task_id,
+            "inputs": {dep: outputs[dep] for dep in task.depends_on},
+        }
+        verdict = await _ask(decision_port, "BranchSelect", payload, task.task_id)
+        taken = tuple(verdict.taken_task_ids)
+        record_id = verdict.record_id
+        if (
+            not taken
+            or len(set(taken)) != len(taken)
+            or any(target not in arms for target in taken)
+            or (kind == "exclusive" and len(taken) != 1)
+        ):
+            raise BranchVerdictInvalid(
+                f"verdict for branch {task.task_id!r} names an undeclared arm"
+            )
+    notify(
+        "branch_verdict",
+        task.task_id,
+        taken_task_ids=list(taken),
+        record_id=record_id,
+        branch_kind=kind,
+    )
+    return _ControlExecution(
+        {"taken_task_ids": list(taken), "record_id": record_id}, "branch", taken
+    )
+
+
+async def _apply_decision(
+    task: RunTask,
+    *,
+    outputs: Mapping[str, Any],
+    decision_port: DecisionPort | None,
+) -> _ControlExecution:
+    """Apply a decision step: the verdict is the step output. Never retried."""
+    assert task.decision is not None
+    payload = {
+        "decision_iri": task.decision["decision_iri"],
+        "inputs": _decision_inputs(task, outputs),
+    }
+    verdict = await _ask(decision_port, "DecisionTableEval", payload, task.task_id)
+    return _ControlExecution(verdict.outputs, "decision")
+
+
+async def _await_approval(
+    task: RunTask,
+    *,
+    run_id: str,
+    approval_waiter: ApprovalWaiter | None,
+    notify: Callable[..., Any],
+) -> _ControlExecution:
+    """Wait for the host approval outcome; the host waiter owns the timeout."""
+    assert task.approval is not None
+    if approval_waiter is None:
+        raise ApprovalWaiterUnavailable("no host ApprovalWaiter is bound")
+    role = task.approval["approver_role"]
+    timeout_s = task.approval.get("timeout_s")
+    if timeout_s is None:
+        timeout_s = DEFAULT_APPROVAL_TIMEOUT_S
+    notify(
+        "approval_wait_started",
+        task.task_id,
+        approver_role=role,
+        timeout_s=timeout_s,
+    )
+    try:
+        outcome = await approval_waiter(run_id, task.task_id, role, timeout_s)
+    except asyncio.CancelledError:
+        notify("approval_wait_ended", task.task_id, outcome="cancelled")
+        raise
+    except Exception as exc:  # noqa: BLE001 - host port owns failure details
+        notify("approval_wait_ended", task.task_id, outcome="failed")
+        raise RuntimeError("approval waiter failed") from exc
+    notify("approval_wait_ended", task.task_id, outcome=outcome.verdict)
+    if outcome.verdict == "reject":
+        raise ApprovalRejected(f"approval {task.task_id!r} was rejected")
+    if outcome.verdict == "timeout":
+        raise ApprovalTimedOut(f"approval {task.task_id!r} timed out")
+    return _ControlExecution(
+        {
+            "approver": outcome.approver,
+            "verdict": outcome.verdict,
+            "decided_at_ms": outcome.decided_at_ms,
+        },
+        "approval",
+    )
 
 
 def _task_label(task: RunTask) -> str:
@@ -437,8 +659,98 @@ def _output_text(value: Any) -> str:
     return value if isinstance(value, str) else json.dumps(value, sort_keys=True)
 
 
+def _validate_control_tasks(
+    graph: DependencyPlan,
+    nodes: Mapping[str, RunTask],
+    children: Mapping[str, list[str]],
+    *,
+    decision_port: DecisionPort | None,
+    approval_waiter: ApprovalWaiter | None,
+) -> None:
+    """Refuse malformed control steps, then missing host ports, before any task."""
+    needs_decision = False
+    needs_approval = False
+    for task in graph.tasks:
+        kinds = [kind for kind, _ in _CONTROL_KEYS if getattr(task, kind) is not None]
+        if not kinds:
+            continue
+        kind = kinds[0]
+        spec = getattr(task, kind)
+        if len(kinds) > 1 or task.call is not None:
+            raise ValueError("a control step carries one control kind and no call")
+        if not isinstance(spec, Mapping) or not set(spec) <= dict(_CONTROL_KEYS)[kind]:
+            raise ValueError(f"invalid {kind} step fields")
+        if kind == "branch":
+            arms = spec.get("arms")
+            if (
+                spec.get("kind") not in _BRANCH_KINDS
+                or not isinstance(arms, (list, tuple))
+                or not arms
+                or len(arms) > 32
+            ):
+                raise ValueError("invalid branch step")
+            targets: list[str] = []
+            for arm in arms:
+                if (
+                    not isinstance(arm, Mapping)
+                    or not set(arm) <= _ARM_KEYS
+                    or not isinstance(arm.get("target_task_id"), str)
+                    or arm["target_task_id"] not in children[task.task_id]
+                ):
+                    raise ValueError("branch arm must target a direct dependent")
+                targets.append(arm["target_task_id"])
+            default = spec.get("default_arm")
+            if len(set(targets)) != len(targets) or (
+                default is not None and default not in targets
+            ):
+                raise ValueError("branch arms must be distinct and hold the default")
+            needs_decision = needs_decision or spec["kind"] != "parallel"
+        elif kind == "join":
+            source = nodes.get(spec.get("branch_task_id", ""))
+            if source is None or source.branch is None:
+                raise ValueError("join must name a branch step")
+        elif kind == "decision":
+            references = spec.get("inputs") or ()
+            if (
+                not isinstance(spec.get("decision_iri"), str)
+                or not spec["decision_iri"]
+            ):
+                raise ValueError("decision step needs a decision IRI")
+            names: list[str] = []
+            for reference in references:
+                dependency, path = _reference_parts(reference, task.depends_on)
+                names.append(path[-1] if path else dependency)
+            if len(set(names)) != len(names):
+                raise ValueError("decision input names must be distinct")
+            needs_decision = True
+        else:
+            timeout_s = spec.get("timeout_s")
+            if (
+                not isinstance(spec.get("approver_role"), str)
+                or not spec["approver_role"]
+            ):
+                raise ValueError("approval step needs an approver role")
+            if timeout_s is not None and (type(timeout_s) is not int or timeout_s < 0):
+                raise ValueError("approval timeout must be a nonnegative integer")
+            needs_approval = True
+    if needs_decision and decision_port is None:
+        raise DecisionPortUnavailable(
+            "dependency plan contains a branch or decision step but no host "
+            "DecisionPort is bound"
+        )
+    if needs_approval and approval_waiter is None:
+        raise ApprovalWaiterUnavailable(
+            "dependency plan contains an approval step but no host "
+            "ApprovalWaiter is bound"
+        )
+
+
 def validate_dependency_plan(
-    plan: RunPlan, *, tool_caller: ToolCaller | None = None
+    plan: RunPlan,
+    *,
+    tool_caller: ToolCaller | None = None,
+    decision_port: DecisionPort | None = None,
+    approval_waiter: ApprovalWaiter | None = None,
 ) -> None:
     """Refuse malformed or over-budget plans before constructing a model."""
     graph = plan.dependency_plan
@@ -494,7 +806,11 @@ def validate_dependency_plan(
             and not isinstance(task.call, ToolStep)
         ):
             raise ValueError("invalid or duplicate dependency task")
-        if task.call is None and not task.prompt.strip():
+        if (
+            task.call is None
+            and not task.prompt.strip()
+            and _control_kind(task) is None
+        ):
             raise ValueError("prompt task must have a nonempty prompt")
         nodes[task.task_id] = task
         if task.call is not None:
@@ -539,6 +855,13 @@ def validate_dependency_plan(
         graph.output_task_id
     }:
         raise ValueError("every task must contribute to the output task")
+    _validate_control_tasks(
+        graph,
+        nodes,
+        children,
+        decision_port=decision_port,
+        approval_waiter=approval_waiter,
+    )
     if tool_tasks and tool_caller is None:
         raise ToolCallerUnavailable(
             "dependency plan contains tool steps but no host ToolCaller is bound"
@@ -559,6 +882,8 @@ async def _execute_dependency_plan(
     child_records: Any = None,
     deadline_scope: asyncio.Timeout | None = None,
     scaffold_publisher: ScaffoldPublisher | None = None,
+    decision_port: DecisionPort | None = None,
+    approval_waiter: ApprovalWaiter | None = None,
 ) -> None:
     """Refill a free slot after any successful prerequisite, not a whole wave.
 
@@ -593,19 +918,10 @@ async def _execute_dependency_plan(
     for key in completed_tasks:
         for child in children[key]:
             indegree[child] -= 1
-    ready_keys = [
-        key
-        for key, count in indegree.items()
-        if count == 0 and key not in completed_tasks
-    ]
-    for key in ready_keys:
-        # Every parent of an initially ready task is done (none exist).
-        task_state[key] = transition_task(
-            task_state[key], TaskEvent.DEPS_MET, {"all_parents_done": True}
-        )
-    ready = [order[key] for key in ready_keys]
-    heapq.heapify(ready)
+    ready: list[int] = []
     pending = set(nodes) - completed_tasks
+    # Approval steps hold no concurrency slot while they wait on the host.
+    waiting: set[str] = set()
     interrupted: BaseException | None = None
     drain_error: BaseException | None = None
     failures: list[BaseException] = []
@@ -619,6 +935,7 @@ async def _execute_dependency_plan(
     tool_completion_buffer: dict[str, _ToolExecution] = {}
     tool_record_buffer: dict[str, tuple[RunTask, dict[str, Any], int]] = {}
     tool_terminal_cursor = 0
+    tool_skipped: set[str] = set()
     step_by_task: dict[str, int] = {}
     checkpoint_acked: set[str] = set()
     publication_failed = False
@@ -768,6 +1085,10 @@ async def _execute_dependency_plan(
         released: list[str] = []
         while tool_terminal_cursor < len(tool_order):
             key = tool_order[tool_terminal_cursor]
+            if key in tool_skipped:
+                # A not-taken arm's tool never runs; the cursor passes it.
+                tool_terminal_cursor += 1
+                continue
             result = tool_completion_buffer.get(key)
             buffered = tool_terminal_buffer.get(key)
             record_info = tool_record_buffer.get(key)
@@ -862,8 +1183,32 @@ async def _execute_dependency_plan(
         return tuple(released)
 
     async def execute(task: RunTask) -> Any:
-        dependency_outputs = {dep: outputs[dep] for dep in task.depends_on}
+        # A join reads only the arms it waited for; a skipped parent has no output.
+        dependency_outputs = {
+            dep: outputs[dep] for dep in task.depends_on if dep in outputs
+        }
         task_step = step_by_task[task.task_id]
+        if task.branch is not None:
+            return await _apply_branch(
+                task,
+                plan_digest=graph.plan_id,
+                outputs=outputs,
+                decision_port=decision_port,
+                notify=event,
+            )
+        if task.decision is not None:
+            return await _apply_decision(
+                task, outputs=outputs, decision_port=decision_port
+            )
+        if task.approval is not None:
+            return await _await_approval(
+                task,
+                run_id=state.run_id,
+                approval_waiter=approval_waiter,
+                notify=event,
+            )
+        if task.join is not None and task.call is None and not task.prompt.strip():
+            return _ControlExecution(dependency_outputs, "join")
         if task.call is not None:
             assert tool_caller is not None
             started = asyncio.get_running_loop().time()
@@ -1096,12 +1441,14 @@ async def _execute_dependency_plan(
             return await flush_tool_terminals()
         output = result.output
         text = output if isinstance(output, str) else json.dumps(output, sort_keys=True)
+        control = isinstance(result, _ControlExecution)
+        history = None if control else list(result.all_messages())
         outputs[key] = text
         if key == graph.output_task_id:
             state.outputs = [text]
         if checkpoint is not None and key not in checkpoint_acked:
             sync_usage()
-            checkpoint.record_completed(key, text, list(result.all_messages()))
+            checkpoint.record_completed(key, text, history)
             checkpoint_acked.add(key)
             await checkpoint.save("completed")
         if key == graph.output_task_id:
@@ -1117,12 +1464,87 @@ async def _execute_dependency_plan(
                 # never inferred from Running.
                 await checkpoint.save("completed")
         event("task_completed", key, status="completed", output=text)
+        if isinstance(result, _ControlExecution) and result.taken is not None:
+            if nodes[key].branch["kind"] != "parallel":  # type: ignore[index]
+                apply_taken(key, result.taken)
+                # A tool that finished behind a now-skipped arm's tool in
+                # declaration order is released only after the skip.
+                return (key, *await flush_tool_terminals())
         return (key,)
+
+    def make_ready(key: str) -> None:
+        task_state[key] = transition_task(
+            task_state[key], TaskEvent.DEPS_MET, {"all_parents_done": True}
+        )
+        heapq.heappush(ready, order[key])
+
+    def skip_one(key: str, arm: str, branch: str) -> None:
+        task_state[key] = transition_task(
+            task_state[key], TaskEvent.SKIP, {"arm_not_taken": True}
+        )
+        pending.discard(key)
+        tool_skipped.add(key)
+        event(
+            "task_skipped",
+            key,
+            status="skipped",
+            not_taken_arm=arm,
+            branch_task_id=branch,
+        )
+
+    def settle_join(join: str, arm: str, branch: str) -> None:
+        """A parent of ``join`` was skipped: count it as met."""
+        if task_state[join].is_terminal:
+            return
+        indegree[join] -= 1
+        if indegree[join] > 0:
+            return
+        if all(task_state[dep] is TaskStatus.SKIPPED for dep in nodes[join].depends_on):
+            # Every arm into this join was not taken, so it is not taken.
+            skip_one(join, arm, branch)
+            for child in children[join]:
+                if nodes[child].join is not None:
+                    settle_join(child, arm, branch)
+                else:
+                    skip_arm(child, branch, arm)
+        else:
+            make_ready(join)
+
+    def skip_arm(root: str, branch: str, arm: str | None = None) -> None:
+        """Skip everything only a not-taken arm reaches; joins survive it."""
+        skipped, edges = arm_closure(root, nodes, children)
+        fresh = [key for key in skipped if not task_state[key].is_terminal]
+        for key in fresh:
+            skip_one(key, arm or root, branch)
+        for parent, join in edges:
+            if parent in fresh:
+                settle_join(join, arm or root, branch)
+
+    def apply_taken(branch: str, taken: tuple[str, ...]) -> None:
+        """Skip every declared arm the verdict did not take."""
+        spec = nodes[branch].branch
+        assert spec is not None
+        for arm in spec["arms"]:
+            target = arm["target_task_id"]
+            if target not in taken:
+                skip_arm(target, branch)
+
+    # A restored branch re-applies its recorded verdict before anything starts.
+    for key in sorted(completed_tasks, key=order.__getitem__):
+        spec = nodes[key].branch
+        if spec is not None and spec["kind"] != "parallel":
+            apply_taken(key, tuple(json.loads(outputs[key])["taken_task_ids"]))
+    for key in [
+        key
+        for key, count in indegree.items()
+        if count == 0 and task_state[key] is TaskStatus.BLOCKED
+    ]:
+        make_ready(key)
 
     try:
         await progress({key: "done" for key in completed_tasks})
         while ready or active:
-            while ready and len(active) < graph.max_concurrency:
+            while ready and len(active) - len(waiting) < graph.max_concurrency:
                 node = graph.tasks[heapq.heappop(ready)]
                 pending.remove(node.task_id)
                 state.step += 1
@@ -1136,6 +1558,8 @@ async def _execute_dependency_plan(
                     TaskEvent.DISPATCH,
                     {"permit_held": True},
                 )
+                if node.approval is not None:
+                    waiting.add(node.task_id)
                 active[node.task_id] = asyncio.create_task(
                     execute(node), name=f"run:{state.run_id}:task:{node.task_id}"
                 )
@@ -1149,6 +1573,7 @@ async def _execute_dependency_plan(
                 key=order.__getitem__,
             ):
                 task = active.pop(key)
+                waiting.discard(key)
                 try:
                     result = task.result()
                 except asyncio.CancelledError as exc:
@@ -1199,15 +1624,13 @@ async def _execute_dependency_plan(
                                 state.status, RunEvent.STOP_REQUESTED
                             )
                         for child in children[released_key]:
+                            if task_state[child].is_terminal:
+                                continue  # a not-taken arm target
                             indegree[child] -= 1
                             if indegree[child] == 0:
-                                # Every parent of a released child is done.
-                                task_state[child] = transition_task(
-                                    task_state[child],
-                                    TaskEvent.DEPS_MET,
-                                    {"all_parents_done": True},
-                                )
-                                heapq.heappush(ready, order[child])
+                                # Every parent of a released child is done
+                                # or a skipped arm the join does not wait for.
+                                make_ready(child)
             if failures:
                 if len(failures) > 1:
                     failures[0].all_failures = tuple(failures)  # type: ignore[attr-defined]
@@ -1327,17 +1750,20 @@ async def iterate_dependency_plan(
     event_publisher: DurableRunEventPublisher | None = None,
     child_records: Any = None,
     scaffold_publisher: ScaffoldPublisher | None = None,
+    decision_port: DecisionPort | None = None,
+    approval_waiter: ApprovalWaiter | None = None,
 ) -> AsyncGenerator[dict[str, Any], None]:
     """Stream public events without making child dispatch wait for a viewer.
 
-    Each declared task emits at most start + terminal (or only blocked), so a
+    Each declared task emits at most four events (start, a verdict or the two
+    approval wait events, and its terminal; or only blocked or skipped), so a
     finite queue sized to that invariant cannot block execution. There is one
     driver task, never a task per pending node or per event.
     """
     graph = plan.dependency_plan
     assert graph is not None
     events: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue(
-        maxsize=2 * len(graph.tasks) + 1
+        maxsize=4 * len(graph.tasks) + 1
     )
 
     def enqueue(*args: Any, **kwargs: Any) -> dict[str, Any]:
@@ -1365,6 +1791,8 @@ async def iterate_dependency_plan(
                     child_records,
                     deadline_scope=scope,
                     scaffold_publisher=scaffold_publisher,
+                    decision_port=decision_port,
+                    approval_waiter=approval_waiter,
                 )
         finally:
             events.put_nowait(None)

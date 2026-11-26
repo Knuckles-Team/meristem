@@ -362,6 +362,34 @@ class ToolCallerUnavailable(RuntimeError):
     """A tool-step plan was received without a host-bound caller."""
 
 
+class DecisionPortUnavailable(RuntimeError):
+    """A branch or decision step was received without a host DecisionPort."""
+
+
+class ApprovalWaiterUnavailable(RuntimeError):
+    """An approval step was received without a host ApprovalWaiter."""
+
+
+class BranchVerdictInvalid(RuntimeError):
+    """A branch verdict named an arm the branch step does not declare."""
+
+
+class ApprovalRejected(RuntimeError):
+    """The approver rejected an approval step."""
+
+
+class ApprovalTimedOut(RuntimeError):
+    """An approval step ended on its received timeout."""
+
+
+class DecisionAbstained(RuntimeError):
+    """The engine abstained on a control step; ``code`` is its refusal code."""
+
+    def __init__(self, code: str) -> None:
+        super().__init__(code)
+        self.code = code
+
+
 class BindingUnresolved(RuntimeError):
     """A tool-step argument could not resolve from a completed prerequisite."""
 
@@ -748,6 +776,12 @@ __all__ = [
     "TaskStatus",
     "TaskTransitionRefused",
     "ToolCallerUnavailable",
+    "DecisionPortUnavailable",
+    "ApprovalWaiterUnavailable",
+    "BranchVerdictInvalid",
+    "ApprovalRejected",
+    "ApprovalTimedOut",
+    "DecisionAbstained",
     "ToolCallFailed",
     "ToolCallRefused",
     "ToolStep",

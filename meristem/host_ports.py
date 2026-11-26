@@ -260,6 +260,51 @@ RunDecisionProvider = Callable[[Any], Any]
 ToolCaller = Callable[[str, str, Mapping[str, Any], str], Awaitable[ToolStepResult]]
 """``(server, tool, arguments, task_id) -> ToolStepResult`` for one run."""
 
+
+DecisionQuestion = Literal["BranchSelect", "DecisionTableEval"]
+
+
+@dataclass(frozen=True, slots=True)
+class DecisionVerdict:
+    """The engine's answer to one control-step question, as the host relays it.
+
+    ``taken_task_ids`` answers ``BranchSelect``; ``outputs`` answers
+    ``DecisionTableEval``. ``abstention`` carries the engine refusal code
+    (for example ``BRANCH_NO_ARM`` or ``DMN_NO_RULE_MATCHED``) when the engine
+    declined to decide; the harness then fails the step and applies nothing.
+    ``record_id`` names the engine's decision record.
+    """
+
+    record_id: str = ""
+    taken_task_ids: tuple[str, ...] = ()
+    outputs: Any = None
+    abstention: str | None = None
+
+
+ApprovalVerdict = Literal["approve", "reject", "timeout"]
+
+
+@dataclass(frozen=True, slots=True)
+class ApprovalOutcome:
+    """How one approval wait ended, as the host's waiter reports it."""
+
+    verdict: ApprovalVerdict
+    approver: str = ""
+    decided_at_ms: int = 0
+
+
+DecisionPort = Callable[
+    [DecisionQuestion, Mapping[str, Any], str], Awaitable[DecisionVerdict]
+]
+"""``(question, payload, task_id) -> DecisionVerdict`` for one control step."""
+
+ApprovalWaiter = Callable[[str, str, str, int], Awaitable[ApprovalOutcome]]
+"""``(run_id, task_id, approver_role, timeout_s) -> ApprovalOutcome``.
+
+The waiter owns its timeout on a clock or event the host injects; the harness
+never sleeps for it. Cancelling the awaiting task cancels the wait.
+"""
+
 ModelProvider = Callable[[str], Any]
 """``(model_id) -> pydantic-ai Model`` with the host's credentials attached."""
 
@@ -588,6 +633,8 @@ class HostPorts:
     identity: DelegatedIdentityProvider | None = None
     decide: RunDecisionProvider | None = None
     caller: ToolCaller | None = None
+    decision: DecisionPort | None = None
+    approval: ApprovalWaiter | None = None
     models: ModelProvider | None = None
     events: RunEventSink | None = None
     durable_run_events: DurableRunEventFactory | None = None
@@ -616,6 +663,14 @@ class HostPorts:
     def tool_caller(self) -> ToolCaller | None:
         """Return the host-bound dependency caller, or ``None`` without a host."""
         return self.caller
+
+    def decision_port(self) -> DecisionPort | None:
+        """The host-bound control-step decision port, or ``None`` without a host."""
+        return self.decision
+
+    def approval_waiter(self) -> ApprovalWaiter | None:
+        """The host-bound approval waiter, or ``None`` without a host."""
+        return self.approval
 
     def engine_decision_port(self) -> EngineDecisionPort | None:
         """The host-bound engine decision port, or ``None`` without a host.
