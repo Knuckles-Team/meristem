@@ -19,6 +19,7 @@
         "meristem/graph/harness_cycle.py",
         "meristem/graph/hosted_run.py",
         "meristem/graph/live_events.py",
+        "meristem/graph/media.py",
         "meristem/graph/metrics.py",
         "meristem/graph/render_receipt.py",
         "meristem/graph/runner.py",

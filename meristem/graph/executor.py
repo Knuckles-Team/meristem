@@ -40,6 +40,7 @@ from .checkpoint import RunCheckpoint
 from .child_public_records import child_records_for
 from .dependency import iterate_dependency_plan, validate_dependency_plan
 from .live_events import run_step
+from .media import MediaAdmission, apply_policy, reserve_images, resolve_refs
 from .metrics import MeasuredModel, RunMetrics
 from .state import (
     GraphDeps,
@@ -189,10 +190,10 @@ def _event(
     return event
 
 
-def _attachment_input(request: RunRequest, plan: RunPlan) -> list[str | BinaryContent]:
+def _attachment_input(request: RunRequest, plan: RunPlan) -> MediaAdmission:
     """Enforce the received model input grant and limits without widening them."""
     if not request.attachments:
-        return []
+        return MediaAdmission()
     for limit in (plan.budget.max_attachments, plan.budget.max_attachment_bytes):
         if type(limit) is not int or limit < 0:
             raise ValueError("invalid attachment budget")
@@ -203,7 +204,10 @@ def _attachment_input(request: RunRequest, plan: RunPlan) -> list[str | BinaryCo
     for part in request.attachments:
         if not isinstance(part, BinaryContent) or not isinstance(part.data, bytes):
             raise ValueError("attachments must be inline binary content")
-        if part.media_type not in plan.input_media_types:
+        if (
+            part.media_type not in plan.input_media_types
+            and not part.media_type.startswith("image/")
+        ):
             raise ValueError("attachment media type is not admitted for this model")
         if part.media_type not in (
             "text/plain",
@@ -218,7 +222,9 @@ def _attachment_input(request: RunRequest, plan: RunPlan) -> list[str | BinaryCo
         content.append(
             part.data.decode("utf-8") if part.media_type == "text/plain" else part
         )
-    return content
+    admission = apply_policy(content, plan)
+    reserve_images(admission, plan)
+    return admission
 
 
 async def iterate_run(
@@ -332,7 +338,15 @@ async def iterate_run(
             raise ValueError("dependency-plan conversation history is unavailable")
         tool_caller = request.ports.tool_caller()
         validate_dependency_plan(run_plan, tool_caller=tool_caller)
-        attachments = _attachment_input(request, run_plan)
+        refs = request.metadata.get("media_refs")
+        if refs and not request.attachments:
+            request = replace(
+                request,
+                attachments=tuple(await resolve_refs(refs, request.ports)),
+            )
+        admission = _attachment_input(request, run_plan)
+        attachments = admission.parts
+        state.media_fallbacks = admission.fallbacks
         if run_plan.harness.plan_scaffold == "on":
             state.scaffold = host_ports.PlanState()
         lifecycle = (
@@ -382,6 +396,7 @@ async def iterate_run(
                 shared_execution.require(run_plan.budget)
             if checkpoint is not None:
                 checkpoint.before_restored_content = restore_search_state
+                checkpoint.media_resolver = request.ports.media_resolver
                 await checkpoint.restore()
                 if checkpoint.restored:
                     # A current-run snapshot is authoritative.  It carries
@@ -450,6 +465,10 @@ async def iterate_run(
                 if run_plan.dependency_plan is not None
                 else len(run_plan.steps),
             )
+            for attached in admission.attached:
+                yield emit(state, "media_attached", **attached)
+            if admission.fallbacks:
+                yield emit(state, "media_fallback", count=admission.fallbacks)
             # A terminal checkpoint - or a restored serial run with no
             # admitted steps left - is already the run's result.  Do not
             # rebuild a model or bind tool effects on restore.
@@ -700,6 +719,7 @@ def _result(state: GraphState) -> dict[str, Any]:
         usage=dict(state.usage),
         error=state.error,
         metrics=state.metrics.snapshot(),
+        media_fallbacks=state.media_fallbacks,
     ).as_dict()
 
 

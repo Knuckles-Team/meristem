@@ -8,6 +8,7 @@ made visible to the run event stream.
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import time
@@ -22,6 +23,7 @@ from pydantic_ai.usage import RunUsage
 
 from meristem.host_ports import RunCheckpointPort
 
+from .media import descriptor as media_descriptor
 from .state import DependencyPlan, GraphState, RunPlan, RunStatus, TaskStatus
 
 MAX_CHECKPOINT_BYTES = 1_048_576
@@ -118,13 +120,7 @@ def _attachment_descriptor(attachments: list[Any]) -> list[dict[str, Any]]:
             raise CheckpointUnavailable(
                 "checkpoint attachment representation is invalid"
             )
-        descriptor.append(
-            {
-                "media_type": media_type,
-                "bytes": len(raw),
-                "digest": hashlib.sha256(raw).hexdigest(),
-            }
-        )
+        descriptor.append(media_descriptor(raw, media_type))
     return descriptor
 
 
@@ -184,6 +180,44 @@ def _usage_values(usage: dict[str, int]) -> dict[str, int]:
     return dict(usage)
 
 
+DIGEST_KEY = "meristem_digest"
+
+
+def _strip_media(value: Any) -> Any:
+    """Replace each binary part's bytes with its digest; a checkpoint holds none."""
+    if isinstance(value, list):
+        return [_strip_media(item) for item in value]
+    if not isinstance(value, dict):
+        return value
+    if value.get("kind") == "binary" and isinstance(value.get("data"), str):
+        raw = base64.b64decode(value["data"])
+        meta = dict(value.get("vendor_metadata") or {})
+        meta[DIGEST_KEY] = hashlib.sha256(raw).hexdigest()
+        return {**value, "data": "", "vendor_metadata": meta}
+    return {key: _strip_media(item) for key, item in value.items()}
+
+
+async def _restore_media(value: Any, resolver: Any) -> Any:
+    """Resolve each stripped binary part by digest; refuse ``media_unavailable``."""
+    if isinstance(value, list):
+        return [await _restore_media(item, resolver) for item in value]
+    if not isinstance(value, dict):
+        return value
+    meta = value.get("vendor_metadata")
+    if value.get("kind") == "binary" and isinstance(meta, dict) and DIGEST_KEY in meta:
+        digest = str(meta[DIGEST_KEY])
+        raw = await resolver(digest) if resolver is not None else None
+        if not isinstance(raw, bytes) or hashlib.sha256(raw).hexdigest() != digest:
+            raise CheckpointUnavailable("media_unavailable")
+        meta = {k: v for k, v in meta.items() if k != DIGEST_KEY}
+        return {
+            **value,
+            "data": base64.b64encode(raw).decode(),
+            "vendor_metadata": meta or None,
+        }
+    return {key: await _restore_media(item, resolver) for key, item in value.items()}
+
+
 def _messages(value: Any) -> list[Any]:
     try:
         return ModelMessagesTypeAdapter.validate_python(value)
@@ -210,6 +244,7 @@ class RunCheckpoint:
         self.elapsed = 0.0
         self.started = time.monotonic()
         self.restored = False
+        self.media_resolver: Callable[[str], Awaitable[bytes | None]] | None = None
         self.before_restored_content: Callable[[], Awaitable[None]] | None = None
         identity = getattr(port, "admission_identity", None)
         if not isinstance(identity, str) or not identity.strip():
@@ -298,6 +333,11 @@ class RunCheckpoint:
             # Search state first: a compacted summary stays unused until the
             # engine's four digests match (R034.2).
             await self.before_restored_content()
+        saved.messages = await _restore_media(saved.messages, self.media_resolver)
+        saved.task_messages = {
+            key: await _restore_media(value, self.media_resolver)
+            for key, value in saved.task_messages.items()
+        }
         self.history = _messages(saved.messages)
         self.task_histories = {
             key: _messages(value) for key, value in saved.task_messages.items()
@@ -480,9 +520,13 @@ class RunCheckpoint:
             phase=phase,
             task_states=dict(self.task_states),
             next_step=next_step,
-            messages=ModelMessagesTypeAdapter.dump_python(self.history, mode="json"),
+            messages=_strip_media(
+                ModelMessagesTypeAdapter.dump_python(self.history, mode="json")
+            ),
             task_messages={
-                key: ModelMessagesTypeAdapter.dump_python(value, mode="json")
+                key: _strip_media(
+                    ModelMessagesTypeAdapter.dump_python(value, mode="json")
+                )
                 for key, value in self.task_histories.items()
             },
             dependency_outputs=self.dependency_outputs,

@@ -496,6 +496,7 @@ class RunPlan:
         default=None, repr=False, compare=False
     )
     input_media_types: tuple[str, ...] = ()
+    media_fallback: Literal["refuse", "text_placeholder"] = "refuse"
     dependency_plan: DependencyPlan | None = None
     initial_usage: RunUsage = field(default_factory=RunUsage)
     initial_elapsed_seconds: float = 0.0
@@ -532,6 +533,8 @@ class GraphState:
     received depth for one curriculum submission (R028.1)."""
     compiled_context: str | None = None
     """The compiled fact prose the next model step receives (R036.2)."""
+    media_fallbacks: int = 0
+    """Images the received fallback replaced with a placeholder (R017.2)."""
     consumer_results: dict[str, Any] = field(default_factory=dict)
     """What admitted consumer steps received, by consumer name."""
 
@@ -566,6 +569,7 @@ class RunResult:
     error: str | None = None
     execution_mode: Literal["direct", "graph"] = "graph"
     metrics: Mapping[str, Any] = field(default_factory=dict)
+    media_fallbacks: int = 0
 
     def as_dict(self) -> dict[str, Any]:
         """The public wire form; the status travels as its enum value."""
@@ -578,6 +582,11 @@ class RunResult:
             "error": self.error,
             "execution_mode": self.execution_mode,
             "metrics": dict(self.metrics),
+            **(
+                {"media_fallbacks": self.media_fallbacks}
+                if self.media_fallbacks
+                else {}
+            ),
         }
 
 
