@@ -17,6 +17,7 @@ from typing import Any
 from meristem.harness.run_lifecycle import ConsumerRefused
 from meristem.host_ports import StudyContentReader
 
+STUDY_SOURCE_KINDS = frozenset({"filesystem", "graph_ref", "graph_ingested"})
 GRAPH_FIELDS = ("tenant_id", "graph", "node", "revision", "content_digest")
 _HEX64 = re.compile(r"[0-9a-f]{64}")
 
@@ -74,4 +75,10 @@ async def admit_study_sources(
     return tuple(admitted)
 
 
-__all__ = ["FilesystemSource", "GraphRefSource", "StudySource", "admit_study_sources"]
+__all__ = [
+    "STUDY_SOURCE_KINDS",
+    "FilesystemSource",
+    "GraphRefSource",
+    "StudySource",
+    "admit_study_sources",
+]

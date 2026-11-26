@@ -64,3 +64,24 @@ async def test_graph_ingested_source_accepted():
 async def test_refusal_codes(source, code):
     with pytest.raises(ConsumerRefused, match=code):
         await admit_study_sources([source], reader)
+
+
+@pytest.mark.spec("MERISTEM-RUN-R003.1")
+async def test_run_refuses_a_mismatched_graph_source_before_any_step():
+    import ports_support as support
+    from pydantic_ai.models.test import TestModel
+
+    from meristem.graph import RunPlan, run
+
+    async def tampered(tenant, graph, node, revision):
+        return b"other body"
+
+    support.PORTS.study_content = tampered
+    plan = RunPlan(
+        model=TestModel(custom_output_text="ok"),
+        steps=("q",),
+        study_sources=(graph_source(),),
+    )
+    result = await run(support.request(task="t"), plan=plan)
+    assert result.status.value == "failed"
+    assert "STUDY_SOURCE_DIGEST_MISMATCH" in (result.error or "")
