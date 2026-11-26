@@ -334,7 +334,7 @@ class WriteOnlyEngine(RecordedEnginePort):
 async def test_manifest_binds_spans_and_sources(events):
     bind_caller()
     walk = {"sections": [{"path": "a.py", "source_revision": "rev1"}]}
-    plan = tool_plan(["walkthrough"], [("open", {"path": "a.py"})])
+    plan = tool_plan(["walkthrough"], [("open", {"path": "a.py"}), ("close", {})])
     accepting = WriteOnlyEngine(outcome="committed", record_digest="m-1")
     support.register_engine_decision_port(accepting)
     result = await execute(plan, {"walkthrough": walk})
@@ -397,3 +397,30 @@ async def test_run_trace_reaches_the_port_as_plain_data():
     support.PORTS.run_trace = None
     refused = await execute(plan)
     assert "run_trace_unavailable" in refused["error"]
+
+
+@pytest.mark.spec("MERISTEM-HARNESS-CYCLE-R075")
+@pytest.mark.spec("MERISTEM-HARNESS-CYCLE-R056")
+async def test_a_finish_gate_refusal_on_a_dependency_plan_ends_failed_with_the_code():
+    called = bind_caller()
+    request = {"batch": "b1"}
+    engine(
+        answer(
+            "VerifyIngestReadback",
+            request,
+            payload={"verdict": "mismatched", "code": "READBACK_DIGEST"},
+        )
+    )
+    plan = tool_plan(["ingest_readback"], [("ingest", {}), ("finish", {})])
+    result = await execute(plan, {"ingest_readback": request})
+    assert called == ["ingest", "finish"]
+    assert result["status"] == "failed" and "READBACK_DIGEST" in result["error"]
+    bind_confirm(ConfirmVerdict("rejected", ref="v-2"))
+    held = {"held_item": {"item_ref": "i", "item_kind": "program"}}
+    kept = await execute(tool_plan(["held_item"], [("a", {})]), held)
+    assert kept["status"] == "completed" and not kept["error"]
+    bind_confirm(RuntimeError("down"))
+    refused = await execute(tool_plan(["held_item"], [("a", {})]), held)
+    assert (
+        refused["status"] == "failed" and "HELD_ITEM_CONFIRM_FAILED" in refused["error"]
+    )

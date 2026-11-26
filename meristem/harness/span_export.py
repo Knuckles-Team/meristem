@@ -18,14 +18,22 @@ TERMINAL_KINDS = frozenset({"task_completed", "task_failed"})
 
 
 def build_spans(
-    run_id: str, events: Sequence[Mapping[str, Any]]
+    run_id: str,
+    events: Sequence[Mapping[str, Any]],
+    tool_trace: Sequence[Mapping[str, Any]] = (),
 ) -> list[dict[str, Any]]:
-    """One span per terminal task event, correlated to the run that owns it."""
+    """One span per agent step event and per recorded tool step of the run.
+
+    The output tool's terminal event follows the finish gate, so tool spans
+    come from the run's tool trace, which is complete when the gate runs.
+    """
     spans: list[dict[str, Any]] = []
     for event in events:
         if event.get("type") not in TERMINAL_KINDS or event.get("run_id") != run_id:
             continue
-        is_tool = "tool_step" in event
+        if "tool_step" in event:
+            continue
+        is_tool = False
         task_id = event["task_id"]
         spans.append(
             {
@@ -38,6 +46,20 @@ def build_spans(
                 "name": event.get("tool") if is_tool else task_id,
                 "outcome": event.get("status", "failed"),
                 "sequence": event["sequence"],
+            }
+        )
+    for index, step in enumerate(tool_trace):
+        spans.append(
+            {
+                "span_id": f"{run_id}:tool:{index}",
+                "run_id": run_id,
+                "parent_run_id": run_id,
+                "kind": "tool",
+                "tool_call_id": step["task_id"],
+                "child_agent": None,
+                "name": step["name"],
+                "outcome": step["outcome"],
+                "sequence": index,
             }
         )
     return spans

@@ -22,6 +22,7 @@ POINTS: tuple[str, ...] = (
     "on_start",
     "before_step",
     "after_step",
+    "before_finish",
     "on_success",
     "on_end",
 )
@@ -94,6 +95,14 @@ class RunLifecycle:
     async def after_step(self, state: Any, step: Any) -> None:
         """Run the admitted ``after_step`` steps after one output."""
         await self._dispatch("after_step", state, step)
+
+    async def before_finish(self, state: Any) -> None:
+        """Run the admitted ``before_finish`` steps before the run completes.
+
+        A refusal here fails the run through the normal edge; the run is never
+        ``completed`` with an error.
+        """
+        await self._dispatch("before_finish", state)
 
     async def on_success(self, state: Any) -> None:
         """Run the admitted ``on_success`` steps at terminal completed."""

@@ -10,7 +10,7 @@ request and the graph configuration only.
 from __future__ import annotations
 
 import uuid
-from collections.abc import Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from enum import Enum
 from types import MappingProxyType
@@ -547,8 +547,17 @@ class GraphState:
     """The ordered tool steps of the run: name, args digest, outcome, timing."""
     event_log: list[dict[str, Any]] | None = None
     """Every emitted run event, kept only when an admitted consumer needs it."""
+    finish_gate: Callable[[Any], Awaitable[None]] | None = None
+    """The lifecycle ``before_finish`` hook; it runs once, before ``completed``."""
+    finish_gated: bool = False
     untrusted_seen: bool = False
     """A tool result has entered the run, so later risky tools need admission."""
+
+    async def gate_finish(self) -> None:
+        """Run the finish gates once; a refusal propagates and fails the run."""
+        if self.finish_gate is not None and not self.finish_gated:
+            self.finish_gated = True
+            await self.finish_gate(self)
 
     def note_record(self, kind: str, digest: str) -> None:
         """Keep the digest of the decision a consumer applied (R004.1)."""

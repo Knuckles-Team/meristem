@@ -73,6 +73,9 @@ def bind_caller() -> list[str]:
 async def execute(plan: RunPlan, metadata: Mapping[str, Any] | None = None) -> dict:
     """Run ``plan`` through ``execute_graph`` with this test's bound ports."""
     support.register_run_decision_provider(lambda _request: plan)
-    return await execute_graph(
+    result = await execute_graph(
         None, {}, "q", run_id="r1", metadata=metadata, ports=support.PORTS
     )
+    # The run-state machine: a completed run never carries an error.
+    assert not (result["status"] == "completed" and result["error"])
+    return result

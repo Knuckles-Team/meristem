@@ -399,6 +399,7 @@ async def iterate_run(
                     "tool_classes", {}
                 ),
             )
+        state.finish_gate = lifecycle.before_finish
         if lifecycle.enabled("step_usage"):
             state.metrics.bind_usage(state.pending_usage.append, run_id=request.run_id)
         if run_plan.lifecycle is None:
@@ -741,6 +742,7 @@ async def iterate_run(
                                     # the run finishes now that the step's
                                     # consumer steps have run, so a consumer
                                     # refusal can still fail the run.
+                                    await state.gate_finish()
                                     state.status = transition(
                                         state.status,
                                         RunEvent.FINISH,
@@ -775,6 +777,7 @@ async def iterate_run(
         return
     try:
         if state.status is RunStatus.RUNNING:
+            await state.gate_finish()
             state.status = transition(
                 state.status, RunEvent.FINISH, {"output_task_complete": True}
             )
