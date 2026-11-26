@@ -32,6 +32,7 @@
         "meristem/harness/command_file.py",
         "meristem/harness/constraint_engine.py",
         "meristem/harness/context_prose.py",
+        "meristem/harness/default_consumers.py",
         "meristem/harness/contract_validator.py",
         "meristem/harness/conversation_history.py",
         "meristem/harness/critique.py",

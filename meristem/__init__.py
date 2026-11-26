@@ -38,7 +38,16 @@ def __getattr__(name: str) -> Any:
         from meristem import graph
 
         return getattr(graph, name)
+    if name == "environment_declarations":
+        from meristem import host_ports
+
+        return host_ports.environment_declarations
     raise AttributeError(f"module 'meristem' has no attribute {name!r}")
 
 
-__all__ = ["PUBLIC_HOST_MODULES", "__version__", *sorted(_GRAPH_EXPORTS)]
+__all__ = [
+    "PUBLIC_HOST_MODULES",
+    "__version__",
+    "environment_declarations",
+    *sorted(_GRAPH_EXPORTS),
+]

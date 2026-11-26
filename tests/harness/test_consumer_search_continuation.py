@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 
 import pytest
@@ -29,14 +30,19 @@ def _document(state=STATE, revision=1):
 
 
 def _save_params(revision=1):
+    content = _document(revision=revision)
     return {
         "request": {
-            "action": "push",
+            "action": {
+                "action": "submit",
+                "content": content,
+                "content_digest": hashlib.sha256(content.encode()).hexdigest(),
+                "expected_revision": revision - 1 or None,
+            },
             "doc_id": "d1",
             "doc_kind": "search_state",
             "request_id": "q1",
         },
-        "content": _document(revision=revision),
     }
 
 

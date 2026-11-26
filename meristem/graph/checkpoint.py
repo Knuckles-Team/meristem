@@ -11,7 +11,7 @@ from __future__ import annotations
 import hashlib
 import json
 import time
-from collections.abc import Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import asdict
 from typing import Any, Literal
 
@@ -210,6 +210,7 @@ class RunCheckpoint:
         self.elapsed = 0.0
         self.started = time.monotonic()
         self.restored = False
+        self.before_restored_content: Callable[[], Awaitable[None]] | None = None
         identity = getattr(port, "admission_identity", None)
         if not isinstance(identity, str) or not identity.strip():
             raise CheckpointUnavailable("checkpoint admission identity is unavailable")
@@ -293,6 +294,10 @@ class RunCheckpoint:
                 "checkpoint dependency outputs are invalid"
             ) from None
         self._validate_shape(saved)
+        if self.before_restored_content is not None:
+            # Search state first: a compacted summary stays unused until the
+            # engine's four digests match (R034.2).
+            await self.before_restored_content()
         self.history = _messages(saved.messages)
         self.task_histories = {
             key: _messages(value) for key, value in saved.task_messages.items()
