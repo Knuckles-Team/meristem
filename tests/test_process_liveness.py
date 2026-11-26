@@ -12,9 +12,12 @@ from support.journey import execute
 from support.recorded_engine import RecordedEnginePort
 
 from meristem.graph import HarnessConfig, RunPlan
-from meristem.harness.run_lifecycle import ConsumerRefused
 from meristem.host_ports import ConfirmVerdict, EngineAnswer
-from meristem.runtime.liveness import LivenessMonitor, liveness_interval
+from meristem.runtime.liveness import (
+    LivenessMonitor,
+    LivenessRefused,
+    liveness_interval,
+)
 
 
 class Process:
@@ -104,11 +107,11 @@ async def test_evidence_is_run_bound_and_terminate_refuses_mismatch():
 
     monitor = LivenessMonitor(engine, admit, [keep, other], run_id="r1", interval_s=30)
     for run_id, process_id in (("r2", "p1"), ("r1", "ghost")):
-        with pytest.raises(ConsumerRefused, match="PROCESS_MISMATCH"):
+        with pytest.raises(LivenessRefused, match="PROCESS_MISMATCH"):
             await monitor.terminate(run_id, process_id)
     await monitor.terminate("r1", "p1")
     assert (keep.killed, other.killed) == (1, 0)
-    with pytest.raises(ConsumerRefused, match="PROCESS_MISMATCH"):
+    with pytest.raises(LivenessRefused, match="PROCESS_MISMATCH"):
         await monitor.terminate("r1", "p1")
 
 

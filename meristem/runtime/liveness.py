@@ -10,17 +10,22 @@ event; the monitor never sleeps and decides nothing.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from typing import Any
 
-from meristem.harness import engine_step
-from meristem.harness.run_lifecycle import ConsumerRefused
-from meristem.host_ports import (
-    EngineDecisionPort,
-    LivenessWait,
-    PlanConfirmer,
-    SandboxProcess,
-)
+from meristem.host_ports import LivenessWait, PlanConfirmer, SandboxProcess
+
+#: Logs one evidence record through ``DecisionLog`` and returns the engine payload.
+EvidenceLog = Callable[[Mapping[str, Any]], Awaitable[Mapping[str, Any]]]
+
+
+class LivenessRefused(RuntimeError):
+    """The monitor refused with a closed code; the run fails closed with it."""
+
+    def __init__(self, code: str) -> None:
+        self.code = code
+        super().__init__(code)
+
 
 #: ``knob harness.liveness_interval``: fallback and closed range, in seconds.
 DEFAULT_INTERVAL_S = 30.0
@@ -42,35 +47,31 @@ class LivenessMonitor:
 
     def __init__(
         self,
-        port: EngineDecisionPort | None,
+        log: EvidenceLog,
         confirm: PlanConfirmer | None,
         processes: Sequence[SandboxProcess],
         *,
         run_id: str,
         interval_s: float,
     ) -> None:
-        self._port = port
+        self._log = log
         self._confirm = confirm
         self._bound: dict[str, SandboxProcess] = {p.process_id: p for p in processes}
         self.run_id = run_id
         self.interval_s = interval_s
-        self.refusal: ConsumerRefused | None = None
+        self.refusal: LivenessRefused | None = None
 
     async def evidence_once(self) -> None:
         """Log one evidence record per bound process and apply a terminate verdict."""
         for process_id, process in list(self._bound.items()):
-            answer = await engine_step.record(
-                self._port,
-                "Evaluate",
+            verdict = await self._log(
                 {
                     "kind": "liveness",
                     "run_id": self.run_id,
                     "process_id": process_id,
                     "alive": await process.alive(),
-                },
-                run_ref=self.run_id,
+                }
             )
-            verdict: Mapping[str, Any] = answer.payload
             if verdict.get("verdict") == "terminate":
                 await self.terminate(self.run_id, verdict.get("process_id", process_id))
 
@@ -78,9 +79,9 @@ class LivenessMonitor:
         """Kill exactly ``process_id`` of this run once the host admits it."""
         process = self._bound.get(process_id)
         if run_id != self.run_id or process is None:
-            raise ConsumerRefused("PROCESS_MISMATCH")
+            raise LivenessRefused("PROCESS_MISMATCH")
         if self._confirm is None:
-            raise ConsumerRefused("PROCESS_TERMINATE_CONFIRM_UNAVAILABLE")
+            raise LivenessRefused("PROCESS_TERMINATE_CONFIRM_UNAVAILABLE")
         try:
             answer = await self._confirm(
                 "process_terminate",
@@ -92,9 +93,9 @@ class LivenessMonitor:
                 run_id,
             )
         except Exception as exc:  # noqa: BLE001 - any refusal is a deny
-            raise ConsumerRefused("PROCESS_TERMINATE_DENIED") from exc
+            raise LivenessRefused("PROCESS_TERMINATE_DENIED") from exc
         if answer.refusal_code is not None or answer.verdict != "admit":
-            raise ConsumerRefused(answer.refusal_code or "PROCESS_TERMINATE_DENIED")
+            raise LivenessRefused(answer.refusal_code or "PROCESS_TERMINATE_DENIED")
         del self._bound[process_id]
         await process.kill()
 
@@ -104,13 +105,15 @@ class LivenessMonitor:
             while True:
                 await wait(self.interval_s)
                 await self.evidence_once()
-        except ConsumerRefused as refusal:
+        except LivenessRefused as refusal:
             self.refusal = refusal  # the run fails closed at its finish gate
         except Exception as exc:  # noqa: BLE001 - a failed round is a refusal
-            self.refusal = ConsumerRefused(type(exc).__name__)
+            self.refusal = LivenessRefused(type(exc).__name__)
 
 
 __all__ = [
+    "EvidenceLog",
+    "LivenessRefused",
     "DEFAULT_INTERVAL_S",
     "MAX_INTERVAL_S",
     "MIN_INTERVAL_S",

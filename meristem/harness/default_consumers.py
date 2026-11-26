@@ -13,6 +13,7 @@ from collections.abc import Awaitable, Callable
 from time import perf_counter_ns
 from typing import Any
 
+from meristem.harness import engine_step
 from meristem.harness.certification import submit_certification_receipt
 from meristem.harness.context_prose import compile_context, read_facts, render_facts
 from meristem.harness.critique import read_critique
@@ -553,8 +554,15 @@ def _bind_host_consumers(lifecycle: RunLifecycle, request: Any, state: Any) -> N
         async def liveness_start(_request: Any, _plan: Any) -> None:
             if ports.sandbox_processes is None or ports.liveness_wait is None:
                 raise ConsumerRefused("liveness_unavailable")
+
+            async def log_evidence(body: Any) -> Any:
+                answer = await engine_step.record(
+                    ports.engine_decision_port(), "Evaluate", body, run_ref=run_ref
+                )
+                return answer.payload
+
             monitor = LivenessMonitor(
-                ports.engine_decision_port(),
+                log_evidence,
                 ports.confirm,
                 ports.sandbox_processes(run_ref),
                 run_id=run_ref,
@@ -566,7 +574,7 @@ def _bind_host_consumers(lifecycle: RunLifecycle, request: Any, state: Any) -> N
         async def liveness_gate(current: Any) -> None:
             current.consumer_results[SANDBOX_LIVENESS] = True
             if monitors and monitors[0].refusal is not None:
-                raise monitors[0].refusal
+                raise ConsumerRefused(monitors[0].refusal.code)
 
         async def liveness_stop(_current: Any) -> None:
             while watchers:
