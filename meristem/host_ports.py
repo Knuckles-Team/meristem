@@ -578,6 +578,7 @@ class HostPorts:
     run_checkpoints: RunCheckpointProvider | None = None
     checkpoint_factory: RunCheckpointFactory | None = None
     engine_decision: EngineDecisionPort | None = None
+    media_resolver: Callable[[str], Awaitable[bytes | None]] | None = None
 
     def harness_probe_provider(self) -> HarnessProbeProvider | None:
         """Return the host probe executor; absence cannot authorize execution."""

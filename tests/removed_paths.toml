@@ -144,3 +144,6 @@ kind = "module"
 # Fields the host record gained after the map was written; no register function ever existed.
 [[added]]
 field = "engine_decision"
+
+[[added]]
+field = "media_resolver"
