@@ -297,8 +297,7 @@ ENGINE_WRITE_METHODS: frozenset[str] = frozenset(
         "DecisionEval",
         "AgentComponent",
         "Loops",
-        "SkillTelemetryIngest",
-        "SkillEvalResult",
+        "SkillTelemetry",
     }
 )
 """The served engine write methods the harness may reach; nothing else."""

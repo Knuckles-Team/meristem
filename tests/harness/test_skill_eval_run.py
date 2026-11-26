@@ -27,11 +27,23 @@ async def test_golden_mocks_real_live_and_two_separate_fields():
         return await router.call_tool("lookup", {"q": 1})
 
     result = await run_eval_case(
-        golden, new_workspace=LocalWorkspace, drive=drive, submit=sink
+        golden,
+        new_workspace=LocalWorkspace,
+        drive=drive,
+        submit=sink,
+        envelope={"skill_ref": "skill:s@1", "tenant_id": "t", "cases": []},
     )
     assert result.actual_trajectory == (("skill", "s"), ("tool", "lookup"))
     assert result.output_digest == digest("mocked") and result.error_code is None
-    assert sink.sent[0][0] == "SkillEvalResult"
+    method, body = sink.sent[0]
+    assert (method, body["op"]) == ("DecisionEval", "skill_eval")
+    (run,) = body["request"]["runs"]
+    assert run["actual_trajectory"] == [
+        {"kind": "skill", "name": "s"},
+        {"kind": "tool", "name": "lookup"},
+    ]
+    assert run["actual_digest"] == digest("mocked") and "blind_id" not in run
+    assert body["request"]["skill_ref"] == "skill:s@1"
 
     async def unmocked(case, router, options, seed):
         return await router.call_tool("other", {})
@@ -53,3 +65,20 @@ async def test_golden_mocks_real_live_and_two_separate_fields():
     )
     assert live_calls == ["other"]
     assert live_result.output_digest == digest("real")
+
+
+@pytest.mark.spec("MERISTEM-HARNESS-CYCLE-R098")
+async def test_engine_without_skill_eval_is_unavailable_not_a_crash():
+    async def absent(method, payload):
+        raise NotImplementedError(method)
+
+    async def drive(case, router, options, seed):
+        return "out"
+
+    result = await run_eval_case(
+        SkillEvalCase("c1", "real", "p"),
+        new_workspace=LocalWorkspace,
+        drive=drive,
+        submit=absent,
+    )
+    assert result.output_digest == digest("out")

@@ -15,11 +15,13 @@ from dataclasses import dataclass, field
 from pathlib import PurePosixPath
 from typing import Any, Literal, Protocol
 
+from meristem.harness.skill_events import send_engine
 from meristem.harness.skill_loader import SkillLoader
 
 MOCK_MISSING = "MOCK_MISSING"
 LAPTOP_DEPENDENCY = "LAPTOP_DEPENDENCY"
-RESULT_METHOD = "SkillEvalResult"
+RESULT_METHOD = "DecisionEval"
+RESULT_OP = "skill_eval"
 
 _SYSTEM_PATHS = ("/dev/null", "/dev/stdout", "/dev/stderr", "/usr/", "/bin/", "/lib")
 
@@ -178,8 +180,16 @@ async def run_eval_case(
     arm: AblationArm | None = None,
     seed: int = 0,
     live: Callable[[str, Mapping[str, Any]], Awaitable[Any]] | None = None,
+    envelope: Mapping[str, Any] | None = None,
 ) -> EvalRunResult:
-    """Run one case in a fresh empty workspace and send the result."""
+    """Run one case in a fresh empty workspace and send the result.
+
+    ``envelope`` is the received ``SkillEvalRequest`` without its runs
+    (``skill_ref``, ``tenant_id``, ``cases``, ``known_tools`` and an optional
+    ``calibration``). The run goes to the engine as ``DecisionEval`` op
+    ``skill_eval``; a pinned engine without it makes the send unavailable and
+    the result is still returned.
+    """
     workspace = new_workspace()
     await workspace.start()
     router = EvalRouter(case, workspace, live)
@@ -206,26 +216,27 @@ async def run_eval_case(
         attestation=attestation,
         error_code=code,
     )
-    await submit(
-        RESULT_METHOD,
-        {
-            "case_id": result.case_id,
-            "blind_id": result.blind_id,
-            "actual_trajectory": [list(item) for item in result.actual_trajectory],
-            "output_digest": result.output_digest,
-            "error_code": result.error_code,
-            "attestation": {
-                "sandbox_digest": attestation.sandbox_digest,
-                "env_digest": attestation.env_digest,
-                "host_paths_read": attestation.host_paths_read,
-            },
+    run: dict[str, Any] = {
+        "case_id": result.case_id,
+        "actual_digest": result.output_digest or digest({"error": code}),
+        "actual_trajectory": [
+            {"kind": kind, "name": name} for kind, name in result.actual_trajectory
+        ],
+        "attestation": {
+            "sandbox_digest": attestation.sandbox_digest,
+            "env_digest": attestation.env_digest,
+            "host_paths_read": attestation.host_paths_read,
         },
-    )
+    }
+    request = {**(envelope or {}), "runs": [run]}
+    await send_engine(submit, RESULT_METHOD, {"op": RESULT_OP, "request": request})
     return result
 
 
 __all__ = [
     "LAPTOP_DEPENDENCY",
+    "RESULT_METHOD",
+    "RESULT_OP",
     "MOCK_MISSING",
     "AblationArm",
     "EnvironmentAttestation",
