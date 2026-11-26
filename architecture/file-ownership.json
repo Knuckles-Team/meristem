@@ -107,7 +107,17 @@
       "owner": "meristem"
     },
     {
+      "path": "meristem/ontology/run_state_machines.ttl",
+      "disposition": "keep",
+      "owner": "meristem"
+    },
+    {
       "path": "meristem/harness/__init__.py",
+      "disposition": "keep",
+      "owner": "meristem"
+    },
+    {
+      "path": "meristem/harness/assembly.py",
       "disposition": "keep",
       "owner": "meristem"
     },
@@ -117,7 +127,17 @@
       "owner": "meristem"
     },
     {
+      "path": "meristem/harness/champion.py",
+      "disposition": "keep",
+      "owner": "meristem"
+    },
+    {
       "path": "meristem/harness/client_capabilities.py",
+      "disposition": "keep",
+      "owner": "meristem"
+    },
+    {
+      "path": "meristem/harness/command_file.py",
       "disposition": "keep",
       "owner": "meristem"
     },
@@ -142,12 +162,27 @@
       "owner": "meristem"
     },
     {
+      "path": "meristem/harness/plan.py",
+      "disposition": "keep",
+      "owner": "meristem"
+    },
+    {
       "path": "meristem/harness/plan_runtime.py",
       "disposition": "keep",
       "owner": "meristem"
     },
     {
       "path": "meristem/harness/quality_gates.py",
+      "disposition": "keep",
+      "owner": "meristem"
+    },
+    {
+      "path": "meristem/harness/rules.py",
+      "disposition": "keep",
+      "owner": "meristem"
+    },
+    {
+      "path": "meristem/harness/run_lifecycle.py",
       "disposition": "keep",
       "owner": "meristem"
     },
@@ -167,7 +202,17 @@
       "owner": "meristem"
     },
     {
+      "path": "meristem/rlm/research_steps.py",
+      "disposition": "keep",
+      "owner": "meristem"
+    },
+    {
       "path": "meristem/rlm/runner.py",
+      "disposition": "keep",
+      "owner": "meristem"
+    },
+    {
+      "path": "meristem/rlm/span_reads.py",
       "disposition": "keep",
       "owner": "meristem"
     },

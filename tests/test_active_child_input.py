@@ -11,7 +11,7 @@ from pydantic_ai.messages import ModelResponse, TextPart, UserPromptPart
 from pydantic_ai.models.function import FunctionModel
 
 from meristem import host_ports
-from meristem.graph import RunBudget, RunPlan, run
+from meristem.graph import RunBudget, RunPlan, RunStatus, run
 
 pytestmark = pytest.mark.spec("MERISTEM-RUN-R001.15")
 
@@ -92,7 +92,7 @@ async def test_input_waits_for_next_model_request_and_preserves_budget() -> None
     assert port.receipts == []
     release.set()
     result = await task
-    assert result.status == "completed"
+    assert result.status is RunStatus.COMPLETED
     assert "steer" not in observations[0]
     assert observations[1].count("steer") == 1
     assert port.receipts == ["event"]
@@ -121,7 +121,7 @@ async def test_wrong_child_or_failed_receipt_refuses_before_model() -> None:
             support.request(task="start", run_id="child"),
             plan=RunPlan(model=FunctionModel(model), steps=("one",)),
         )
-        assert result.status == "failed"
+        assert result.status is RunStatus.FAILED
         assert calls == 0
         assert port.receipts == []
 
@@ -173,7 +173,7 @@ async def test_input_is_applied_between_internal_tool_and_model_turns() -> None:
     assert not port.receipts
     release.set()
     result = await task
-    assert result.status == "completed"
+    assert result.status is RunStatus.COMPLETED
     assert "steer" not in prompts[0]
     assert prompts[1].count("steer") == 1
     assert port.receipts == ["event"]
@@ -246,7 +246,7 @@ async def test_checkpointed_input_refuses_before_model() -> None:
             support.request(task="start", run_id="child"),
             plan=RunPlan(model=FunctionModel(model), steps=("one",)),
         )
-        assert result.status == "failed"
+        assert result.status is RunStatus.FAILED
         assert calls == [] and port.receipts == []
     finally:
         support.register_run_checkpoint_factory(None)
@@ -279,7 +279,7 @@ async def test_failed_receipt_after_tool_never_repeats_effect() -> None:
         support.request(task="start", run_id="child"),
         plan=RunPlan(model=FunctionModel(model), steps=("one",), toolsets=(tools,)),
     )
-    assert result.status == "failed"
+    assert result.status is RunStatus.FAILED
     assert "receipt uncertain" in result.error
     assert effects == ["effect"] and calls == 1
 
@@ -311,7 +311,7 @@ async def test_entire_invalid_batch_refuses_before_receipts_or_model() -> None:
         support.request(task="start", run_id="child"),
         plan=RunPlan(model=FunctionModel(model), steps=("one",)),
     )
-    assert result.status == "failed"
+    assert result.status is RunStatus.FAILED
     assert port.receipts == [] and calls == 0
 
 
@@ -341,7 +341,7 @@ async def test_host_order_is_preserved_and_completion_does_not_reopen_port() -> 
         support.request(task="start", run_id="child"),
         plan=RunPlan(model=FunctionModel(model), steps=("one",)),
     )
-    assert result.status == "completed"
+    assert result.status is RunStatus.COMPLETED
     assert observations[-2:] == ["first", "second"]
     assert port.receipts == ["event", "event-2"]
     port.pending.append(

@@ -273,3 +273,109 @@ async def test_optional_host_binding_can_decline_one_run_and_still_close(outcome
                 raise failure()
     assert closed == [request]
     assert state.read_versioned()[0] == 1
+
+
+class _StubEnginePort:
+    """A bound engine decision port that records its calls."""
+
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+
+    async def decide(self, kind, params, *, run_ref):
+        self.calls.append(f"decide:{kind}")
+        return hp.EngineAnswer(outcome="solved")
+
+    async def assemble(self, request, *, run_ref):
+        self.calls.append("assemble")
+        return hp.EngineAnswer(outcome="solved")
+
+    async def log(self, op, *, run_ref):
+        self.calls.append(f"log:{op}")
+        return hp.EngineAnswer(outcome="committed", record_digest="c" * 64)
+
+    async def put_blob(self, data, *, run_ref):
+        self.calls.append("put_blob")
+        return hp.EngineAnswer(outcome="committed")
+
+    async def read(self, method, params, *, run_ref):
+        self.calls.append(f"read:{method}")
+        return hp.EngineAnswer(outcome="advisory")
+
+    async def write(self, method, params, *, run_ref):
+        self.calls.append(f"write:{method}")
+        return hp.EngineAnswer(outcome="committed")
+
+
+@pytest.mark.spec("MERISTEM-SCM-R008")
+async def test_engine_decision_port_registration_and_absence():
+    # Absence: the accessor reports no bound port.
+    assert support.PORTS.engine_decision_port() is None
+
+    # Register: the bound port is returned and serves its answers.
+    port = _StubEnginePort()
+    support.register_engine_decision_port(port)
+    assert support.PORTS.engine_decision_port() is port
+    answer = await port.decide("RoundVerdict", {"round": 1}, run_ref="r1")
+    assert (answer.outcome, answer.option_ids, answer.payload) == (
+        "solved",
+        (),
+        {},
+    )
+    assert await port.log("Learn", run_ref="r1") == hp.EngineAnswer(
+        outcome="committed", record_digest="c" * 64
+    )
+    assert port.calls == ["decide:RoundVerdict", "log:Learn"]
+
+    # Clear: unregistering (None) returns the accessor to absence.
+    support.register_engine_decision_port(None)
+    assert support.PORTS.engine_decision_port() is None
+
+    # The refusal path: a consumer without a bound port refuses with the
+    # closed code, and the answer type stays frozen with a closed outcome.
+    refusal = hp.EngineDecisionRefused("engine_decision_unavailable")
+    assert (refusal.code, refusal.method) == ("engine_decision_unavailable", None)
+    assert isinstance(refusal, RuntimeError)
+    with pytest.raises(ValueError, match="outcome"):
+        hp.EngineAnswer(outcome="decided")
+    answer = hp.EngineAnswer(outcome="abstained", refusal_code="NO_OUTCOME_HISTORY")
+    with pytest.raises(AttributeError):
+        answer.outcome = "solved"
+
+
+@pytest.mark.spec("MERISTEM-HARNESS-CYCLE-R079")
+async def test_engine_read_write_allowlist():
+    port = _StubEnginePort()
+    support.register_engine_decision_port(port)
+
+    # Every allowed method passes, on its own arm.
+    for method in hp.ENGINE_READ_METHODS:
+        assert (await support.PORTS.engine_read(method, {}, run_ref="r1")).outcome == (
+            "advisory"
+        )
+    for method in hp.ENGINE_WRITE_METHODS:
+        assert (await support.PORTS.engine_write(method, {}, run_ref="r1")).outcome == (
+            "committed"
+        )
+    assert set(port.calls) == {
+        f"read:{method}" for method in hp.ENGINE_READ_METHODS
+    } | {f"write:{method}" for method in hp.ENGINE_WRITE_METHODS}
+
+    # A method outside the arm's allowlist refuses with the closed code.
+    for arm, method in (
+        ("engine_read", "DeleteMemory"),
+        ("engine_write", "MemoryRecall"),
+    ):
+        with pytest.raises(hp.EngineDecisionRefused) as caught:
+            await getattr(support.PORTS, arm)(method, {}, run_ref="r1")
+        assert caught.value.code == "engine_method_forbidden"
+        assert caught.value.method == method
+    assert not any(
+        call.startswith(("read:Delete", "write:MemoryRecall")) for call in port.calls
+    )
+
+    # An unbound port refuses before any call reaches the engine.
+    support.register_engine_decision_port(None)
+    for arm in ("engine_read", "engine_write"):
+        with pytest.raises(hp.EngineDecisionRefused) as caught:
+            await getattr(support.PORTS, arm)("MemoryRecall", {}, run_ref="r1")
+        assert caught.value.code == "engine_decision_unavailable"

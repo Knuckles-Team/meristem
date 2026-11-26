@@ -15,7 +15,7 @@ from pydantic_ai.messages import (
 )
 from pydantic_ai.models.function import FunctionModel
 
-from meristem.graph import HarnessConfig, RunPlan, run
+from meristem.graph import HarnessConfig, RunPlan, RunStatus, run
 
 
 def injected(messages):
@@ -47,7 +47,7 @@ async def test_received_decision_gates_tool_and_injection(mode):
             harness=HarnessConfig(plan_scaffold=mode),
         ),
     )
-    assert result.status == "completed"
+    assert result.status is RunStatus.COMPLETED
     assert (
         seen == [(["update_plan"], ["Current run plan: []"])]
         if mode == "on"
@@ -90,7 +90,7 @@ async def test_two_updates_reach_each_request_but_never_stored_history(monkeypat
             harness=HarnessConfig(plan_scaffold="on"),
         ),
     )
-    assert result.status == "completed"
+    assert result.status is RunStatus.COMPLETED
     assert len(captured) == 5
     plans = [injected(messages) for messages in captured]
     assert all(len(plan) == 1 for plan in plans)
@@ -167,7 +167,7 @@ async def test_budget_exit_cleans_tool_payload_without_another_request(monkeypat
             budget=RunBudget(request_limit=1),
         ),
     )
-    assert result.status == "stopped"
+    assert result.status is RunStatus.STOPPED_BUDGET
     assert len(retained) == 1
     assert "terminal-private" not in repr(retained)
     assert not injected(retained[0])
@@ -231,7 +231,7 @@ async def test_invalid_received_scaffold_decision_fails_before_model_call(mode):
             harness=HarnessConfig(plan_scaffold=mode),
         ),
     )
-    assert result.status == "failed"
+    assert result.status is RunStatus.FAILED
     assert result.error is not None
     assert "plan_scaffold must be on or off" in result.error
     assert calls == []
@@ -288,7 +288,7 @@ async def test_host_receives_only_actual_accepted_revisions():
             harness=HarnessConfig(plan_scaffold="on"),
         ),
     )
-    assert result.status == "completed"
+    assert result.status is RunStatus.COMPLETED
     assert turns == [1, 2, 2, 3]
     assert published == [
         (0, ()),
@@ -351,7 +351,17 @@ async def test_publication_failure_stops_run_without_disclosing_payload(failure_
             harness=HarnessConfig(plan_scaffold="on"),
         ),
     )
-    assert result.status == "failed"
+    # A close failure lands after the output step's finish edge; the closed
+    # run table keeps the terminal state and records the refusal in the error.
+    assert (
+        result.status
+        is {
+            "enter": RunStatus.FAILED,
+            "initial": RunStatus.FAILED,
+            "update": RunStatus.FAILED,
+            "close": RunStatus.COMPLETED,
+        }[failure_at]
+    )
     assert "private-plan-payload" not in repr(result)
     assert "scaffold publication" in result.error
     assert len(calls) == {"enter": 0, "initial": 0, "update": 1, "close": 2}[failure_at]
@@ -408,7 +418,7 @@ async def test_concurrent_runs_publish_to_their_own_host_binding():
         )
 
     results = await asyncio.gather(execute("first"), execute("second"))
-    assert all(result.status == "completed" for result in results)
+    assert all(result.status is RunStatus.COMPLETED for result in results)
     for run_id, snapshots in observed.items():
         assert snapshots[0] == (0, ())
         assert snapshots[1][0] == 1

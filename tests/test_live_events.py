@@ -11,7 +11,7 @@ from pydantic_ai.messages import ModelResponse, TextPart
 from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 from pydantic_ai.toolsets import FunctionToolset
 
-from meristem.graph import RunPlan, run
+from meristem.graph import RunPlan, RunStatus, run
 from meristem.graph.live_events import (
     LineageBinding,
     LineageIdentityError,
@@ -94,7 +94,7 @@ async def test_executor_binds_one_publisher_before_exposing_model_output() -> No
         plan=RunPlan(model=FunctionModel(stream_function=stream), steps=("hello",)),
     )
 
-    assert result.status == "completed"
+    assert result.status is RunStatus.COMPLETED
     assert result.output == "answer"
     assert bindings == ["run"]
     assert [kind for kind, _ in publisher.events] == ["text_delta", "state"]
@@ -137,7 +137,7 @@ async def test_executor_stops_before_tool_effect_on_call_publication_failure() -
         ),
     )
 
-    assert result.status == "failed"
+    assert result.status is RunStatus.FAILED
     assert result.error == "RuntimeError: durable run event publication failed"
     assert effects == []
 
@@ -155,7 +155,7 @@ async def test_executor_without_host_publisher_keeps_ordinary_path() -> None:
         plan=RunPlan(model=FunctionModel(ordinary), steps=("hello",)),
     )
 
-    assert result.status == "completed"
+    assert result.status is RunStatus.COMPLETED
     assert result.output == "ordinary"
     assert len(calls) == 1
 

@@ -11,7 +11,7 @@ from pydantic_ai.models.function import FunctionModel
 
 from meristem import host_ports
 from meristem.graph import RunPlan, run
-from meristem.graph.state import HarnessConfig
+from meristem.graph.state import HarnessConfig, RunStatus
 from meristem.harness.client_capabilities import (
     ClientCapabilityToolset,
     ClientToolLimits,
@@ -153,7 +153,7 @@ async def test_missing_transport_fails_real_run(events):
     )
     support.register_run_decision_provider(lambda request: plan)
     result = await run(support.request(task="q"))
-    assert result.status == "failed"
+    assert result.status is RunStatus.FAILED
     assert "client_disconnected" in result.error
 
 

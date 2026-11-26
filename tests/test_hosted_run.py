@@ -151,7 +151,7 @@ async def test_received_budget_is_not_widened():
         )
     )
     emitted = await collect(support.request("inspect"), Transport())
-    assert emitted[-1]["result"]["status"] == "stopped"
+    assert emitted[-1]["result"]["status"] == "stopped_budget"
     assert calls == []
 
 
@@ -342,7 +342,7 @@ async def test_native_observer_budget_refuses_before_streaming():
         )
     ]
     assert calls == []
-    assert emitted[-1]["result"]["status"] == "stopped"
+    assert emitted[-1]["result"]["status"] == "stopped_budget"
 
 
 @pytest.mark.spec("MERISTEM-RUN-R001.11")
@@ -443,6 +443,6 @@ async def test_observer_backpressure_uses_existing_deadline(events):
         )
     ]
     assert entered.is_set() and cancelled.is_set()
-    assert emitted[-1]["result"]["status"] == "stopped"
+    assert emitted[-1]["result"]["status"] == "stopped_budget"
     assert emitted[-1]["result"]["error"] == "budget: run timed out"
     assert events[-1]["type"] == "graph_complete"

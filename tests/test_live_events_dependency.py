@@ -16,6 +16,7 @@ from meristem.graph import (
     DependencyPlan,
     RunBudget,
     RunPlan,
+    RunStatus,
     RunTask,
     ToolStep,
     ToolStepResult,
@@ -36,7 +37,11 @@ class Checkpoint:
     async def save(self, content: str) -> None:
         self.content = content
         payload = json.loads(content)
-        completed = ",".join(payload["completed_tasks"])
+        completed = ",".join(
+            sorted(
+                key for key, value in payload["task_states"].items() if value == "done"
+            )
+        )
         self.timeline.append(("checkpoint", payload["phase"], completed))
 
 
@@ -133,7 +138,7 @@ async def test_dependency_events_follow_checkpoint_ack_and_carry_tool_record() -
         plan=_plan(FunctionModel(stream_function=stream)),
     )
 
-    assert result.status == "completed"
+    assert result.status is RunStatus.COMPLETED
     assert result.output == "finished"
     assert [kind for kind, _ in publisher.events] == [
         "text_delta",
@@ -202,7 +207,7 @@ async def test_dependency_events_keep_step_keys_and_dependency_edges_distinct() 
         plan=plan,
     )
 
-    assert result.status == "completed"
+    assert result.status is RunStatus.COMPLETED
     joined = [event for event in events if event.get("task_id") == "join"]
     assert joined and all(event["node_kind"] == "step" for event in joined)
     relationships = joined[0]["lineage_relationships"]
@@ -243,16 +248,19 @@ async def test_dependency_failed_result_publication_effect_runs_once_and_restart
     request = support.request(task="tool", run_id="r04310-failed-result-run")
 
     first = await run(request, plan=plan)
-    assert first.status == "failed"
+    assert first.status is RunStatus.FAILED
     assert first.error == "RuntimeError: durable run event publication failed"
     assert effects == ["tool"]
     assert [kind for kind, _ in publisher.attempts] == ["tool_call", "tool_result"]
+    # The ACK snapshot records the run state exactly (R084.4): the run was
+    # still Running when the step's effect was acknowledged; no terminal
+    # state is inferred.  The restored run re-enters and finishes.
     payload = json.loads(checkpoint.content or "null")
-    assert payload["status"] == "completed"
-    assert payload["completed_tasks"] == ["tool"]
+    assert payload["run_status"] == "running"
+    assert payload["task_states"] == {"tool": "done"}
 
     second = await run(request, plan=plan)
-    assert second.status == "completed"
+    assert second.status is RunStatus.COMPLETED
     assert effects == ["tool"]
     assert [kind for kind, _ in publisher.attempts] == ["tool_call", "tool_result"]
 
@@ -352,7 +360,7 @@ async def test_concurrent_tool_results_follow_declaration_and_checkpoint_order()
     release_a.set()
     result = await asyncio.wait_for(task, timeout=1)
 
-    assert result.status == "completed"
+    assert result.status is RunStatus.COMPLETED
     assert result.output == "joined"
     assert [
         content["task_id"] for kind, content in publisher.events if kind == "tool_call"
@@ -438,7 +446,7 @@ async def test_failed_tool_call_publication_suppresses_concurrent_terminals() ->
     await asyncio.wait_for(b_started.wait(), timeout=1)
     result = await asyncio.wait_for(result_task, timeout=1)
 
-    assert result.status == "failed"
+    assert result.status is RunStatus.FAILED
     assert result.error == "RuntimeError: durable run event publication failed"
     assert effects == ["B"]
     assert [kind for kind, _ in publisher.attempts] == ["tool_call", "tool_call"]

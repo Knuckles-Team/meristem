@@ -100,3 +100,7 @@ def register_run_checkpoint_provider(value: Any) -> None:
 
 def register_run_checkpoint_factory(value: Any) -> None:
     PORTS.checkpoint_factory = value
+
+
+def register_engine_decision_port(value: Any) -> None:
+    PORTS.engine_decision = value

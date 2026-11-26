@@ -24,14 +24,19 @@ from __future__ import annotations
 import hashlib
 import inspect
 import json
+import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final
 
-from meristem.host_ports import HostPorts
+from meristem.harness.champion import pin_champion
+from meristem.harness.edit_engine import Edit, apply_edits
+from meristem.harness.run_lifecycle import ConsumerRefused
+from meristem.host_ports import EngineDecisionRefused, HostPorts
 
-from .state import RunBudget, RunPlan, RunRequest
+from .checkpoint import RUN_STATE_UNKNOWN, CheckpointUnavailable
+from .state import RunBudget, RunPlan, RunRequest, RunStatus
 
 #: The closed refusal codes of one tick. Anything else is not a refusal.
 ABSTAIN_REASONS: Final[tuple[str, ...]] = (
@@ -40,6 +45,8 @@ ABSTAIN_REASONS: Final[tuple[str, ...]] = (
     "probe_trace_missing",
     "compose_abstention",
     "measurement_unavailable",
+    "allocation_missing",
+    "champion_moved",
 )
 
 
@@ -154,7 +161,7 @@ class ProbeTrace:
     candidate_id: str
     trace_id: str
     conditions_digest: str
-    status: str
+    status: RunStatus
     steps: int
     usage: Mapping[str, int]
     error: str | None
@@ -239,13 +246,22 @@ async def probe_candidates(
             raise CycleRefusal("probe_trace_missing") from None
         if not isinstance(result, Mapping) or result.get("run_id") != trace_id:
             raise CycleRefusal("probe_trace_missing")
+        status = result.get("status")
+        try:
+            probe_status = RunStatus(status)
+        except (TypeError, ValueError):
+            # A value outside the closed run state machine refuses the probe
+            # with the same typed code the checkpoint restore path uses.
+            raise CheckpointUnavailable(
+                "probe run state is unknown", code=RUN_STATE_UNKNOWN
+            ) from None
         usage = result.get("usage") or {}
         traces.append(
             ProbeTrace(
                 candidate_id=candidate_id,
                 trace_id=trace_id,
                 conditions_digest=digest,
-                status=str(result.get("status") or ""),
+                status=probe_status,
                 steps=int(result.get("steps") or 0),
                 usage={str(key): int(value) for key, value in dict(usage).items()},
                 error=None if result.get("error") is None else str(result["error"]),
@@ -255,34 +271,145 @@ async def probe_candidates(
 
 
 @dataclass(frozen=True)
-class ContrastDelta:
-    """One candidate's measured contrast against the current harness's probe.
-
-    The deltas are measurements the engine decides on: retry, tool
-    selection, eval score and cost, each the candidate probe minus the
-    current-harness probe. A positive eval score delta is the improvement
-    the engine adopts on.
-    """
-
-    candidate_id: str
-    run_a_trace_id: str
-    run_b_trace_id: str
-    retry_delta: int
-    tool_selection_delta: int
-    eval_score_delta: int
-    cost_delta: int
-
-
-@dataclass(frozen=True)
 class ContrastRequest:
-    """The payload of one served contrast decision call per tick."""
+    """The payload of one served contrast decision call per tick.
+
+    It carries trace references only: the engine measures the retry,
+    tool-selection, evaluation-score and cost deltas from the stored
+    traces and answers one adoption or one abstention.
+    """
 
     task_ref: str
     task_class: str
     conditions_digest: str
     candidate_version_refs: tuple[str, ...]
+    baseline_trace_id: str
     probe_trace_ids: tuple[str, ...]
-    contrasts: tuple[ContrastDelta, ...]
+
+
+@dataclass(frozen=True)
+class TraceRefs:
+    """The trace references one contrast decision measures against.
+
+    One probe of the current harness plus one probe per candidate, all
+    under the tick's shared conditions digest.
+    """
+
+    baseline_trace_id: str
+    candidate_version_refs: tuple[str, ...]
+    probe_trace_ids: tuple[str, ...]
+
+
+def collect_trace_refs(
+    *,
+    baseline: ProbeTrace | None,
+    candidates: Sequence[HarnessCandidate],
+    traces: Mapping[str, ProbeTrace],
+) -> TraceRefs:
+    """Collect the trace references the engine measures from.
+
+    The request carries these ids and no delta of its own: the engine
+    reads the stored traces and computes the deltas itself.
+    """
+    return TraceRefs(
+        baseline_trace_id=baseline.trace_id if baseline is not None else "",
+        candidate_version_refs=tuple(
+            candidate.component_version_ref for candidate in candidates
+        ),
+        probe_trace_ids=tuple(
+            traces[candidate.candidate_id].trace_id for candidate in candidates
+        ),
+    )
+
+
+#: The closed stage order of one evolution tick.
+STAGES: Final[tuple[str, ...]] = (
+    "propose",
+    "probe",
+    "compose",
+    "persist",
+    "reflect",
+)
+
+#: The decision kind of one tick's stage allocation.
+STAGE_ALLOCATION_KIND = "StageAllocation"
+
+
+@dataclass(frozen=True)
+class StageAllocation:
+    """One tick's received stage allocation.
+
+    ``stage_models`` maps each tick stage to the model reference the
+    engine allocated it; the cycle runs each stage on its allocated
+    model and ranks nothing of its own.
+    """
+
+    stage_models: Mapping[str, str]
+
+
+async def _resolve_stage_allocation(
+    ports: HostPorts, *, task_ref: str, budget_ref: str
+) -> StageAllocation:
+    """One StageAllocation decide per tick, on the bound engine port.
+
+    The engine allocates one model per tick stage; with no bound port
+    the step refuses engine_decision_unavailable and decides nothing,
+    an engine refusal code passes through, and an abstaining engine or
+    an answer without stage models leaves the tick without an
+    allocation, which refuses allocation_missing at the first stage.
+    """
+    engine = ports.engine_decision_port()
+    if engine is None:
+        raise EngineDecisionRefused("engine_decision_unavailable")
+    answer = await engine.decide(
+        STAGE_ALLOCATION_KIND,
+        {"task_ref": task_ref, "budget_ref": budget_ref, "stages": list(STAGES)},
+        run_ref=task_ref,
+    )
+    if answer.refusal_code is not None:
+        raise ConsumerRefused(answer.refusal_code)
+    if answer.outcome not in ("solved", "committed"):
+        raise CycleRefusal("allocation_missing")
+    stage_models = answer.payload.get("stage_models")
+    if not isinstance(stage_models, Mapping) or not stage_models:
+        raise CycleRefusal("allocation_missing")
+    return StageAllocation(
+        stage_models={str(stage): str(model) for stage, model in stage_models.items()}
+    )
+
+
+async def run_stage(
+    stage: str,
+    allocation: StageAllocation | None,
+    body: Callable[..., Any],
+    trace: list[dict[str, Any]],
+    *args: Any,
+    **kwargs: Any,
+) -> Any:
+    """Run one tick stage on the allocated model and record its cost.
+
+    With an allocation the stage must be named in ``stage_models`` or
+    the tick refuses allocation_missing; one cost entry per stage —
+    the stage, its model reference, tokens and cost — enters the tick
+    trace. Without an allocation (the consumer is not enabled for the
+    run) the stage body runs unchanged.
+    """
+    entry: dict[str, Any] | None = None
+    if allocation is not None:
+        if stage not in STAGES:
+            raise ValueError(f"open stage: {stage!r}")
+        model_ref = allocation.stage_models.get(stage)
+        if not model_ref:
+            raise CycleRefusal("allocation_missing")
+        entry = {"stage": stage, "model_ref": model_ref, "tokens": 0, "cost": 0}
+        trace.append(entry)
+    result = body(*args, **kwargs)
+    if inspect.isawaitable(result):
+        result = await result
+    if entry is not None and isinstance(result, Mapping):
+        entry["tokens"] = int(result.get("tokens") or 0)
+        entry["cost"] = result.get("cost") or 0
+    return result
 
 
 @dataclass(frozen=True)
@@ -301,69 +428,13 @@ class ContrastAnswer:
     adopted_content: str = ""
 
 
-#: The served contrast decision, driven by the host: one Decide call under
-#: the contrast question kind per tick; the answer may be awaitable.
-ContrastDecision = Callable[[ContrastRequest], Any]
-
-
-def measure_contrasts(
-    *,
-    baseline: ProbeTrace | None,
-    candidates: Sequence[HarnessCandidate],
-    traces: Mapping[str, ProbeTrace],
-) -> tuple[ContrastDelta, ...]:
-    """Refuse until the owner supplies authenticated contrast measurements.
-
-    Probe usage counts and completion status do not establish retry count,
-    tool-selection quality, evaluation score or cost. A missing baseline is
-    not a measured run. None of these inputs currently carries the required
-    engine-owned measurement evidence.
-    """
-    raise CycleRefusal("measurement_unavailable")
+#: The served contrast decision's closed question kind.
+CONTRAST_KIND = "harness_contrast"
 
 
 def _field(value: Any, name: str) -> Any:
     """One duck-typed field of an answer the engine types itself."""
     return getattr(value, name, None)
-
-
-def _normalize_answer(answer: Any) -> ContrastAnswer:
-    if isinstance(answer, ContrastAnswer):
-        normalized = answer
-    elif isinstance(answer, Mapping):
-        normalized = ContrastAnswer(
-            adopted_version_ref=None
-            if answer.get("adopted_version_ref") is None
-            else str(answer["adopted_version_ref"]),
-            abstain_reason=None
-            if answer.get("abstain_reason") is None
-            else str(answer["abstain_reason"]),
-            adopted_component_kind=str(answer.get("adopted_component_kind") or ""),
-            adopted_content=str(answer.get("adopted_content") or ""),
-        )
-    else:
-        normalized = ContrastAnswer(
-            adopted_version_ref=None
-            if _field(answer, "adopted_version_ref") is None
-            else str(_field(answer, "adopted_version_ref")),
-            abstain_reason=None
-            if _field(answer, "abstain_reason") is None
-            else str(_field(answer, "abstain_reason")),
-            adopted_component_kind=str(_field(answer, "adopted_component_kind") or ""),
-            adopted_content=str(_field(answer, "adopted_content") or ""),
-        )
-    if normalized.adopted_version_ref is None and normalized.abstain_reason is None:
-        raise ValueError(
-            "the contrast decision answered with neither adoption nor abstention"
-        )
-    if (
-        normalized.adopted_version_ref is not None
-        and normalized.abstain_reason is not None
-    ):
-        raise ValueError(
-            "the contrast decision answered with an adoption and an abstention"
-        )
-    return normalized
 
 
 async def compose(
@@ -374,34 +445,55 @@ async def compose(
     candidates: Sequence[HarnessCandidate],
     baseline: ProbeTrace | None,
     traces: Mapping[str, ProbeTrace],
-    decide: ContrastDecision,
-) -> ContrastAnswer:
-    """Delegate a measured contrast to the engine when evidence is available.
+    ports: HostPorts,
+    run_ref: str,
+) -> tuple[ContrastAnswer, str | None]:
+    """Send one contrast decision to the engine with trace references only.
 
-    Until the owner supplies that evidence, refuse before calling ``decide``.
+    The engine measures the deltas from the stored traces and answers one
+    adoption or one abstention; the answer's record digest enters the
+    outcome's contrast reference. An absent port or an
+    ``insufficient_evidence`` refusal refuses ``measurement_unavailable``
+    before the decision; an answer without an adoption refuses
+    ``compose_abstention``; engine codes such as
+    ``HARNESS_CONTRAST_TRACE_MISMATCH`` and
+    ``HARNESS_COMPONENT_VERSION_UNKNOWN`` pass through unchanged.
     """
-    contrasts = measure_contrasts(
-        baseline=baseline, candidates=candidates, traces=traces
-    )
+    engine = ports.engine_decision_port()
+    if engine is None:
+        raise CycleRefusal("measurement_unavailable")
+    refs = collect_trace_refs(baseline=baseline, candidates=candidates, traces=traces)
     request = ContrastRequest(
         task_ref=task_ref,
         task_class=task_class,
         conditions_digest=conditions_digest_value,
-        candidate_version_refs=tuple(
-            candidate.component_version_ref for candidate in candidates
-        ),
-        probe_trace_ids=tuple(
-            traces[candidate.candidate_id].trace_id for candidate in candidates
-        ),
-        contrasts=contrasts,
+        candidate_version_refs=refs.candidate_version_refs,
+        baseline_trace_id=refs.baseline_trace_id,
+        probe_trace_ids=refs.probe_trace_ids,
     )
-    answer = decide(request)
-    if inspect.isawaitable(answer):
-        answer = await answer
-    normalized = _normalize_answer(answer)
-    if normalized.abstain_reason is not None:
+    params = {
+        "task_ref": request.task_ref,
+        "task_class": request.task_class,
+        "conditions_digest": request.conditions_digest,
+        "candidate_version_refs": list(request.candidate_version_refs),
+        "baseline_trace_id": request.baseline_trace_id,
+        "probe_trace_ids": list(request.probe_trace_ids),
+    }
+    answer = await engine.decide(CONTRAST_KIND, params, run_ref=run_ref)
+    if answer.refusal_code is not None:
+        if answer.refusal_code == "insufficient_evidence":
+            raise CycleRefusal("measurement_unavailable")
+        raise ConsumerRefused(answer.refusal_code)
+    adopted_ref = answer.payload.get("adopted_version_ref")
+    if adopted_ref is None:
         raise CycleRefusal("compose_abstention")
-    return normalized
+    normalized = ContrastAnswer(
+        adopted_version_ref=str(adopted_ref),
+        abstain_reason=None,
+        adopted_component_kind=str(answer.payload.get("adopted_component_kind") or ""),
+        adopted_content=str(answer.payload.get("adopted_content") or ""),
+    )
+    return normalized, answer.record_digest
 
 
 #: The generated-client envelope writer, driven by the host: one graph-fact
@@ -409,24 +501,98 @@ async def compose(
 EnvelopeWriter = Callable[[Mapping[str, Any]], str]
 
 
-def persist(
+async def persist(
     *,
     task_ref: str,
     task_class: str,
+    decision_record_digest: str | None,
     conditions_digest_value: str,
     adopted: HarnessCandidate,
-    contrast: ContrastDelta,
     answer: ContrastAnswer,
+    evidence_run_ids: Sequence[str],
+    ports: HostPorts,
+    run_ref: str,
     write_envelope: EnvelopeWriter,
     root: str | Path = ".",
 ) -> tuple[str, str, str]:
-    """Refuse until the engine supplies verifiable adoption and evidence.
+    """Persist the adoption through the engine decision port, then switch.
 
-    A caller-constructed contrast and answer are not owner-issued receipts.
-    The future owner contract must provide a verifiable receipt before this
-    step can write or change the in-run harness.
+    One ``HarnessAdoption`` decision-log write carries the task, the
+    decision record digest, the conditions digest, the adopted version
+    and the harness-authored lesson; the engine validates and stores
+    it under the run's delegated principal. On ``committed`` the
+    answer's ``adoption_ref``, ``contrast_ref`` and ``lesson_ref`` are
+    returned, the adoption envelope and one evolution-proposal
+    progress-facts record — proposal id and revision, prompt version
+    and revision, the ordered source run ids, state and observation
+    time — are written through the envelope writer, and the adopted
+    content is switched in under ``.harness/`` with ``apply_edits`` —
+    after the commit, never before. The engine codes ``LessonWithoutEvidence``,
+    ``ContrastConditionsMismatch`` and ``AdoptedHarnessNoDecision``
+    pass through and leave the harness unchanged; an absent port or an
+    ``insufficient_evidence`` answer refuses
+    ``measurement_unavailable`` before any write or switch.
     """
-    raise CycleRefusal("measurement_unavailable")
+    engine = ports.engine_decision_port()
+    if engine is None:
+        raise CycleRefusal("measurement_unavailable")
+    lesson = {
+        "deficiency": (
+            f"the current harness for {task_class} under the shared "
+            f"conditions {conditions_digest_value[:16]}"
+        ),
+        "situation": f"evolution tick for {task_ref}",
+        "changed_component_kind": adopted.component_kind,
+        "what_changed": adopted.component_version_ref,
+        "applicability": task_class,
+        "evidence_run_ids": list(evidence_run_ids),
+    }
+    write = {
+        "kind": "harness_adoption",
+        "task_ref": task_ref,
+        "task_class": task_class,
+        "decision_record_digest": decision_record_digest,
+        "conditions_digest": conditions_digest_value,
+        "adopted_version_ref": adopted.component_version_ref,
+        "lesson": lesson,
+    }
+    log_answer = await engine.log("HarnessAdoption", run_ref=run_ref)
+    if log_answer.refusal_code is not None:
+        if log_answer.refusal_code == "insufficient_evidence":
+            raise CycleRefusal("measurement_unavailable")
+        raise ConsumerRefused(log_answer.refusal_code)
+    if log_answer.outcome != "committed":
+        raise CycleRefusal("measurement_unavailable")
+    payload = log_answer.payload
+    version_ref = str(payload.get("adoption_ref") or "")
+    contrast_ref = str(payload.get("contrast_ref") or "")
+    lesson_ref = str(payload.get("lesson_ref") or "")
+    if not (version_ref and contrast_ref and lesson_ref):
+        raise CycleRefusal("measurement_unavailable")
+    write_envelope(write)
+    # One evolution-proposal progress-facts record, in source-run order;
+    # medulla joins them to the run trace identifiers.
+    write_envelope(
+        {
+            "kind": "harness_evolution_progress",
+            "proposal_id": task_ref,
+            "proposal_revision": 1,
+            "prompt_version_id": adopted.component_version_ref,
+            "prompt_revision": 1,
+            "source_run_ids": list(evidence_run_ids),
+            "state": "adopted",
+            "observed_at": time.time(),
+        }
+    )
+    edit = Edit(
+        path=f".harness/{adopted.component_kind}.md",
+        search="",
+        replace=answer.adopted_content,
+    )
+    result = apply_edits([edit], root=root)
+    if not result.ok:
+        raise ValueError(f"the adoption switch failed: {result.failures}")
+    return version_ref, contrast_ref, lesson_ref
 
 
 def reflect(
@@ -434,13 +600,16 @@ def reflect(
     *,
     ports: HostPorts,
     evidence_run_ids: Sequence[str] = (),
+    stages: Sequence[Mapping[str, Any]] = (),
+    champion_pin: str = "",
 ) -> None:
     """Report one tick's outcome through the existing run event sink.
 
     Submits the lesson only when the compose step adopted a candidate,
     citing the evidence runs by trace id; an abstained tick reports its
-    refusal code and submits no lesson. A no-op without a registered
-    host sink.
+    refusal code and submits no lesson. The tick trace carries one cost
+    entry per stage the stage allocation ran, and the pinned champion
+    revision the tick held. A no-op without a registered host sink.
     """
     ports.emit_run_event(
         {
@@ -456,12 +625,15 @@ def reflect(
                 if outcome.adopted_version_ref is not None
                 else []
             ),
+            "stage_allocations": [dict(stage) for stage in stages],
+            "champion_pin": champion_pin,
         }
     )
 
 
-#: The candidate slot count below which the cycle abstains.
-MIN_CANDIDATE_SLOTS = 2
+#: The candidate slot count below which the cycle abstains when the stage
+#: allocation's answer carries no received minimum of its own.
+FALLBACK_MIN_CANDIDATE_SLOTS = 2
 
 
 def _model_ref(model: Any) -> str:
@@ -490,7 +662,14 @@ def _budget_ref(budget: RunBudget) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
-def _refused(ports: HostPorts, task_ref: str, k: int, code: str) -> CycleOutcome:
+def _refused(
+    ports: HostPorts,
+    task_ref: str,
+    k: int,
+    code: str,
+    stages: Sequence[Mapping[str, Any]] = (),
+    champion_pin: str = "",
+) -> CycleOutcome:
     """The abstained outcome: the current harness is kept, nothing persisted."""
     outcome = CycleOutcome(
         task_ref=task_ref,
@@ -500,7 +679,7 @@ def _refused(ports: HostPorts, task_ref: str, k: int, code: str) -> CycleOutcome
         contrast_ref=None,
         lesson_ref=None,
     )
-    reflect(outcome, ports=ports)
+    reflect(outcome, ports=ports, stages=stages, champion_pin=champion_pin)
     return outcome
 
 
@@ -512,7 +691,6 @@ async def run_cycle_tick(
     graph: Any,
     config: Mapping[str, Any] | None = None,
     library_query: LibraryQuery,
-    decide: ContrastDecision,
     write_envelope: EnvelopeWriter,
     root: str | Path = ".",
     mode: str = "ask",
@@ -521,21 +699,45 @@ async def run_cycle_tick(
     """One propose–probe–compose–persist–reflect tick for one task.
 
     Reads the candidate budget k from the candidate slot count of the
-    stage allocation the run decision carries on the budget; below two
-    slots the cycle abstains with ``budget_below_contrast`` and keeps
-    the current harness. Each step refuses with one typed code; a refusal
-    persists nothing and the current harness is kept.
+    stage allocation the run decision carries on the budget. The bound
+    is the allocation's received ``candidate_slots_min`` when it carries
+    one, else the fallback of two slots; below the bound the cycle
+    abstains with ``budget_below_contrast`` and keeps the current
+    harness. Each step refuses with one typed code; a refusal persists
+    nothing and the current harness is kept. When the run admits the
+    ``stage_allocation`` consumer, one StageAllocation decide names one
+    model per tick stage and each stage records its cost entry in the
+    tick trace the reflect event carries.
     """
     task_ref = request.run_id
     k = plan.budget.candidate_slots
-    if k is None or k < MIN_CANDIDATE_SLOTS:
+    min_slots = plan.budget.candidate_slots_min
+    if min_slots is None:
+        min_slots = FALLBACK_MIN_CANDIDATE_SLOTS
+    if k is None or k < min_slots:
         return _refused(request.ports, task_ref, k or 0, "budget_below_contrast")
     seed = str(request.metadata.get("harness_seed") or "")
     current_version_ref = str(request.metadata.get("harness_current_version_ref") or "")
     model_ref = _model_ref(plan.model)
     budget_ref = _budget_ref(plan.budget)
     try:
-        candidates = propose(
+        tick_trace: list[dict[str, Any]] = []
+        champion_pin = ""
+        if "stage_allocation" in plan.harness.consumers:
+            allocation = await _resolve_stage_allocation(
+                request.ports, task_ref=task_ref, budget_ref=budget_ref
+            )
+        else:
+            allocation = None
+        if "champion_pin" in plan.harness.consumers:
+            champion_pin = await pin_champion(
+                f"{task_class}:{task_ref}", ports=request.ports, run_ref=task_ref
+            )
+        candidates = await run_stage(
+            "propose",
+            allocation,
+            propose,
+            tick_trace,
             task_ref=task_ref,
             task_class=task_class,
             library=library_query,
@@ -544,7 +746,11 @@ async def run_cycle_tick(
             budget_ref=budget_ref,
             k=k,
         )
-        traces = await probe_candidates(
+        traces = await run_stage(
+            "probe",
+            allocation,
+            probe_candidates,
+            tick_trace,
             graph=graph,
             config=config,
             task=request.task,
@@ -563,14 +769,19 @@ async def run_cycle_tick(
         )
         by_id = {trace.candidate_id: trace for trace in traces}
         digest = traces[0].conditions_digest
-        answer = await compose(
+        answer, contrast_record_digest = await run_stage(
+            "compose",
+            allocation,
+            compose,
+            tick_trace,
             task_ref=task_ref,
             task_class=task_class,
             conditions_digest_value=digest,
             candidates=candidates,
             baseline=baseline,
             traces=by_id,
-            decide=decide,
+            ports=request.ports,
+            run_ref=task_ref,
         )
         try:
             adopted = next(
@@ -582,16 +793,32 @@ async def run_cycle_tick(
             raise ValueError(
                 "the engine adopted a version outside the presented candidates"
             ) from None
-        contrast = measure_contrasts(
-            baseline=baseline, candidates=[adopted], traces=by_id
-        )[0]
-        version_ref, contrast_ref, lesson_ref = persist(
+        adopted_trace = by_id[adopted.candidate_id].trace_id
+        evidence_run_ids = (
+            (baseline.trace_id, adopted_trace)
+            if baseline is not None
+            else (adopted_trace,)
+        )
+        if champion_pin:
+            current_pin = await pin_champion(
+                f"{task_class}:{task_ref}", ports=request.ports, run_ref=task_ref
+            )
+            if current_pin != champion_pin:
+                raise CycleRefusal("champion_moved")
+        version_ref, contrast_ref, lesson_ref = await run_stage(
+            "persist",
+            allocation,
+            persist,
+            tick_trace,
             task_ref=task_ref,
             task_class=task_class,
+            decision_record_digest=contrast_record_digest,
             conditions_digest_value=digest,
             adopted=adopted,
-            contrast=contrast,
             answer=answer,
+            evidence_run_ids=evidence_run_ids,
+            ports=request.ports,
+            run_ref=task_ref,
             write_envelope=write_envelope,
             root=root,
         )
@@ -603,14 +830,22 @@ async def run_cycle_tick(
             contrast_ref=contrast_ref,
             lesson_ref=lesson_ref,
         )
-        reflect(
+        await run_stage(
+            "reflect",
+            allocation,
+            reflect,
+            tick_trace,
             outcome,
             ports=request.ports,
-            evidence_run_ids=(contrast.run_a_trace_id, contrast.run_b_trace_id),
+            evidence_run_ids=evidence_run_ids,
+            stages=tick_trace,
+            champion_pin=champion_pin,
         )
         return outcome
     except CycleRefusal as refusal:
-        return _refused(request.ports, task_ref, k, refusal.code)
+        return _refused(
+            request.ports, task_ref, k, refusal.code, tick_trace, champion_pin
+        )
 
 
 async def drive_cycle_tick(
@@ -652,25 +887,29 @@ async def drive_cycle_tick(
 
 __all__ = [
     "ABSTAIN_REASONS",
+    "CONTRAST_KIND",
     "CURRENT_PROBE_ID",
     "ContrastAnswer",
-    "ContrastDecision",
-    "ContrastDelta",
     "ContrastRequest",
     "CycleOutcome",
     "CycleRefusal",
     "EnvelopeWriter",
+    "FALLBACK_MIN_CANDIDATE_SLOTS",
     "HarnessCandidate",
     "LibraryQuery",
-    "MIN_CANDIDATE_SLOTS",
     "ProbeTrace",
+    "STAGES",
+    "STAGE_ALLOCATION_KIND",
+    "StageAllocation",
+    "TraceRefs",
+    "collect_trace_refs",
     "conditions_digest",
     "compose",
-    "measure_contrasts",
-    "persist",
     "drive_cycle_tick",
+    "persist",
     "probe_candidates",
     "propose",
     "reflect",
     "run_cycle_tick",
+    "run_stage",
 ]

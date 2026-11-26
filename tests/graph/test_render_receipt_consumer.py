@@ -10,7 +10,7 @@ import pytest
 from pydantic_ai.messages import ModelResponse, TextPart
 from pydantic_ai.models.function import FunctionModel
 
-from meristem.graph import RunPlan, iterate_run, run
+from meristem.graph import RunPlan, RunStatus, iterate_run, run
 from meristem.graph.render_receipt import (
     CALL_SITE,
     CurrentRevisions,
@@ -105,7 +105,7 @@ async def test_dispatch_behavior() -> None:
     result = await run(
         support.request(task="hello", run_id="r"), plan=_plan(transport, _check())
     )
-    assert result.status == "completed", result.error
+    assert result.status is RunStatus.COMPLETED, result.error
     assert transport.requests == 1
 
 
@@ -122,7 +122,7 @@ async def test_producer_wiring() -> None:
     support.register_run_decision_provider(decide)
     result = await run(support.request(task="hello", run_id="w"))
     assert seen == ["w"]
-    assert result.status == "failed"
+    assert result.status is RunStatus.FAILED
     assert "receipt_wrong_scope" in (result.error or "")
     assert transport.requests == 0
 
@@ -141,7 +141,7 @@ async def test_partial_refusal() -> None:
         result = await run(
             support.request(task="hello", run_id=code), plan=_plan(transport, check)
         )
-        assert result.status == "failed", code
+        assert result.status is RunStatus.FAILED, code
         assert code in (result.error or ""), code
         assert transport.requests == 0, code
 
@@ -203,6 +203,6 @@ async def test_consumer_binding_served() -> None:
             support.request(task="hello", run_id=code),
             plan=_plan(refused_transport, check),
         )
-        assert result.status == "failed", code
+        assert result.status is RunStatus.FAILED, code
         assert code in (result.error or ""), code
         assert refused_transport.requests == 0, code
