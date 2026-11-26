@@ -219,3 +219,7 @@ Entry point `meristem.graph.execute_graph` → `meristem/graph/runner.py::execut
 
 - `MERISTEM-HARNESS-CYCLE-R001`: [contracts/medulla.md](contracts/medulla.md)
 - `MERISTEM-HARNESS-CYCLE-R001.11`: [contracts/arbora.md](contracts/arbora.md)
+
+### Knowledge factory and skill telemetry hooks
+
+`RunLifecycle` (R078) gains `on_skill_start` and `on_skill_end`. They feed the skill invocation event (R091), the cost delta (R092) and the engine telemetry call. The harness binds the flag and friction tools in every run (R093). Skills load in three stages (R094). A skill may run in a worker on a received model (R095), run a load script (R096) or run as a code step (R097). Eval runs use a clean-room workspace (R099), replay one case (R098) and apply one ablation arm (R100). Every value in these rows is received from the engine or the host. The harness decides nothing.
