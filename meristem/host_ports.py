@@ -355,8 +355,12 @@ DecisionPort = Callable[
 ]
 """``(question, payload, task_id) -> DecisionVerdict`` for one control step."""
 
-ApprovalWaiter = Callable[[str, str, str, int], Awaitable[ApprovalOutcome]]
-"""``(run_id, task_id, approver_role, timeout_s) -> ApprovalOutcome``.
+ApprovalWaiter = Callable[[str, str, str, int, str], Awaitable[ApprovalOutcome]]
+"""``(run_id, task_id, approver_role, timeout_s, plan_ref) -> ApprovalOutcome``.
+
+``plan_ref`` is the received dependency plan's ``plan_id``: the reference the
+host keys its approval inbox item by, so a waiting task maps to exactly one
+item.
 
 The waiter owns its timeout on a clock or event the host injects; the harness
 never sleeps for it. Cancelling the awaiting task cancels the wait.
