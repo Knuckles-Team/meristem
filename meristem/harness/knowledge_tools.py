@@ -48,19 +48,13 @@ def require_knowledge_tools(tool_names: tuple[str, ...]) -> None:
         raise FlagToolUnbound(FLAG_TOOL_UNBOUND)
 
 
-_KNOWLEDGE_KINDS = {
-    "skill": "skill",
-    "term": "domain",
-    "topic": "domain",
-    "source": "data_access",
-}
-
-
 def knowledge_kind(target_ref: str) -> str:
     """The engine ``knowledge_kind`` of a ``skill:``, ``term:``, ``source:`` or
     ``topic:`` target reference."""
     prefix = target_ref.split(":", 1)[0]
-    return _KNOWLEDGE_KINDS.get(prefix, "skill")
+    if prefix in ("term", "topic"):
+        return "domain"
+    return "data_access" if prefix == "source" else "skill"
 
 
 def build_knowledge_tools(
