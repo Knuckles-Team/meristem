@@ -198,7 +198,7 @@ States: `Blocked`, `Ready`, `Active`, `Done`, `Failed`, `Cancelled`, `Skipped`. 
 | Edge | From | Event | Guard | To |
 |------|------|-------|-------|----|
 | TE1 | Blocked | deps_met | every parent Done | Ready |
-| TE2 | Blocked | skip | ancestor Failed or Cancelled, or run Cancelling or Failed | Skipped |
+| TE2 | Blocked | skip | ancestor Failed or Cancelled, run Cancelling or Failed, or branch arm not taken | Skipped |
 | TE3 | Ready | skip | same as TE2 | Skipped |
 | TE4 | Ready | dispatch | model-call permit held | Active |
 | TE5 | Active | complete | run status Running | Done |

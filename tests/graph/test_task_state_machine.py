@@ -46,6 +46,7 @@ ALL_TASK_GUARDS = {
     "all_parents_done": True,
     "ancestor_failed_or_cancelled": True,
     "run_cancelling_or_failed": True,
+    "arm_not_taken": True,
     "permit_held": True,
     "run_running": True,
 }

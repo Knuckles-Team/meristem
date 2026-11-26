@@ -347,7 +347,14 @@ async def iterate_run(
         if history and run_plan.dependency_plan is not None:
             raise ValueError("dependency-plan conversation history is unavailable")
         tool_caller = request.ports.tool_caller()
-        validate_dependency_plan(run_plan, tool_caller=tool_caller)
+        decision_port = request.ports.decision_port()
+        approval_waiter = request.ports.approval_waiter()
+        validate_dependency_plan(
+            run_plan,
+            tool_caller=tool_caller,
+            decision_port=decision_port,
+            approval_waiter=approval_waiter,
+        )
         refs = request.metadata.get("media_refs")
         if refs and not request.attachments:
             request = replace(
@@ -616,6 +623,8 @@ async def iterate_run(
                                         emit,
                                         deadline=deadline,
                                         tool_caller=tool_caller,
+                                        decision_port=decision_port,
+                                        approval_waiter=approval_waiter,
                                         checkpoint=checkpoint,
                                         event_publisher=event_publisher,
                                         child_records=child_records,
