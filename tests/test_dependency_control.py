@@ -86,7 +86,7 @@ class Fakes:
     def __init__(self, verdicts=None, outcome=None, gate=None, decide_gate=None):
         self.called: list[str] = []
         self.asked: list[tuple[str, dict, str]] = []
-        self.waits: list[tuple[str, str, str, int]] = []
+        self.waits: list[tuple[str, str, str, int, str]] = []
         self.verdicts = verdicts or {}
         self.outcome = outcome or ApprovalOutcome("approve", "alice", 1234)
         self.gate = gate
@@ -114,8 +114,8 @@ class Fakes:
         verdict = self.verdicts[task_id]
         return verdict(payload) if callable(verdict) else verdict
 
-    async def wait(self, run_id, task_id, role, timeout_s):
-        self.waits.append((run_id, task_id, role, timeout_s))
+    async def wait(self, run_id, task_id, role, timeout_s, plan_ref):
+        self.waits.append((run_id, task_id, role, timeout_s, plan_ref))
         self.progress.set()
         if self.gate is not None:
             await self.gate.wait()
@@ -134,7 +134,7 @@ def test_control_fields_validate_and_ports_register():
     async def decide(question, payload, task_id):
         return DecisionVerdict()
 
-    async def wait(run_id, task_id, role, timeout_s):
+    async def wait(run_id, task_id, role, timeout_s, plan_ref):
         return ApprovalOutcome("approve")
 
     bound = HostPorts(decision=decide, approval=wait)
@@ -336,7 +336,7 @@ async def test_approval_wait_frees_slot_and_reject_skips_dependents(events):
     try:
         await fakes.until(lambda: {"t1", "t2"} <= set(fakes.called) and fakes.waits)
         assert {"t1", "t2"} <= set(fakes.called) and not parent.done()
-        assert fakes.waits == [(fakes.waits[0][0], "ap", "owner", 30)]
+        assert fakes.waits == [(fakes.waits[0][0], "ap", "owner", 30, "sha256:plan")]
         gate.set()
         result = await parent
     finally:

@@ -323,6 +323,7 @@ async def _await_approval(
     task: RunTask,
     *,
     run_id: str,
+    plan_ref: str,
     approval_waiter: ApprovalWaiter | None,
     notify: Callable[..., Any],
 ) -> _ControlExecution:
@@ -341,7 +342,7 @@ async def _await_approval(
         timeout_s=timeout_s,
     )
     try:
-        outcome = await approval_waiter(run_id, task.task_id, role, timeout_s)
+        outcome = await approval_waiter(run_id, task.task_id, role, timeout_s, plan_ref)
     except asyncio.CancelledError:
         notify("approval_wait_ended", task.task_id, outcome="cancelled")
         raise
@@ -1278,6 +1279,7 @@ async def _execute_dependency_plan(
             return await _await_approval(
                 task,
                 run_id=state.run_id,
+                plan_ref=graph.plan_id,
                 approval_waiter=approval_waiter,
                 notify=event,
             )
