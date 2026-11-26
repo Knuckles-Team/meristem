@@ -25,7 +25,6 @@ def port_with(answer):
     )
 
 
-@pytest.mark.spec("MERISTEM-HARNESS-CYCLE-R075")
 async def test_success_only_after_matched_readback():
     receipt = await verify_ingest_readback(
         port_with({"outcome": "solved", "payload": {"verdict": "matched"}}),

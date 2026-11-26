@@ -31,7 +31,7 @@ from meristem.harness.conversation_history import (
     read_run_history,
     trim_history,
 )
-from meristem.harness.default_consumers import bind_default_consumers
+from meristem.harness.default_consumers import TOOL_ACTION_GUARD, bind_default_consumers
 from meristem.harness.knowledge_tools import bind_knowledge_tools
 from meristem.harness.plan_runtime import PlanScaffold
 from meristem.harness.program_reuse import report_reuse, reuse_program
@@ -42,6 +42,7 @@ from .budget import LiveSharedBudget, SharedBudget, initial_run_usage
 from .checkpoint import RunCheckpoint
 from .child_public_records import child_records_for
 from .dependency import (
+    guard_tool_caller,
     iterate_dependency_plan,
     received_plan_items,
     validate_dependency_plan,
@@ -196,6 +197,8 @@ def _event(
             f"meristem:run:{state.run_id}:event:{state.event_sequence}",
         ).hex,
     }
+    if state.event_log is not None:
+        state.event_log.append(event)
     if publish:
         ports.emit_run_event(event)
     return event
@@ -387,6 +390,15 @@ async def iterate_run(
         if run_plan.lifecycle is None and lifecycle.enabled("champion_skill"):
             champion = ChampionApplied()
             lifecycle.add("champion_skill", "on_start", champion_on_start(champion))
+        if lifecycle.enabled(TOOL_ACTION_GUARD) and tool_caller is not None:
+            tool_caller = guard_tool_caller(
+                tool_caller,
+                confirm=request.ports.confirm,
+                state=state,
+                tool_classes=(run_plan.harness.action_space or {}).get(
+                    "tool_classes", {}
+                ),
+            )
         if lifecycle.enabled("step_usage"):
             state.metrics.bind_usage(state.pending_usage.append, run_id=request.run_id)
         if run_plan.lifecycle is None:

@@ -14,7 +14,6 @@ from meristem.host_ports import SummaryProviderDisabled, SummaryResult
 CONTEXT = {"records": ["a", "b"]}
 
 
-@pytest.mark.spec("MERISTEM-HARNESS-CYCLE-R068")
 async def test_one_invocation_one_receipt():
     calls = []
 

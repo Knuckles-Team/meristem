@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 
 import pytest
@@ -34,8 +35,6 @@ async def reader(tenant, graph, node, revision):
     return BODY
 
 
-@pytest.mark.spec("MERISTEM-RUN-R003")
-@pytest.mark.spec("MERISTEM-RUN-R003.1")
 async def test_graph_ref_source_admitted():
     admitted = await admit_study_sources(
         [graph_source(), {"kind": "filesystem", "path": "p", "digest": "d"}], reader
@@ -46,13 +45,11 @@ async def test_graph_ref_source_admitted():
     )
 
 
-@pytest.mark.spec("MERISTEM-RUN-R003.1")
 async def test_graph_ingested_source_accepted():
     admitted = await admit_study_sources([graph_source(kind="graph_ingested")], reader)
     assert admitted[0].content_digest == DIGEST
 
 
-@pytest.mark.spec("MERISTEM-RUN-R003.1")
 @pytest.mark.parametrize(
     ("source", "code"),
     [
@@ -66,22 +63,24 @@ async def test_refusal_codes(source, code):
         await admit_study_sources([source], reader)
 
 
+@pytest.mark.spec("MERISTEM-RUN-R003")
 @pytest.mark.spec("MERISTEM-RUN-R003.1")
 async def test_run_refuses_a_mismatched_graph_source_before_any_step():
     import ports_support as support
-    from pydantic_ai.models.test import TestModel
+    from support.journey import execute, text_plan
 
-    from meristem.graph import RunPlan, run
+    sources = (graph_source(), graph_source(kind="graph_ingested"))
+    plan = dataclasses.replace(text_plan([]), study_sources=sources)
+    support.PORTS.study_content = reader
+    assert (await execute(plan))["status"] == "completed"
 
     async def tampered(tenant, graph, node, revision):
         return b"other body"
 
     support.PORTS.study_content = tampered
-    plan = RunPlan(
-        model=TestModel(custom_output_text="ok"),
-        steps=("q",),
-        study_sources=(graph_source(),),
-    )
-    result = await run(support.request(task="t"), plan=plan)
-    assert result.status.value == "failed"
-    assert "STUDY_SOURCE_DIGEST_MISMATCH" in (result.error or "")
+    result = await execute(plan)
+    assert result["status"] == "failed"
+    assert "STUDY_SOURCE_DIGEST_MISMATCH" in result["error"]
+    support.PORTS.study_content = None
+    unbound = await execute(plan)
+    assert "STUDY_CONTENT_UNAVAILABLE" in unbound["error"]

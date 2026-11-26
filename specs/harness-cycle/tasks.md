@@ -37,7 +37,7 @@ Each task line reads `- [ ] T001 [P] [US1] <ID>-R012.4 description`. The task nu
 - [ ] T030 [US1] MERISTEM-HARNESS-CYCLE-R014.1 Apply the selected system prompt.
 - [ ] T031 [US1] MERISTEM-HARNESS-CYCLE-R015.1.1 The run loop enforces the signed allowed tool subset.
 - [ ] T032 [US1] MERISTEM-HARNESS-CYCLE-R016.1 Hand received quota values to the sandbox.
-- [ ] T033 [US1] MERISTEM-HARNESS-CYCLE-R016.2 Attach run trace receipt nodes to the terminal result.
+- [ ] T033 [US1] MERISTEM-HARNESS-CYCLE-R016.2 Keep the per-run tool trace and hand it to the host as plain data.
 - [ ] T034 [US1] MERISTEM-HARNESS-CYCLE-R016.3 Read trace critique pages.
 - [ ] T035 [US1] MERISTEM-HARNESS-CYCLE-R017.1 Split an over-window prompt.
 - [ ] T036 [US1] MERISTEM-HARNESS-CYCLE-R017.2 Apply the chosen context package exactly.

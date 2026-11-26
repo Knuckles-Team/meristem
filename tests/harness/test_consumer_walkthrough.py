@@ -15,7 +15,6 @@ SECTIONS = [{"path": "a.py", "source_revision": "rev1"}]
 EVENTS = [{"task_id": "t0"}, {"span_id": "sp1", "path": "a.py"}]
 
 
-@pytest.mark.spec("MERISTEM-HARNESS-CYCLE-R073")
 async def test_manifest_binds_spans_and_sources():
     manifest = build_walkthrough_manifest(SECTIONS, EVENTS)
     assert manifest["sections"][0]["spans"] == [{"span_id": "sp1", "step": 1}]

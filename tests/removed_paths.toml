@@ -168,3 +168,9 @@ field = "summary_provider"
 
 [[added]]
 field = "study_content"
+
+[[added]]
+field = "run_trace"
+
+[[added]]
+field = "technique_measure"

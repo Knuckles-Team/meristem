@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
 from support.recorded_engine import RecordedEnginePort
 
 from meristem.harness.nary_proposals import read_nary_proposals
@@ -10,7 +9,6 @@ from meristem.harness.nary_proposals import read_nary_proposals
 PARAMS = {"request": {"arity": 3}, "source": {"graph": "g"}}
 
 
-@pytest.mark.spec("MERISTEM-HARNESS-CYCLE-R066")
 async def test_hypotheses_stay_proposals():
     port = RecordedEnginePort(
         {

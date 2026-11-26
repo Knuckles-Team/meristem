@@ -543,6 +543,12 @@ class GraphState:
     """Step-usage facts not yet emitted as run events."""
     engine_records: dict[str, str] = field(default_factory=dict)
     """Record digest of each applied engine decision, by question kind."""
+    tool_trace: list[dict[str, Any]] = field(default_factory=list)
+    """The ordered tool steps of the run: name, args digest, outcome, timing."""
+    event_log: list[dict[str, Any]] | None = None
+    """Every emitted run event, kept only when an admitted consumer needs it."""
+    untrusted_seen: bool = False
+    """A tool result has entered the run, so later risky tools need admission."""
 
     def note_record(self, kind: str, digest: str) -> None:
         """Keep the digest of the decision a consumer applied (R004.1)."""
