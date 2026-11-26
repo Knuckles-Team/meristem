@@ -186,5 +186,71 @@ async def test_restart_resolves_checkpointed_images_by_digest_or_refuses():
     assert "media_unavailable" in refused[-1]["error"]
 
 
+def _two_step_plan(limit, requests):
+    def respond(messages, info):
+        requests.append(list(messages))
+        return ModelResponse(parts=[TextPart("ok")])
+
+    return RunPlan(
+        model=FunctionModel(respond),
+        steps=("one", "two"),
+        input_media_types=("image/png",),
+        budget=RunBudget(history_token_limit=limit, image_token_cost=1000),
+    )
+
+
+def _has_image(messages):
+    return any(
+        isinstance(item, BinaryContent)
+        for message in messages
+        for part in message.parts
+        for item in (
+            part.content if isinstance(getattr(part, "content", None), list) else []
+        )
+    )
+
+
+@pytest.mark.spec("MERISTEM-RUN-R017.1")
+async def test_history_keeps_image_parts_and_trimming_emits_media_dropped():
+    request = support.request(task="t", attachments=(PNG,))
+    # Within the received limit the second step still sees the image part.
+    kept: list = []
+    events = await _events(request, _two_step_plan(5000, kept))
+    assert _has_image(kept[1])
+    assert "media_dropped" not in [e["type"] for e in events]
+    # Over the limit the oldest turn goes, and its image goes with a digest event.
+    trimmed: list = []
+    events = await _events(request, _two_step_plan(500, trimmed))
+    assert not _has_image(trimmed[1])
+    (dropped,) = [e for e in events if e["type"] == "media_dropped"]
+    assert dropped["sha256"] == SHA and dropped["bytes"] == len(PNG.data)
+    assert "89PNG" not in json.dumps(dropped)
+    assert events[-1]["result"]["status"] == "completed"
+
+
+@pytest.mark.spec("MERISTEM-RUN-R017.5")
+async def test_iterate_run_png_reaches_model_request_end_to_end():
+    seen: list = []
+    budget = RunBudget(total_tokens_limit=5000, image_token_cost=1000)
+    request = support.request(task="t", attachments=(PNG,))
+    events = await _events(request, _plan(budget=budget, seen=seen))
+    kinds = [e["type"] for e in events]
+    # The model request carries the binary part; the digest event follows run_started.
+    assert any(isinstance(part, BinaryContent) for part in seen[0])
+    assert kinds.index("media_attached") == kinds.index("run_started") + 1
+    (attached,) = [e for e in events if e["type"] == "media_attached"]
+    assert attached["sha256"] == SHA and attached["position"] == 0
+    assert events[-1]["result"]["status"] == "completed"
+    # The reservation refuses before any request; the fallback path runs.
+    seen.clear()
+    tight = RunBudget(total_tokens_limit=900, image_token_cost=1000)
+    refused = await _events(request, _plan(budget=tight, seen=seen))
+    assert "budget_exceeded" in refused[-1]["error"] and seen == []
+    fallback = await _events(
+        request, _plan(media=(), fallback="text_placeholder", seen=seen)
+    )
+    assert "media_fallback" in [e["type"] for e in fallback]
+
+
 def test_status_enum_is_unchanged():
     assert RunStatus.COMPLETED.value == "completed"
