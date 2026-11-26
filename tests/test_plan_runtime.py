@@ -31,8 +31,7 @@ def injected(messages):
 
 
 @pytest.mark.spec("MERISTEM-RUN-R001.4.2")
-@pytest.mark.parametrize("mode", ["on", "off"])
-async def test_received_decision_gates_tool_and_injection(mode):
+async def test_every_run_gets_the_update_tool_and_no_plan_injects_nothing():
     seen = []
 
     def model(messages, info):
@@ -41,18 +40,11 @@ async def test_received_decision_gates_tool_and_injection(mode):
 
     result = await run(
         support.request(task="task"),
-        plan=RunPlan(
-            model=FunctionModel(model),
-            steps=("task",),
-            harness=HarnessConfig(plan_scaffold=mode),
-        ),
+        plan=RunPlan(model=FunctionModel(model), steps=("task",)),
     )
     assert result.status is RunStatus.COMPLETED
-    assert (
-        seen == [(["update_plan"], ["Current run plan: []"])]
-        if mode == "on"
-        else seen == [([], [])]
-    )
+    # No plan yet: the tool exists and there is nothing current to inject.
+    assert seen == [(["update_plan"], [])]
 
 
 @pytest.mark.spec("MERISTEM-RUN-R001.4.2")
@@ -87,14 +79,14 @@ async def test_two_updates_reach_each_request_but_never_stored_history(monkeypat
         plan=RunPlan(
             model=FunctionModel(model),
             steps=("first prompt", "second prompt"),
-            harness=HarnessConfig(plan_scaffold="on"),
+            harness=HarnessConfig(),
         ),
     )
     assert result.status is RunStatus.COMPLETED
     assert len(captured) == 5
     plans = [injected(messages) for messages in captured]
-    assert all(len(plan) == 1 for plan in plans)
-    assert plans[0] == ["Current run plan: []"]
+    assert all(len(plan) == 1 for plan in plans[1:])
+    assert plans[0] == []
     assert "private-plan-1" in plans[1][0]
     assert all("private-plan-2" in plan[0] for plan in plans[2:])
     assert "invalid_plan" in repr(captured[3])
@@ -127,11 +119,11 @@ async def test_separate_executions_start_with_empty_scaffolds():
     plan = RunPlan(
         model=FunctionModel(model),
         steps=("task",),
-        harness=HarnessConfig(plan_scaffold="on"),
+        harness=HarnessConfig(),
     )
     for _ in range(2):
         await run(support.request(task="task"), plan=plan)
-    assert initial == [["Current run plan: []"], ["Current run plan: []"]]
+    assert initial == [[], []]
 
 
 @pytest.mark.spec("MERISTEM-RUN-R001.4.3")
@@ -163,7 +155,7 @@ async def test_budget_exit_cleans_tool_payload_without_another_request(monkeypat
         plan=RunPlan(
             model=FunctionModel(model),
             steps=("task",),
-            harness=HarnessConfig(plan_scaffold="on"),
+            harness=HarnessConfig(),
             budget=RunBudget(request_limit=1),
         ),
     )
@@ -207,34 +199,11 @@ async def test_scaffold_surface_and_imports_have_no_selection_authority():
         plan=RunPlan(
             model=FunctionModel(model),
             steps=("task",),
-            harness=HarnessConfig(plan_scaffold="on"),
+            harness=HarnessConfig(),
         ),
     )
     assert len(schemas) == 1
     assert set(schemas[0]["properties"]) == {"items"}
-
-
-@pytest.mark.spec("MERISTEM-RUN-R001.4.2")
-@pytest.mark.parametrize("mode", ["unknown", "", None])
-async def test_invalid_received_scaffold_decision_fails_before_model_call(mode):
-    calls = []
-
-    def model(messages, info):
-        calls.append(messages)
-        return ModelResponse(parts=[TextPart("unexpected")])
-
-    result = await run(
-        support.request(task="task"),
-        plan=RunPlan(
-            model=FunctionModel(model),
-            steps=("task",),
-            harness=HarnessConfig(plan_scaffold=mode),
-        ),
-    )
-    assert result.status is RunStatus.FAILED
-    assert result.error is not None
-    assert "plan_scaffold must be on or off" in result.error
-    assert calls == []
 
 
 @pytest.mark.spec("MERISTEM-RUN-R001.5.2")
@@ -285,7 +254,7 @@ async def test_host_receives_only_actual_accepted_revisions():
         plan=RunPlan(
             model=FunctionModel(model),
             steps=("task",),
-            harness=HarnessConfig(plan_scaffold="on"),
+            harness=HarnessConfig(),
         ),
     )
     assert result.status is RunStatus.COMPLETED
@@ -348,7 +317,7 @@ async def test_publication_failure_stops_run_without_disclosing_payload(failure_
         plan=RunPlan(
             model=FunctionModel(model),
             steps=("task",),
-            harness=HarnessConfig(plan_scaffold="on"),
+            harness=HarnessConfig(),
         ),
     )
     # A close failure lands after the output step's finish edge; the closed
@@ -413,7 +382,7 @@ async def test_concurrent_runs_publish_to_their_own_host_binding():
             plan=RunPlan(
                 model=FunctionModel(model),
                 steps=("task",),
-                harness=HarnessConfig(plan_scaffold="on"),
+                harness=HarnessConfig(),
             ),
         )
 

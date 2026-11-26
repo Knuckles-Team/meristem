@@ -35,7 +35,7 @@ def _params(current_width: int, budget_tokens: int | None) -> dict:
 def _plan() -> RunPlan:
     lifecycle = run_lifecycle.RunLifecycle(consumers=("run_adjustment",))
     return RunPlan(
-        model=TestModel(custom_output_text="done"),
+        model=TestModel(custom_output_text="done", call_tools=[]),
         steps=("q",),
         budget=RunBudget(max_concurrent_requests=2, total_tokens_limit=100),
         lifecycle=lifecycle,

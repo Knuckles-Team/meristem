@@ -2267,7 +2267,7 @@ async def test_live_shared_budget_refuses_checkpoint_and_seeded_usage():
     async def checkpoint(_request, _plan):
         yield object()
 
-    support.register_run_checkpoint_factory(checkpoint)
+    support.register_run_checkpoint_store(checkpoint)
     plan = plan_of(echo_model(calls), budget=budget)
     result = await run(
         support.request(task="child"), plan=plan, shared_execution=shared

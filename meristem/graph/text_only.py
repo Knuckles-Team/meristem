@@ -45,7 +45,6 @@ def validate_text_plan(plan: Any) -> None:
     _require(plan.input_media_types == () and plan.dependency_plan is None)
     _require(plan.client_transport is None and plan.harness.client_tools == ())
     _require(plan.harness.client_tool_limits is None)
-    _require(plan.harness.plan_scaffold == "off")
     _require(plan.harness.response_format == "text")
     _require(type(plan.harness.retries) is int and plan.harness.retries == 0)
     _require(type(plan.stop.max_steps) is int and plan.stop.max_steps == 1)

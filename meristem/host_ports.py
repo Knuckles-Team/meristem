@@ -119,7 +119,14 @@ class PlanState:
     def __init__(self) -> None:
         self._items: tuple[PlanItem, ...] = ()
         self._revision = 0
+        self._received = False
         self._lock = Lock()
+
+    @property
+    def received(self) -> bool:
+        """True while the items are the host-received plan, not a model edit."""
+        with self._lock:
+            return self._received
 
     @property
     def items(self) -> tuple[PlanItem, ...]:
@@ -139,9 +146,21 @@ class PlanState:
         self, items: Sequence[PlanItem]
     ) -> tuple[int, tuple[PlanItem, ...]]:
         """Return exactly the accepted revision and items under the update lock."""
+        return self._apply(items, received=False)
+
+    def replace_received(
+        self, items: Sequence[PlanItem]
+    ) -> tuple[int, tuple[PlanItem, ...]]:
+        """Replace all items with the host-received plan or its task progress."""
+        return self._apply(items, received=True)
+
+    def _apply(
+        self, items: Sequence[PlanItem], *, received: bool
+    ) -> tuple[int, tuple[PlanItem, ...]]:
         replacement = tuple(PlanItem.model_validate(item) for item in items)
         with self._lock:
             self._items = replacement
+            self._received = received
             self._revision += 1
             return self._revision, replacement
 
@@ -545,7 +564,7 @@ class RunCheckpointPort(Protocol):
     async def save(self, content: str) -> None: ...
 
 
-RunCheckpointFactory = Callable[
+RunCheckpointStore = Callable[
     [Any, Any], contextlib.AbstractAsyncContextManager[RunCheckpointPort | None]
 ]
 
@@ -578,7 +597,7 @@ class HostPorts:
     scaffold_publication: OptionalScaffoldPublicationFactory | None = None
     run_history: RunHistoryProvider | None = None
     run_checkpoints: RunCheckpointProvider | None = None
-    checkpoint_factory: RunCheckpointFactory | None = None
+    checkpoint_store: RunCheckpointStore | None = None
     engine_decision: EngineDecisionPort | None = None
     media_resolver: Callable[[str], Awaitable[bytes | None]] | None = None
     #: run_id -> the run's ``ChangesetSubmitter`` (meristem.harness.changeset_loop).
@@ -818,16 +837,16 @@ class HostPorts:
                 if failure is None:
                     raise RuntimeError("scaffold publication close failed") from None
 
-    def run_checkpoint_factory_bound(self) -> bool:
-        """Return whether a host checkpoint transaction is available to this host."""
-        return self.checkpoint_factory is not None
+    def run_checkpoint_bound(self) -> bool:
+        """Whether the host binds ``checkpoint_store``, which restores a current run."""
+        return self.checkpoint_store is not None
 
     @contextlib.asynccontextmanager
     async def run_checkpoint_scope(
         self, request: Any, plan: Any
     ) -> AsyncIterator[RunCheckpointPort | None]:
         """Open the optional host checkpoint transaction for one admitted run."""
-        factory = self.checkpoint_factory
+        factory = self.checkpoint_store
         if factory is None:
             yield None
             return

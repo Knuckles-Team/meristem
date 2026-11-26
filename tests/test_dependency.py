@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import uuid
 from dataclasses import replace
@@ -1542,7 +1543,7 @@ async def test_dependency_deadline_includes_scaffold_setup(stage, monkeypatch):
                     output_task_id="task",
                 ),
                 budget=RunBudget(timeout_seconds=600),
-                harness=HarnessConfig(plan_scaffold="on"),
+                harness=HarnessConfig(),
             ),
         )
     )
@@ -1727,3 +1728,68 @@ async def test_reusing_one_seeded_dependency_plan_does_not_share_mutable_usage()
         requests=2, tool_calls=1, input_tokens=3, output_tokens=4
     )
     assert results[0].run_id != results[1].run_id
+
+
+@pytest.mark.spec("MERISTEM-RUN-R001.5.2")
+async def test_received_dependency_plan_is_published_with_task_progress():
+    from meristem.host_ports import PlanItem
+
+    published = []
+
+    class Publisher:
+        async def publish(self, revision, items):
+            published.append((revision, [(i.text, i.status) for i in items]))
+
+    @contextlib.asynccontextmanager
+    async def scope(_request):
+        yield Publisher()
+
+    support.register_scaffold_publication_factory(scope)
+
+    def model(messages, info):
+        return ModelResponse(parts=[TextPart("ok")])
+
+    result = await run(
+        support.request(task="t"),
+        plan=RunPlan(
+            model=FunctionModel(model),
+            dependency_plan=DependencyPlan(
+                tasks=(RunTask("a", "first\nmore"), RunTask("b", "second", ("a",))),
+                output_task_id="b",
+            ),
+        ),
+    )
+    assert result.status is RunStatus.COMPLETED
+    assert published[0] == (1, [("a: first", "pending"), ("b: second", "pending")])
+    assert published[-1][1] == [("a: first", "done"), ("b: second", "done")]
+    assert ("a: first", "in_progress") in [
+        item for _, items in published for item in items
+    ]
+    revisions = [r for r, _ in published]
+    assert revisions == sorted(revisions) and len(set(revisions)) == len(revisions)
+    assert PlanItem  # the published items are the scaffold's own item type
+
+
+@pytest.mark.spec("MERISTEM-RUN-R001.5.2")
+async def test_run_without_a_plan_publishes_the_explicit_no_plan_state():
+    published = []
+
+    class Publisher:
+        async def publish(self, revision, items):
+            published.append((revision, items))
+
+    @contextlib.asynccontextmanager
+    async def scope(_request):
+        yield Publisher()
+
+    support.register_scaffold_publication_factory(scope)
+    result = await run(
+        support.request(task="t"),
+        plan=RunPlan(
+            model=FunctionModel(lambda m, i: ModelResponse(parts=[TextPart("ok")])),
+            steps=("t",),
+        ),
+    )
+    assert result.status is RunStatus.COMPLETED
+    # Revision zero with no items is the explicit no-plan state.
+    assert published == [(0, ())]

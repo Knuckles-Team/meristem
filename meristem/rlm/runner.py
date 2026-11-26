@@ -366,7 +366,7 @@ async def run_rlm(
         if lineage is not None and not isinstance(lineage, LineageBinding):
             raise TypeError("lineage must be a LineageBinding when supplied")
         ports = ports if ports is not None else HostPorts()
-        if ports.run_checkpoint_factory_bound():
+        if ports.run_checkpoint_bound():
             raise ValueError("recursive checkpoint restore is unavailable")
         history_request = (
             RunRequest(task=task, agent_name="rlm", run_id=lineage.run_id, ports=ports)

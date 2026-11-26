@@ -98,7 +98,7 @@ kind = "function"
 
 [[removed]]
 old = "meristem.host_ports.register_run_checkpoint_factory"
-new = "meristem.host_ports.HostPorts.checkpoint_factory"
+new = "meristem.host_ports.HostPorts.checkpoint_store"
 kind = "function"
 
 [[removed]]

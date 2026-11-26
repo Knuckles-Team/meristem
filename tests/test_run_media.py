@@ -77,7 +77,7 @@ async def test_events_and_checkpoint_hold_digests_and_never_bytes():
     async def scope(request, plan):
         yield Port()
 
-    support.register_run_checkpoint_factory(scope)
+    support.register_run_checkpoint_store(scope)
     request = support.request(task="t", attachments=(PNG,))
     events = await _events(request, _plan())
     (attached,) = [e for e in events if e["type"] == "media_attached"]
@@ -155,7 +155,7 @@ async def test_restart_resolves_checkpointed_images_by_digest_or_refuses():
     async def scope(request, plan):
         yield Port()
 
-    support.register_run_checkpoint_factory(scope)
+    support.register_run_checkpoint_store(scope)
 
     def two_steps():
         plan = _plan()

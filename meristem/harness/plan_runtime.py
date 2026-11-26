@@ -161,13 +161,18 @@ class PlanScaffold(AbstractCapability[Any]):
         # parts instead of mutating them leaves that request's shallow copy intact.
         self._history = ctx.messages
         ctx.messages[:] = _without_scaffold_payload(ctx.messages)
-        rendered = json.dumps([item.model_dump() for item in self.state.items])
-        injection = ModelRequest(
-            parts=[UserPromptPart(f"Current run plan: {rendered}")]
-        )
+        items = self.state.items
         # Assignment through replace is request-only. Appending to the framework's
         # special request list would also append to persistent history.
         request_messages = _without_plan_injections(list(request_context.messages))
+        if not items or self.state.received:
+            # No plan yet, or only the received task plan the host already
+            # publishes: there is nothing the model needs injected.
+            return replace(request_context, messages=request_messages)
+        rendered = json.dumps([item.model_dump() for item in items])
+        injection = ModelRequest(
+            parts=[UserPromptPart(f"Current run plan: {rendered}")]
+        )
         return replace(request_context, messages=[*request_messages, injection])
 
     async def wrap_run(

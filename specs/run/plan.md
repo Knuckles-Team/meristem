@@ -154,8 +154,8 @@ implementation section below records subsequent scaffold delivery.
 
 ### Scaffold loop implementation
 
-`HarnessConfig.plan_scaffold` is the received `on`/`off` decision, defaulting to
-`off`. `iterate_run` creates one `host_ports.PlanState` when enabled and passes
+Every run except a text-only run owns a plan scaffold; there is no switch.
+`iterate_run` creates one `host_ports.PlanState` and passes
 it to `build_agent`. `harness.plan_runtime.PlanScaffold` registers the sequential
 `update_plan` tool and shares that same state with `before_model_request`.
 Malformed items produce an `invalid_plan` observation without changing state.
@@ -167,8 +167,7 @@ Each agent call gets separate cleanup tracking while successive steps of the
 same outer run share the scaffold. Existing configuration positional arguments
 remain unchanged.
 
-A host-supplied `RunPlan` can enable this with
-`HarnessConfig(plan_scaffold="on")` through the existing run decision provider.
+A received dependency plan seeds the scaffold and its task progress is published.
 `RunPlan.steps` remain execution prompts. This config field does not add the
 historical context-policy or action-space fields. No snapshot reader is exported
 by this slice: revision, lease/scope binding, SDK/EG contracts and Arbora read
@@ -221,7 +220,7 @@ The following exact interfaces must exist before the snapshot bridge can ship:
    served run-plan decision method. It does not enable the scaffold. The existing
    EG owner is `medulla-decision-engine R128` (`harness_config`, including `.3` answer
    and `.6` scaffold rule); refresh its producer/client evidence before wiring
-   the result. A test-supplied `HarnessConfig(plan_scaffold="on")` proves the AU
+   the result. A default `HarnessConfig()` proves the AU
    mechanism, not an authenticated deployed decision or inspector journey.
 
 These source observations are bounded to the stated local revisions. They do

@@ -126,14 +126,9 @@ def _attachment_descriptor(attachments: list[Any]) -> list[dict[str, Any]]:
 
 def _plan_digest(plan: RunPlan, attachments: list[Any] | None = None) -> str:
     """Digest the immutable received execution binding, never host secrets."""
-    if (
-        plan.toolsets
-        or plan.harness.plan_scaffold != "off"
-        or plan.harness.client_tools
-        or plan.client_transport is not None
-    ):
+    if plan.toolsets or plan.harness.client_tools or plan.client_transport is not None:
         raise CheckpointUnavailable(
-            "checkpoint requires native tool grants and no client or scaffold state"
+            "checkpoint requires native tool grants and no client state"
         )
     descriptor = {
         "model": _model_name(plan.model),
@@ -155,7 +150,6 @@ def _plan_digest(plan: RunPlan, attachments: list[Any] | None = None) -> str:
             "retries": plan.harness.retries,
             "response_format": plan.harness.response_format,
             "model_settings": dict(plan.harness.model_settings),
-            "plan_scaffold": plan.harness.plan_scaffold,
         },
         "input_media_types": list(plan.input_media_types),
         "attachments": _attachment_descriptor(attachments or []),

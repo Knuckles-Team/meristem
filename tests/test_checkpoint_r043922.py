@@ -75,7 +75,7 @@ def _bind(port: MemoryCheckpoint) -> None:
     async def factory(request, plan):
         yield port
 
-    support.register_run_checkpoint_factory(factory)
+    support.register_run_checkpoint_store(factory)
 
 
 def _plan(model: Any, *, request_limit: int = 8, timeout_seconds: float = 60.0):

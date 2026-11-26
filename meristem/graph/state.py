@@ -333,7 +333,6 @@ class HarnessConfig:
     retries: int = DEFAULT_RETRIES
     response_format: Literal["text", "json"] = "text"
     model_settings: Mapping[str, Any] = field(default_factory=dict)
-    plan_scaffold: Literal["on", "off"] = "off"
     client_tools: tuple[str, ...] = ()
     client_tool_limits: ClientToolLimits | None = None
     consumers: tuple[str, ...] = ()

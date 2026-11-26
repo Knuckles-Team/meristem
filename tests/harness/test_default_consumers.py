@@ -178,7 +178,7 @@ def _bind_checkpoint(port):
     async def scope(request, plan):
         yield port
 
-    support.register_run_checkpoint_factory(scope)
+    support.register_run_checkpoint_store(scope)
 
 
 SEARCH = {

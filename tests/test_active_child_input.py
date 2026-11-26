@@ -236,7 +236,7 @@ async def test_checkpointed_input_refuses_before_model() -> None:
     async def checkpoint(request, plan):
         yield Checkpoint()
 
-    support.register_run_checkpoint_factory(checkpoint)
+    support.register_run_checkpoint_store(checkpoint)
     try:
 
         def model(messages, info):
@@ -250,7 +250,7 @@ async def test_checkpointed_input_refuses_before_model() -> None:
         assert result.status is RunStatus.FAILED
         assert calls == [] and port.receipts == []
     finally:
-        support.register_run_checkpoint_factory(None)
+        support.register_run_checkpoint_store(None)
 
 
 async def test_failed_receipt_after_tool_never_repeats_effect() -> None:

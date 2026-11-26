@@ -69,7 +69,6 @@ def apply_harness_config(
         hard_threshold=hard,
         recent_window_fraction=recent,
         action_space=dict(space) if isinstance(space, Mapping) else None,
-        plan_scaffold=_part(payload, "plan_scaffold") or plan.harness.plan_scaffold,
     )
     applied = AppliedHarnessConfig(
         harness_config_digest, tuple(subset) if subset is not None else None

@@ -74,7 +74,7 @@ def _bind(checkpoint: Checkpoint, publisher: Publisher) -> None:
     async def publisher_scope(request: Any):
         yield publisher
 
-    support.register_run_checkpoint_factory(checkpoint_scope)
+    support.register_run_checkpoint_store(checkpoint_scope)
     support.register_durable_run_event_factory(publisher_scope)
 
 
