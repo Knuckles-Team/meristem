@@ -11,6 +11,8 @@ from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
+from meristem.host_ports import EngineDecisionRefused
+
 #: The closed error codes a skill event may carry.
 ERROR_CODES: frozenset[str] = frozenset(
     {
@@ -25,20 +27,48 @@ OUTCOMES: frozenset[str] = frozenset({"ok", "error", "cancelled"})
 CHOSEN_BY: frozenset[str] = frozenset({"agent", "user"})
 EVENT_FIELDS: frozenset[str] = frozenset(
     {
+        "invocation_id",
+        "tenant_id",
         "skill_ref",
         "skill_version",
         "chosen_by",
+        "principal_pseudonym",
         "run_id",
         "started_ms",
         "ended_ms",
         "outcome",
         "error_code",
         "cost_delta_micro_usd",
+        "tokens_in",
+        "tokens_out",
     }
 )
 FIELD_BLOCKED = "SKILL_EVENT_FIELD_BLOCKED"
-#: The served engine write method that ingests one skill event.
-INGEST_METHOD = "SkillTelemetryIngest"
+#: The served engine method that ingests skill invocations (op ``ingest``).
+INGEST_METHOD = "SkillTelemetry"
+INGEST_OP = "ingest"
+#: The outcome a cancelled span maps to: the engine knows only ``ok`` and
+#: ``error`` with a closed upper-case code.
+CANCELLED_CODE = "SKILL_CANCELLED"
+ENGINE_UNAVAILABLE = "ENGINE_METHOD_UNAVAILABLE"
+
+
+async def send_engine(
+    send: Callable[[str, Mapping[str, Any]], Awaitable[Any]],
+    method: str,
+    payload: Mapping[str, Any],
+) -> bool:
+    """Send one engine call; ``False`` when the pinned engine cannot serve it.
+
+    A method the released engine lacks, a refused or forbidden method and an
+    unbound port all surface as unavailable. The caller counts it and goes on;
+    nothing here raises for an absent method.
+    """
+    try:
+        await send(method, payload)
+    except (EngineDecisionRefused, NotImplementedError, AttributeError, LookupError):
+        return False
+    return True
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,19 +92,53 @@ class PriceVersion:
 class SkillInvocationEvent:
     """One start or end fact of a skill span; it holds no text of the run."""
 
+    invocation_id: str
+    tenant_id: str
     skill_ref: str
     skill_version: str
     chosen_by: str
+    principal_pseudonym: str
     run_id: str
     started_ms: int
     ended_ms: int | None = None
     outcome: str | None = None
     error_code: str | None = None
     cost_delta_micro_usd: int | None = None
+    tokens_in: int = 0
+    tokens_out: int = 0
 
     def as_payload(self) -> dict[str, Any]:
-        """The wire shape: exactly the closed field list."""
+        """The span shape: exactly the closed field list."""
         return {name: getattr(self, name) for name in sorted(EVENT_FIELDS)}
+
+    def as_invocation(self) -> dict[str, Any]:
+        """The engine ``SkillInvocation`` shape of a finished span.
+
+        ``outcome`` is ``"ok"`` or ``{"error": {"code": ...}}``; a cancelled
+        span is an error with ``SKILL_CANCELLED``. The engine overwrites
+        ``tenant_id`` with the verified tenant.
+        """
+        outcome: Any
+        if self.outcome == "ok":
+            outcome = "ok"
+        else:
+            code = self.error_code or CANCELLED_CODE
+            outcome = {"error": {"code": code}}
+        return {
+            "invocation_id": self.invocation_id,
+            "tenant_id": self.tenant_id,
+            "skill_ref": self.skill_ref,
+            "skill_version": self.skill_version,
+            "chosen_by": self.chosen_by,
+            "principal_pseudonym": self.principal_pseudonym,
+            "run_id": self.run_id,
+            "started_ms": self.started_ms,
+            "ended_ms": self.ended_ms,
+            "outcome": outcome,
+            "cost_delta_micro_usd": self.cost_delta_micro_usd,
+            "tokens_in": self.tokens_in,
+            "tokens_out": self.tokens_out,
+        }
 
 
 def sanitize(raw: Mapping[str, Any]) -> SkillInvocationEvent | None:
@@ -87,6 +151,8 @@ def sanitize(raw: Mapping[str, Any]) -> SkillInvocationEvent | None:
     if event.outcome is not None and event.outcome not in OUTCOMES:
         return None
     if event.error_code is not None and event.error_code not in ERROR_CODES:
+        return None
+    if event.outcome == "error" and event.error_code is None:
         return None
     return event
 
@@ -105,9 +171,13 @@ class SkillEventRecorder:
     """Run-scoped recorder behind the ``on_skill_start`` and ``on_skill_end`` hooks.
 
     ``read_usage`` returns ``(input_tokens, output_tokens)`` of the run.
-    ``ingest`` sends one payload to the engine (the host binds it to the
-    ``SkillTelemetryIngest`` write); ``span`` exports the same payload as a
-    trace span. With no ``price`` the cost delta is ``None``, never zero.
+    ``ingest`` sends one call to the engine (the host binds it to the
+    ``SkillTelemetry`` write). The engine takes finished invocations only, so
+    the start event is a span and the end event is the one ``ingest`` op with a
+    ``SkillInvocation`` of the closed shape. ``principal_pseudonym`` is the
+    host's ``skill_pseudonym`` of the caller. With no ``price`` the cost delta
+    is ``None``, never zero. ``unavailable`` counts ingests the pinned engine
+    could not serve.
     """
 
     run_id: str
@@ -116,7 +186,11 @@ class SkillEventRecorder:
     span: Callable[[str, Mapping[str, Any]], None] = lambda kind, payload: None
     price: PriceVersion | None = None
     clock_ms: Callable[[], int] = lambda: 0
+    tenant_id: str = ""
+    principal_pseudonym: str = ""
     blocked: int = 0
+    unavailable: int = 0
+    _seq: int = 0
     _open: list[_Span] = field(default_factory=list)
 
     async def on_skill_start(
@@ -128,10 +202,14 @@ class SkillEventRecorder:
         **extra: Any,
     ) -> bool:
         """Open a span and emit the start event; ``False`` when blocked."""
+        self._seq += 1
         raw = {
+            "invocation_id": f"{self.run_id}:{self._seq}",
+            "tenant_id": self.tenant_id,
             "skill_ref": skill_ref,
             "skill_version": skill_version,
             "chosen_by": chosen_by,
+            "principal_pseudonym": self.principal_pseudonym,
             "run_id": self.run_id,
             "started_ms": self.clock_ms(),
             **extra,
@@ -142,7 +220,7 @@ class SkillEventRecorder:
             return False
         used = self.read_usage()
         self._open.append(_Span(event, used[0], used[1]))
-        await self._send("skill.start", event)
+        self.span("skill.start", event.as_payload())
         return True
 
     async def on_skill_end(
@@ -168,12 +246,21 @@ class SkillEventRecorder:
             "outcome": outcome,
             "error_code": error_code,
             "cost_delta_micro_usd": cost,
+            "tokens_in": d_in,
+            "tokens_out": d_out,
         }
         event = sanitize(raw)
         if event is None:
             self.blocked += 1
             return None
-        await self._send("skill.end", event)
+        self.span("skill.end", event.as_payload())
+        sent = await send_engine(
+            self.ingest,
+            INGEST_METHOD,
+            {"op": INGEST_OP, "events": [event.as_invocation()]},
+        )
+        if not sent:
+            self.unavailable += 1
         return event
 
     def attach(self, lifecycle: Any) -> None:
@@ -188,18 +275,17 @@ class SkillEventRecorder:
         lifecycle.add("skill_events", "on_skill_start", start)
         lifecycle.add("skill_events", "on_skill_end", end)
 
-    async def _send(self, kind: str, event: SkillInvocationEvent) -> None:
-        payload = event.as_payload()
-        self.span(kind, payload)
-        await self.ingest(INGEST_METHOD, payload)
-
 
 __all__ = [
     "ERROR_CODES",
     "FIELD_BLOCKED",
+    "CANCELLED_CODE",
+    "ENGINE_UNAVAILABLE",
     "INGEST_METHOD",
+    "INGEST_OP",
     "PriceVersion",
     "SkillEventRecorder",
     "SkillInvocationEvent",
     "sanitize",
+    "send_engine",
 ]

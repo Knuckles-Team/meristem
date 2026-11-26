@@ -35,6 +35,8 @@ async def test_laptop_dependency_ends_the_case_and_attestation_is_sent():
     bad = await run_eval_case(case, new_workspace=fresh, drive=dirty, submit=submit)
     assert bad.error_code == "LAPTOP_DEPENDENCY"
     assert bad.attestation.host_paths_read == 1
-    assert [s["attestation"]["host_paths_read"] for s in sent] == [0, 1]
+    assert [
+        s["request"]["runs"][0]["attestation"]["host_paths_read"] for s in sent
+    ] == [0, 1]
     # Each case started its own fresh workspace.
     assert len({id(w) for w in workspaces}) == 2
