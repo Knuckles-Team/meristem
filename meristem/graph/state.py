@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Any, Final, Literal
 from pydantic_ai import BinaryContent
 from pydantic_ai.usage import RunUsage
 
+from meristem.harness.task_run import TaskRunContext
 from meristem.host_ports import (
     ClientCapabilityTransport,
     HostPorts,
@@ -334,6 +335,7 @@ class CodingConfig:
     regression_command: str | None = None
     attack_policy_revision: str | None = None
     verifier_revision: str | None = None
+    task_run: TaskRunContext | None = None
 
     def __post_init__(self) -> None:
         if not 1 <= len(self.agent_names) <= 16:

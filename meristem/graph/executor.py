@@ -135,6 +135,10 @@ def build_agent(
                 ports=ports,
             )
         )
+    if plan.harness.coding is not None:
+        from meristem.harness.coding_toolset import CodingToolset
+
+        toolsets.append(CodingToolset(plan.harness.coding, run_id=run_id, ports=ports))
     if plan.tool_names:
         toolsets.append(
             ports.build_native_toolset(

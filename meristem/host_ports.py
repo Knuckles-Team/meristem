@@ -53,9 +53,12 @@ from collections.abc import (
 from dataclasses import dataclass, field
 from pathlib import Path
 from threading import Lock
-from typing import Any, Literal, Protocol
+from typing import TYPE_CHECKING, Any, Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
+
+if TYPE_CHECKING:
+    from meristem.harness.changeset_loop import ChangesetSubmitter, SandboxGateRunner
 
 ToolOutcome = Literal["ok", "refused", "failed"]
 
@@ -579,6 +582,8 @@ class HostPorts:
     checkpoint_factory: RunCheckpointFactory | None = None
     engine_decision: EngineDecisionPort | None = None
     media_resolver: Callable[[str], Awaitable[bytes | None]] | None = None
+    changeset_submitter: Callable[[str], ChangesetSubmitter | None] | None = None
+    gate_runner: Callable[[str], SandboxGateRunner | None] | None = None
 
     def harness_probe_provider(self) -> HarnessProbeProvider | None:
         """Return the host probe executor; absence cannot authorize execution."""
