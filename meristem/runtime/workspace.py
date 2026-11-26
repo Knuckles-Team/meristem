@@ -21,7 +21,8 @@ import asyncio
 import contextlib
 import time
 from collections.abc import Callable
-from pathlib import Path
+from dataclasses import dataclass
+from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from .bridge import ActionDispatcher, WorkspaceState
@@ -100,6 +101,32 @@ async def run_shell_process(
     )
 
 
+@dataclass(frozen=True)
+class Projection:
+    """The received field-shielding constraint: allowed and withheld paths.
+
+    A path under an allowed entry is readable and writable; a path under a
+    withheld entry, or under neither set, is withheld. The longest matching
+    entry decides. The workspace computes no projection (MERISTEM-RUN-R004.1).
+    """
+
+    allowed: frozenset[str] = frozenset()
+    withheld: frozenset[str] = frozenset()
+
+    def admits(self, path: str) -> bool:
+        parts = PurePosixPath(path.lstrip("/")).parts
+
+        def depth(entries: frozenset[str]) -> int:
+            hits = [
+                len(PurePosixPath(e).parts)
+                for e in entries
+                if parts[: len(PurePosixPath(e).parts)] == PurePosixPath(e).parts
+            ]
+            return max(hits, default=-1)
+
+        return depth(self.allowed) > depth(self.withheld)
+
+
 class DevWorkspace:
     """Stateful developer workspace — drive it with typed actions (OS-5.33)."""
 
@@ -125,6 +152,7 @@ class DevWorkspace:
         self._computer_use = computer_use  # optional ECO-4.93 computer-use driver
         self._dispatcher = ActionDispatcher()
         self._state: WorkspaceState | None = None
+        self._projection: Projection | None = None
         self._step = 0
         self._started = False
 
@@ -141,6 +169,10 @@ class DevWorkspace:
         self._state = WorkspaceState(cwd=self.backend.workdir, env={})
         self._started = True
 
+    def apply_projection(self, projection: Projection) -> None:
+        """Apply the received projection; later reads and writes honour it."""
+        self._projection = projection
+
     async def act(self, action: Action) -> Observation:
         """Execute one action, returning its observation. Stamps correlation + mirrors to KG."""
         if not self._started:
@@ -154,6 +186,22 @@ class DevWorkspace:
                 "actor": self.actor,
             }
         )
+
+        path = getattr(action, "path", None)
+        if (
+            self._projection is not None
+            and isinstance(path, str)
+            and not self._projection.admits(path)
+        ):
+            obs = self._stamp(
+                ErrorObservation(
+                    message="WORKSPACE_PATH_WITHHELD",
+                    action_kind=getattr(action, "kind", ""),
+                )
+            )
+            self._mirror.mirror_action(action)
+            self._mirror.mirror_observation(action, obs, self.backend.root)
+            return obs
 
         # Fail-closed policy gate for mutating actions (OS-5.24).
         policy_name = mutating_action_name(action)

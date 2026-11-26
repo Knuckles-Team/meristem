@@ -14,6 +14,8 @@ from typing import Any
 from meristem.harness.context_prose import compile_context, read_facts, render_facts
 from meristem.harness.critique import read_critique
 from meristem.harness.replay import first_divergence
+from meristem.harness.replay_intake import admit_replay_events
+from meristem.harness.retrieval_step import read_discover_verdict, run_retrieval_round
 from meristem.harness.run_lifecycle import ConsumerRefused, RunLifecycle
 from meristem.harness.search_state import (
     SearchStateFields,
@@ -25,6 +27,9 @@ CONTEXT_FACTS = "context_facts"
 TRACE_CRITIQUE = "trace_critique"
 SEARCH_STATE = "search_state"
 REPLAY_DIGESTS = "replay_digests"
+REPLAY_INTAKE = "replay_intake"
+RETRIEVAL_ROUND = "retrieval_round"
+DISCOVER_VERDICT = "discover_verdict"
 
 
 def _received(request: Any, key: str) -> dict[str, Any] | None:
@@ -148,5 +153,60 @@ def bind_default_consumers(
                 raise ConsumerRefused("replay_diverged")
 
         lifecycle.add(REPLAY_DIGESTS, "on_start", replay_step)
+
+    if lifecycle.enabled(REPLAY_INTAKE):
+
+        async def intake_step(_request: Any, _plan: Any) -> None:
+            state.consumer_results[REPLAY_INTAKE] = admit_replay_events(
+                request.replay_events
+            )
+
+        lifecycle.add(REPLAY_INTAKE, "on_start", intake_step)
+
+    if lifecycle.enabled(RETRIEVAL_ROUND) and (
+        round_args := _received(request, RETRIEVAL_ROUND)
+    ):
+
+        async def round_step(current: Any) -> None:
+            if RETRIEVAL_ROUND in current.consumer_results:
+                return
+            outcome = await run_retrieval_round(
+                ports,
+                plan=round_args["plan"],
+                counters=round_args.get("counters", {}),
+                prior=round_args.get("prior"),
+                run_id=run_ref,
+            )
+            current.consumer_results[RETRIEVAL_ROUND] = outcome
+            ports.emit_run_event(
+                {
+                    "type": "retrieval_round_applied",
+                    "stop": outcome.stop,
+                    "abstained": outcome.abstained,
+                }
+            )
+
+        lifecycle.add(RETRIEVAL_ROUND, "before_step", round_step)
+
+    if lifecycle.enabled(DISCOVER_VERDICT) and (
+        discover := _received(request, DISCOVER_VERDICT)
+    ):
+
+        async def discover_step(current: Any) -> None:
+            if DISCOVER_VERDICT in current.consumer_results:
+                return
+            report = await read_discover_verdict(
+                ports, request=discover, run_id=run_ref
+            )
+            current.consumer_results[DISCOVER_VERDICT] = report
+            ports.emit_run_event(
+                {
+                    "type": "discover_verdict_read",
+                    "gate_passed": report.gate_passed,
+                    "failure_modes": list(report.failure_modes),
+                }
+            )
+
+        lifecycle.add(DISCOVER_VERDICT, "before_step", discover_step)
 
     return restore_step

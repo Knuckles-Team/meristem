@@ -24,7 +24,7 @@ Governing spec: [spec.md](spec.md).
 | T-018 | `MERISTEM-SCM-R011.2` | Integration/unit | See `tests/harness/test_task_run.py::test_one_cycle_per_task_and_incomplete_context_refuses`. | The row acceptance holds. |  |
 | T-019 | `MERISTEM-SCM-R011.3` | Integration/unit | See `tests/harness/test_coding_toolset.py::test_execute_graph_reaches_run_task_run`. | The row acceptance holds. |  |
 | T-020 | `MERISTEM-SCM-R011.4` | Integration/unit | See `tests/harness/test_task_run.py::test_each_failure_returns_code_stage_and_evidence`. | The row acceptance holds. |  |
-| T-021 | `MERISTEM-SCM-R011.5` | Served | See `tests/harness/test_task_run_served.py::test_served_task_run_returns_result_and_evidence`. | The row acceptance holds. |  |
+| T-021 | `MERISTEM-SCM-R011.5` | Served | Planned test: `tests/harness/test_task_run_served.py::test_served_task_run_returns_result_and_evidence`. | The row acceptance holds. |  |
 | T-022 | `MERISTEM-SCM-R012.1` | Unit | See `tests/harness/test_delivery_run.py::test_context_and_report_are_frozen_and_state_set_is_closed`. | The types are frozen. An unknown state refuses with `delivery_report_state_unknown`. |  |
 | T-023 | `MERISTEM-SCM-R012.2` | Unit | See `tests/harness/test_delivery_run.py::test_inputs_apply_between_turns_in_receipt_order`. | Inputs apply between turns in receipt order. A late input refuses. |  |
 | T-024 | `MERISTEM-SCM-R012.3` | Unit | See `tests/harness/test_delivery_run.py::test_ci_failure_revises_same_proposal_after_disarm`. | One cycle runs on the same proposal after the disarm verdict. A missing verdict pushes nothing. |  |
@@ -32,7 +32,7 @@ Governing spec: [spec.md](spec.md).
 | T-026 | `MERISTEM-SCM-R012.5` | Unit | See `tests/harness/test_delivery_run.py::test_each_report_state_and_single_question`. | Each state reports. A report holds at most one question. |  |
 | T-027 | `MERISTEM-SCM-R012.6` | Unit | See `tests/harness/test_delivery_run.py::test_recovery_note_skips_effects_that_already_landed`. | No landed effect repeats after a recovery note. |  |
 | T-028 | `MERISTEM-SCM-R012.7` | Unit | See `tests/harness/test_delivery_run.py::test_background_limit_stops_jobs_and_reports_waiting`. | Jobs stop at the limit and the run reports `waiting`. |  |
-| T-029 | `MERISTEM-SCM-R012.8` | Served | See `tests/harness/test_delivery_run_served.py::test_served_delivery_run_iterates_one_proposal`. | One revised changeset, one resolved thread and a `ready` report. |  |
+| T-029 | `MERISTEM-SCM-R012.8` | Served | Planned test: `tests/harness/test_delivery_run_served.py::test_served_delivery_run_iterates_one_proposal`. | One revised changeset, one resolved thread and a `ready` report. |  |
 
 ## Negative and boundary cases
 
