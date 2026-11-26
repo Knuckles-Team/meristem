@@ -22,18 +22,16 @@ def build_spans(
     events: Sequence[Mapping[str, Any]],
     tool_trace: Sequence[Mapping[str, Any]] = (),
 ) -> list[dict[str, Any]]:
-    """One span per agent step event and per recorded tool step of the run.
+    """One span per agent step and per tool call of the run.
 
-    The output tool's terminal event follows the finish gate, so tool spans
-    come from the run's tool trace, which is complete when the gate runs.
+    A task's terminal event, including the output task's, gives its span. The
+    run's tool trace fills any tool step whose event has not been emitted.
     """
     spans: list[dict[str, Any]] = []
     for event in events:
         if event.get("type") not in TERMINAL_KINDS or event.get("run_id") != run_id:
             continue
-        if "tool_step" in event:
-            continue
-        is_tool = False
+        is_tool = "tool_step" in event
         task_id = event["task_id"]
         spans.append(
             {
@@ -48,7 +46,10 @@ def build_spans(
                 "sequence": event["sequence"],
             }
         )
+    seen = {s["tool_call_id"] for s in spans if s["kind"] == "tool"}
     for index, step in enumerate(tool_trace):
+        if step["task_id"] in seen:
+            continue
         spans.append(
             {
                 "span_id": f"{run_id}:tool:{index}",
