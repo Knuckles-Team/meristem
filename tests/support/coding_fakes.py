@@ -32,11 +32,8 @@ class ScriptedEngine:
     async def assemble(self, request, *, run_ref):
         return self._next("assemble", request)
 
-    async def log(self, op, *, run_ref):
+    async def log(self, op, body, *, run_ref):
         return self._next("log", op)
-
-    async def put_blob(self, data, *, run_ref):
-        return self._next("put_blob", data)
 
 
 class Gates:

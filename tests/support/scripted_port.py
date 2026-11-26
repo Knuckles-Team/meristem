@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from collections.abc import Mapping
 from typing import Any
 
@@ -57,11 +56,8 @@ class ScriptedPort:
     async def assemble(self, request, *, run_ref):
         return self._next("assemble", "assemble", request)
 
-    async def put_blob(self, data, *, run_ref):
-        self.blobs.append(json.loads(data))
-        return answer(outcome="committed")
-
-    async def log(self, op, *, run_ref):
+    async def log(self, op, body, *, run_ref):
+        self.blobs.append(dict(body))
         return self._next("log", op, None)
 
     def names(self, verb: str | None = None) -> list[str]:

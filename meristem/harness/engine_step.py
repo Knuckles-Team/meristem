@@ -74,10 +74,8 @@ async def record(
     *,
     run_ref: str,
 ) -> EngineAnswer:
-    """One decision-log write: store the body as a blob, then log the op."""
-    bound = _bound(port)
-    await bound.put_blob(canonical_json(body).encode("utf-8"), run_ref=run_ref)
-    return _checked(await bound.log(op, run_ref=run_ref))
+    """One decision-log write: the op and its body in one engine call."""
+    return _checked(await _bound(port).log(op, body, run_ref=run_ref))
 
 
 __all__ = ["decide", "digest_of", "read", "record", "write"]

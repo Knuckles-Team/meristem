@@ -722,7 +722,18 @@ async def run_horizons(
         )
         if consumed + reserved > ceiling:
             raise ConsumerRefused("checkpoint_overflow")
-        answer = await port.log("checkpoint", run_ref=run_ref)
+        answer = await port.log(
+            "checkpoint",
+            {
+                "plan_digest": plan_digest,
+                "horizon_index": index,
+                "consumed": consumed,
+                "reserved": reserved,
+                "ceiling": ceiling,
+                "rule": rule,
+            },
+            run_ref=run_ref,
+        )
         if answer.refusal_code is not None:
             raise ConsumerRefused(answer.refusal_code)
         checkpoints.append(
@@ -787,7 +798,15 @@ async def submit_branch_outcomes(
             raise ValueError("branches need non-empty ids")
         if branch.gap is not None and (type(branch.gap) is not str or not branch.gap):
             raise ValueError("branch gaps are named")
-        answer = await port.log("RunRecord", run_ref=run_ref)
+        answer = await port.log(
+            "RunRecord",
+            {
+                "branch_id": branch.branch_id,
+                "plan_digest": branch.plan_digest,
+                "gap": branch.gap,
+            },
+            run_ref=run_ref,
+        )
         if answer.refusal_code is not None:
             raise ConsumerRefused(answer.refusal_code)
         submissions.append(
@@ -832,7 +851,15 @@ async def submit_insight(
         source_run_ids = tuple(str(run_id) for run_id in raw.get("source_run_ids", ()))
         if not source_run_ids or any(not run_id for run_id in source_run_ids):
             raise ConsumerRefused("insight_without_source")
-        answer = await port.log("RunRecord", run_ref=run_ref)
+        answer = await port.log(
+            "RunRecord",
+            {
+                "insight_id": insight_id,
+                "context_signature": str(raw.get("context_signature", "")),
+                "source_run_ids": list(source_run_ids),
+            },
+            run_ref=run_ref,
+        )
         if answer.refusal_code is not None:
             raise ConsumerRefused(answer.refusal_code)
         submissions.append(

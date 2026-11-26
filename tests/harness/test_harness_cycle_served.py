@@ -59,7 +59,9 @@ class LoopbackEngine:
     ) -> hp.EngineAnswer:
         raise AssertionError("unexpected assembly call")
 
-    async def log(self, op: str, *, run_ref: str) -> hp.EngineAnswer:
+    async def log(
+        self, op: str, body: Mapping[str, Any], *, run_ref: str
+    ) -> hp.EngineAnswer:
         """One decision-log commit: store the record, then answer."""
         if self.log_refusal_code is not None:
             return hp.EngineAnswer(
@@ -75,9 +77,6 @@ class LoopbackEngine:
             record_digest=f"loopback-record-{len(self.commits)}",
             payload=dict(self.log_payload),
         )
-
-    async def put_blob(self, data: bytes, *, run_ref: str) -> hp.EngineAnswer:
-        raise AssertionError("unexpected blob put")
 
     async def read(
         self, method: str, params: Mapping[str, Any], *, run_ref: str
@@ -107,6 +106,7 @@ def _fixture_probe_executor():
     support.register_harness_probe_provider(host_probe)
 
 
+@pytest.mark.spec("MERISTEM-HARNESS-CYCLE-R001")
 @pytest.mark.spec("MERISTEM-HARNESS-CYCLE-R001.9")
 async def test_cycle_double_shows_lesson_to_next_propose(tmp_path) -> None:
     """The served journey: one tick with two candidates and k = 2.

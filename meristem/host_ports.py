@@ -33,7 +33,7 @@ holding these plain typed providers and hands it to each run through
   task (propose, probe, compose, persist, reflect) through the served
   decision and graph ports;
 * an **engine decision port** that serves the decision engine's answers:
-  ``decide``, ``assemble``, ``log`` and ``put_blob``.
+  ``decide``, ``assemble`` and ``log``.
 
 Without a bound provider every binding port fails closed (raises) and
 every read port reports the empty answer, never inventing a surface of its own.
@@ -325,12 +325,14 @@ class EngineDecisionPort(Protocol):
         """One served assembly answer for a received request."""
         ...
 
-    async def log(self, op: str, *, run_ref: str) -> EngineAnswer:
-        """One served decision-log write under a closed operation."""
-        ...
+    async def log(
+        self, op: str, body: Mapping[str, Any], *, run_ref: str
+    ) -> EngineAnswer:
+        """One served decision-log write under a closed operation.
 
-    async def put_blob(self, data: bytes, *, run_ref: str) -> EngineAnswer:
-        """One served blob put; the host stores it and returns the record."""
+        The body travels with the op as one call and one atomic engine
+        write; no second call carries it.
+        """
         ...
 
     async def read(

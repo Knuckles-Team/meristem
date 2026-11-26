@@ -51,7 +51,8 @@ async def run_preplan(
     """Run the declared command before planning; ``None`` when the step is off.
 
     A missing command or artifact list skips the step. The manifest of path
-    and file-digest pairs is stored through ``put_blob``.
+    and file-digest pairs is digested into the receipt, which the later
+    program commit carries as its body.
     """
     if not command or not artifacts:
         return None
@@ -66,9 +67,6 @@ async def run_preplan(
         files = await runner.read_files(workspace, paths)
         pairs = [[p, _sha(c.encode("utf-8"))] for p, c in files]
     manifest = json.dumps(pairs, separators=(",", ":")).encode("utf-8")
-    blob = await port.put_blob(manifest, run_ref=run_id)
-    if blob.refusal_code is not None:
-        raise ConsumerRefused(blob.refusal_code)
     return PrePlanTestReceipt(
         artifact_count=len(pairs),
         artifact_manifest_digest=_sha(manifest),
@@ -103,7 +101,7 @@ async def commit_compiled_program(
         return {"reusable": False, "receipt": None}
     if port is None:
         raise ConsumerRefused("engine_decision_unavailable")
-    answer = await port.log("RunRecord", run_ref=run_ref)
+    answer = await port.log("RunRecord", asdict(receipt), run_ref=run_ref)
     if answer.refusal_code is not None:
         raise ConsumerRefused(answer.refusal_code)
     emit(

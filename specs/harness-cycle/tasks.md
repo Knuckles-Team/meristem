@@ -57,7 +57,7 @@ Each task line reads `- [ ] T001 [P] [US1] <ID>-R012.4 description`. The task nu
 - [ ] T050 [US1] MERISTEM-HARNESS-CYCLE-R021.7 Submit the fan-out result for aggregation.
 - [ ] T051 [US1] MERISTEM-HARNESS-CYCLE-R021.8 Run the designated coordinator.
 - [ ] T052 [US1] MERISTEM-HARNESS-CYCLE-R021.9 Delegate only against an admitted verdict.
-- [ ] T053 [US1] MERISTEM-HARNESS-CYCLE-R022.1 Store the typed step graph before compile.
+- [ ] T053 [US1] MERISTEM-HARNESS-CYCLE-R022.1 Send the typed step graph with its compile record.
 - [ ] T054 [US1] MERISTEM-HARNESS-CYCLE-R022.2 Submit run insights and apply selected ones.
 - [ ] T055 [US1] MERISTEM-HARNESS-CYCLE-R022.3 Record injected insights.
 - [ ] T056 [US1] MERISTEM-HARNESS-CYCLE-R023.1 Run a comparative-analysis plan within stage budgets.

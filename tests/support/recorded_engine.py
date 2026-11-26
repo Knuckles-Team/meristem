@@ -57,6 +57,7 @@ class RecordedEnginePort:
         self.source_test: str = str(data.get("source_test", ""))
         self.engine_commit: str = str(data.get("engine_commit", ""))
         self.calls: list[tuple[str, str]] = []
+        self.bodies: list[tuple[str, dict[str, Any]]] = []
         self._next: dict[tuple[str, str], list[dict[str, Any]]] = {}
         for entry in data.get("answers", ()):
             method = str(entry["method"])
@@ -93,13 +94,15 @@ class RecordedEnginePort:
         """Replay the recorded assembly answer for one request."""
         return self._replay("assemble", request)
 
-    async def log(self, op: str, *, run_ref: str) -> hp.EngineAnswer:
-        """Replay the recorded answer for one decision-log operation."""
-        return self._replay("log", {"op": op})
+    async def log(
+        self, op: str, body: Mapping[str, Any], *, run_ref: str
+    ) -> hp.EngineAnswer:
+        """Replay the recorded answer for one decision-log operation.
 
-    async def put_blob(self, data: bytes, *, run_ref: str) -> hp.EngineAnswer:
-        """Replay the recorded answer for one blob, keyed by its digest."""
-        return self._replay("put_blob", {"sha256": hashlib.sha256(data).hexdigest()})
+        The answer is keyed by the op; the body is kept in ``bodies``.
+        """
+        self.bodies.append((op, dict(body)))
+        return self._replay("log", {"op": op})
 
     async def read(
         self, method: str, params: Mapping[str, Any], *, run_ref: str

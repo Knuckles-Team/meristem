@@ -67,22 +67,21 @@ async def store_then_compile(
     *,
     run_ref: str,
 ) -> CompiledWorkflow:
-    """Store the typed step graph, then record the engine's compile.
+    """Send the typed step graph with its compile record to the engine.
 
-    The harness never compiles: it stores the graph it receives through
-    ``put_blob`` and only then asks for the ``RunRecord`` compile
-    record. The store call always precedes the compile call; a step
-    without its type refuses ``workflow_graph_invalid`` before either
-    call. The ``source_digest`` is the SHA-256 of the stored bytes; the
+    The harness never compiles: it sends the graph it receives inside
+    one ``RunRecord`` decision-log write, which stores the body and
+    records the compile in one engine call. A step without its type
+    refuses ``workflow_graph_invalid`` before the call. The
+    ``source_digest`` is the SHA-256 of the canonical graph bytes; the
     compiled program ref is the record digest the engine returns.
     """
     if port is None:
         raise EngineDecisionRefused("engine_decision_unavailable")
     graph = _step_graph(draft)
     graph_json = canonical_json(graph)
-    await port.put_blob(graph_json.encode("utf-8"), run_ref=run_ref)
     source_digest = hashlib.sha256(graph_json.encode("utf-8")).hexdigest()
-    record = await port.log("RunRecord", run_ref=run_ref)
+    record = await port.log("RunRecord", graph, run_ref=run_ref)
     if record.refusal_code is not None:
         raise ConsumerRefused(record.refusal_code)
     return CompiledWorkflow(

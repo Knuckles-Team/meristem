@@ -289,13 +289,9 @@ class _StubEnginePort:
         self.calls.append("assemble")
         return hp.EngineAnswer(outcome="solved")
 
-    async def log(self, op, *, run_ref):
+    async def log(self, op, body, *, run_ref):
         self.calls.append(f"log:{op}")
         return hp.EngineAnswer(outcome="committed", record_digest="c" * 64)
-
-    async def put_blob(self, data, *, run_ref):
-        self.calls.append("put_blob")
-        return hp.EngineAnswer(outcome="committed")
 
     async def read(self, method, params, *, run_ref):
         self.calls.append(f"read:{method}")
@@ -321,7 +317,7 @@ async def test_engine_decision_port_registration_and_absence():
         (),
         {},
     )
-    assert await port.log("Learn", run_ref="r1") == hp.EngineAnswer(
+    assert await port.log("Learn", {}, run_ref="r1") == hp.EngineAnswer(
         outcome="committed", record_digest="c" * 64
     )
     assert port.calls == ["decide:RoundVerdict", "log:Learn"]
