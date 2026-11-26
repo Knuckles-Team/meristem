@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Any, Final, Literal
 from pydantic_ai import BinaryContent
 from pydantic_ai.usage import RunUsage
 
+from meristem.harness.coding_toolset import CodingConfig
 from meristem.host_ports import (
     ClientCapabilityTransport,
     HostPorts,
@@ -315,33 +316,6 @@ class StopRule:
 
     max_steps: int = DEFAULT_MAX_STEPS
     stop_markers: tuple[str, ...] = ()
-
-
-@dataclass(frozen=True)
-class CodingConfig:
-    """Coding-step settings the host receives for one run.
-
-    Empty ``tasks`` and ``verifier_cases`` leave those steps off; the
-    bounds apply once the host enables the step.
-    """
-
-    agent_names: tuple[str, ...] = ("claude", "opencode", "gemini")
-    agent_capabilities: Mapping[str, Any] = field(default_factory=dict)
-    preplan_command: str | None = None
-    preplan_artifacts: tuple[str, ...] = ()
-    tasks: Mapping[str, str] = field(default_factory=dict)
-    verifier_cases: tuple[Mapping[str, Any], ...] = ()
-    regression_command: str | None = None
-    attack_policy_revision: str | None = None
-    verifier_revision: str | None = None
-
-    def __post_init__(self) -> None:
-        if not 1 <= len(self.agent_names) <= 16:
-            raise ValueError("agent_names must carry 1 to 16 names")
-        if len(self.tasks) > 256:
-            raise ValueError("tasks may carry at most 256 entries")
-        if len(self.verifier_cases) > 64:
-            raise ValueError("verifier_cases may carry at most 64 cases")
 
 
 @dataclass(frozen=True)

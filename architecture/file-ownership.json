@@ -117,6 +117,11 @@
       "owner": "meristem"
     },
     {
+      "path": "meristem/harness/agent_discovery.py",
+      "disposition": "keep",
+      "owner": "meristem"
+    },
+    {
       "path": "meristem/harness/assembly.py",
       "disposition": "keep",
       "owner": "meristem"
@@ -133,6 +138,11 @@
     },
     {
       "path": "meristem/harness/client_capabilities.py",
+      "disposition": "keep",
+      "owner": "meristem"
+    },
+    {
+      "path": "meristem/harness/coding_toolset.py",
       "disposition": "keep",
       "owner": "meristem"
     },
@@ -162,6 +172,11 @@
       "owner": "meristem"
     },
     {
+      "path": "meristem/harness/correction_binding.py",
+      "disposition": "keep",
+      "owner": "meristem"
+    },
+    {
       "path": "meristem/harness/critique.py",
       "disposition": "keep",
       "owner": "meristem"
@@ -177,6 +192,11 @@
       "owner": "meristem"
     },
     {
+      "path": "meristem/harness/edit_round.py",
+      "disposition": "keep",
+      "owner": "meristem"
+    },
+    {
       "path": "meristem/harness/knowledge_tools.py",
       "disposition": "keep",
       "owner": "meristem"
@@ -188,6 +208,11 @@
     },
     {
       "path": "meristem/harness/plan_runtime.py",
+      "disposition": "keep",
+      "owner": "meristem"
+    },
+    {
+      "path": "meristem/harness/preplan.py",
       "disposition": "keep",
       "owner": "meristem"
     },
@@ -233,6 +258,11 @@
     },
     {
       "path": "meristem/harness/skill_worker.py",
+      "disposition": "keep",
+      "owner": "meristem"
+    },
+    {
+      "path": "meristem/harness/task_run.py",
       "disposition": "keep",
       "owner": "meristem"
     },
