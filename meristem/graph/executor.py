@@ -29,6 +29,7 @@ from meristem.harness.champion import ChampionApplied, champion_on_start
 from meristem.harness.conversation_history import (
     decode_completed_history,
     read_run_history,
+    trim_history,
 )
 from meristem.harness.default_consumers import bind_default_consumers
 from meristem.harness.knowledge_tools import bind_knowledge_tools
@@ -594,6 +595,16 @@ async def iterate_run(
                                 if index == 0 and attachments:
                                     model_input = [prompt, *attachments]
                                 await lifecycle.before_step(state)
+                                # The one place the history is sized: oldest whole
+                                # turns go first, and each image that goes is
+                                # recorded by digest (MERISTEM-RUN-R017.1).
+                                history, dropped_media = trim_history(
+                                    history,
+                                    run_plan.budget.history_token_limit,
+                                    run_plan.budget.image_token_cost,
+                                )
+                                for gone in dropped_media:
+                                    yield emit(state, "media_dropped", **gone)
                                 if state.compiled_context and isinstance(prompt, str):
                                     model_input = (
                                         f"{state.compiled_context}\n\n{prompt}"

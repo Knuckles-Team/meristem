@@ -302,6 +302,7 @@ class RunBudget:
     max_attachments: int = 8
     max_concurrent_requests: int = 4
     image_token_cost: int = 1000
+    history_token_limit: int | None = None
 
 
 @dataclass(frozen=True)

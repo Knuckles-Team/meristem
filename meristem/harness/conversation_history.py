@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from typing import Any
 
+from pydantic_ai import BinaryContent
 from pydantic_ai.messages import (
     ModelMessage,
     ModelRequest,
@@ -177,3 +179,66 @@ async def read_recursive_run_history(
         return await history_provider(request)
     except Exception:
         raise RuntimeError("conversation history provider failed") from None
+
+
+def _parts(message: ModelMessage) -> list[Any]:
+    out: list[Any] = []
+    for part in message.parts:
+        content = getattr(part, "content", None)
+        out.extend(content if isinstance(content, (list, tuple)) else [content])
+    return out
+
+
+def _weight(message: ModelMessage, image_cost: int) -> int:
+    """Estimated tokens of one message: a quarter of the text, a received cost per image."""
+    total = 0
+    for item in _parts(message):
+        if isinstance(item, BinaryContent):
+            total += image_cost
+        elif isinstance(item, str):
+            total += len(item) // 4 + 1
+    return total
+
+
+def _turns(history: list[ModelMessage]) -> list[list[ModelMessage]]:
+    """Split at each request that opens with a user prompt, keeping tool pairs whole."""
+    turns: list[list[ModelMessage]] = []
+    for message in history:
+        opens = isinstance(message, ModelRequest) and any(
+            isinstance(part, UserPromptPart) for part in message.parts
+        )
+        if opens or not turns:
+            turns.append([])
+        turns[-1].append(message)
+    return turns
+
+
+def trim_history(
+    history: list[ModelMessage], limit: int | None, image_cost: int
+) -> tuple[list[ModelMessage], list[dict[str, Any]]]:
+    """Drop the oldest whole turns until the history fits the received limit.
+
+    The pending prompt is not in the history, so the limit may drop every
+    stored turn. Returns the kept messages and one digest
+    descriptor per dropped image, so the caller can emit ``media_dropped``;
+    an image never leaves the history without that record.
+    """
+    if limit is None:
+        return history, []
+    turns = _turns(history)
+    weights = [sum(_weight(m, image_cost) for m in turn) for turn in turns]
+    dropped: list[dict[str, Any]] = []
+    first = 0
+    while first < len(turns) and sum(weights[first:]) > limit:
+        for message in turns[first]:
+            for item in _parts(message):
+                if isinstance(item, BinaryContent):
+                    dropped.append(
+                        {
+                            "sha256": hashlib.sha256(item.data).hexdigest(),
+                            "media_type": item.media_type,
+                            "bytes": len(item.data),
+                        }
+                    )
+        first += 1
+    return [m for turn in turns[first:] for m in turn], dropped
