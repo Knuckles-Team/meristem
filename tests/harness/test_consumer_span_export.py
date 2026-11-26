@@ -67,6 +67,8 @@ async def test_child_spans_correlate_to_parent(events):
     assert {s["parent_run_id"] for s in spans} == {"r1"}
     assert [s["kind"] for s in spans] == ["agent", "agent", "tool"]
     assert spans[2]["tool_call_id"] == "fetch" and spans[2]["name"] == "fetch_doc"
+    # The output task's span comes from its own terminal event.
+    assert not spans[2]["span_id"].startswith("r1:tool:")
     (exported,) = [e for e in events if e.get("type") == "spans_exported"]
     assert exported["count"] == 3
 
@@ -93,3 +95,9 @@ def test_spans_of_another_run_are_not_exported():
         },
     ]
     assert build_spans("r1", events) == []
+
+
+def test_the_trace_fills_a_tool_step_whose_event_has_not_gone_out():
+    trace = [{"task_id": "t0", "name": "read", "outcome": "ok"}]
+    (span,) = build_spans("r1", [], trace)
+    assert span["tool_call_id"] == "t0" and span["span_id"] == "r1:tool:0"

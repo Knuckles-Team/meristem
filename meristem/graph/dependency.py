@@ -1134,6 +1134,15 @@ async def _execute_dependency_plan(
                 fields[key] = record[key]
         return fields
 
+    async def finish_run() -> None:
+        """Gate and finish the run once the output task's own event has gone out."""
+        await state.gate_finish()
+        state.status = transition(
+            state.status, RunEvent.FINISH, {"output_task_complete": True}
+        )
+        if checkpoint is not None:
+            await checkpoint.save("completed")
+
     async def flush_tool_terminals(
         *, publish_records: bool = True, emit_completed: bool = True
     ) -> tuple[str, ...]:
@@ -1147,6 +1156,7 @@ async def _execute_dependency_plan(
         nonlocal tool_terminal_cursor
         released: list[str] = []
         while tool_terminal_cursor < len(tool_order):
+            finish_after_event = False
             key = tool_order[tool_terminal_cursor]
             if key in tool_skipped:
                 # A not-taken arm's tool never runs; the cursor passes it.
@@ -1189,12 +1199,10 @@ async def _execute_dependency_plan(
                                         state.status, RunEvent.STOP_REQUESTED
                                     )
                             elif state.status is RunStatus.RUNNING:
-                                await state.gate_finish()
-                                state.status = transition(
-                                    state.status,
-                                    RunEvent.FINISH,
-                                    {"output_task_complete": True},
-                                )
+                                # The output task's own terminal event reports
+                                # the call's outcome and goes out first; the
+                                # run's state follows the finish gate.
+                                finish_after_event = True
                             if checkpoint is not None and state.status.is_terminal:
                                 # The terminal snapshot records the run state
                                 # exactly; it is never inferred from Running.
@@ -1243,6 +1251,8 @@ async def _execute_dependency_plan(
                 # its dependants still belongs to this ordered flush, while
                 # failed and cancelled terminals must never release them.
                 released.append(key)
+            if finish_after_event and state.status is RunStatus.RUNNING:
+                await finish_run()
             tool_terminal_cursor += 1
         return tuple(released)
 
@@ -1475,17 +1485,13 @@ async def _execute_dependency_plan(
                 await checkpoint.save("completed")
                 checkpoint_acked.add(key)
             await publish_tool_record(nodes[key], record, step=step_by_task[key])
+            finish_after_event = False
             if key == graph.output_task_id:
                 if any(marker in output_text for marker in plan.stop.stop_markers):
                     if state.status is RunStatus.RUNNING:
                         state.status = transition(state.status, RunEvent.STOP_REQUESTED)
                 elif state.status is RunStatus.RUNNING:
-                    await state.gate_finish()
-                    state.status = transition(
-                        state.status,
-                        RunEvent.FINISH,
-                        {"output_task_complete": True},
-                    )
+                    finish_after_event = True
                 if checkpoint is not None and state.status.is_terminal:
                     # The terminal snapshot records the run state exactly;
                     # it is never inferred from Running.
@@ -1503,7 +1509,11 @@ async def _execute_dependency_plan(
                 result=record["result"],
                 elapsed_seconds=record["elapsed_seconds"],
             )
-            return await flush_tool_terminals()
+            released = await flush_tool_terminals()
+            if finish_after_event and state.status is RunStatus.RUNNING:
+                await finish_run()
+            return released
+        finish_after_event = False
         output = result.output
         text = output if isinstance(output, str) else json.dumps(output, sort_keys=True)
         control = isinstance(result, _ControlExecution)
@@ -1521,15 +1531,14 @@ async def _execute_dependency_plan(
                 if state.status is RunStatus.RUNNING:
                     state.status = transition(state.status, RunEvent.STOP_REQUESTED)
             elif state.status is RunStatus.RUNNING:
-                await state.gate_finish()
-                state.status = transition(
-                    state.status, RunEvent.FINISH, {"output_task_complete": True}
-                )
+                finish_after_event = True
             if checkpoint is not None and state.status.is_terminal:
                 # The terminal snapshot records the run state exactly; it is
                 # never inferred from Running.
                 await checkpoint.save("completed")
         event("task_completed", key, status="completed", output=text)
+        if finish_after_event and state.status is RunStatus.RUNNING:
+            await finish_run()
         if isinstance(result, _ControlExecution) and result.taken is not None:
             if nodes[key].branch["kind"] != "parallel":  # type: ignore[index]
                 apply_taken(key, result.taken)
