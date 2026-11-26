@@ -133,7 +133,7 @@ class ChildPublicRecordPublisher:
             )
         elif isinstance(event, FunctionToolResultEvent):
             await self.publish_tool_activity(
-                name=event.part.tool_name,
+                name=event.part.tool_name or "",
                 tool_call_id=event.tool_call_id,
                 status="retry"
                 if event.part.part_kind == "retry-prompt"

@@ -261,27 +261,16 @@ def _before_finish(
     *,
     result_key: str | None = None,
 ) -> None:
-    """Run ``hook`` once, after the last step and before the run finishes.
+    """Run ``hook`` once at the ``before_finish`` point, before ``completed``.
 
-    A refusal there still fails the run. A dependency plan finishes inside its
-    own driver and has no step boundary, so its hook runs at ``on_success``.
+    A refusal there moves the run to ``failed`` through the normal edge.
     """
-    admitted = {"steps": 0}
-
-    async def planned(_request: Any, plan: Any) -> None:
-        admitted["steps"] = len(plan.steps[: max(plan.stop.max_steps, 0)])
-
-    async def last_step(current: Any, _step: Any) -> None:
-        if admitted["steps"] and current.step >= admitted["steps"]:
-            await settle(current)
 
     async def settle(current: Any, *_rest: Any) -> None:
         if (result_key or name) not in current.consumer_results:
             await hook(current)
 
-    lifecycle.add(name, "on_start", planned)
-    lifecycle.add(name, "after_step", last_step)
-    lifecycle.add(name, "on_success", settle)
+    lifecycle.add(name, "before_finish", settle)
 
 
 def _bind_engine_consumers(lifecycle: RunLifecycle, request: Any, state: Any) -> None:
@@ -444,7 +433,9 @@ def _bind_engine_consumers(lifecycle: RunLifecycle, request: Any, state: Any) ->
             state.event_log = []
 
         async def span_step(current: Any) -> None:
-            spans = build_spans(run_ref, list(current.event_log or ()))
+            spans = build_spans(
+                run_ref, list(current.event_log or ()), list(current.tool_trace)
+            )
             digests = await export_spans(
                 ports.engine_decision_port(), spans, run_ref=run_ref
             )
@@ -589,14 +580,26 @@ def _bind_host_consumers(lifecycle: RunLifecycle, request: Any, state: Any) -> N
     if lifecycle.enabled(RUN_TRACE):
 
         async def trace_step(current: Any) -> None:
+            if "run_trace_sent" in current.consumer_results:
+                return
             if ports.run_trace is None:
-                if current.status.value == "completed":
+                if (
+                    current.status.value == "completed"
+                    or not current.status.is_terminal
+                ):
                     raise ConsumerRefused("run_trace_unavailable")
-                return  # a run that already failed has no result to refuse
+                return  # a run that already ended has no result to refuse
             if any("outcome" not in step for step in current.tool_trace):
                 raise ConsumerRefused("run_trace_invalid")
+            current.consumer_results["run_trace_sent"] = True
             await ports.run_trace(
                 {"run_id": current.run_id, "steps": list(current.tool_trace)}
             )
 
-        lifecycle.add(RUN_TRACE, "on_end", trace_step)
+        async def trace_end(current: Any) -> None:
+            if not current.status.value == "completed":
+                await trace_step(current)
+
+        # Completed runs deliver before ``completed``, so a refusal fails the run.
+        lifecycle.add(RUN_TRACE, "before_finish", trace_step)
+        lifecycle.add(RUN_TRACE, "on_end", trace_end)

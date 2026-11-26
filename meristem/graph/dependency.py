@@ -1189,6 +1189,7 @@ async def _execute_dependency_plan(
                                         state.status, RunEvent.STOP_REQUESTED
                                     )
                             elif state.status is RunStatus.RUNNING:
+                                await state.gate_finish()
                                 state.status = transition(
                                     state.status,
                                     RunEvent.FINISH,
@@ -1479,6 +1480,7 @@ async def _execute_dependency_plan(
                     if state.status is RunStatus.RUNNING:
                         state.status = transition(state.status, RunEvent.STOP_REQUESTED)
                 elif state.status is RunStatus.RUNNING:
+                    await state.gate_finish()
                     state.status = transition(
                         state.status,
                         RunEvent.FINISH,
@@ -1519,6 +1521,7 @@ async def _execute_dependency_plan(
                 if state.status is RunStatus.RUNNING:
                     state.status = transition(state.status, RunEvent.STOP_REQUESTED)
             elif state.status is RunStatus.RUNNING:
+                await state.gate_finish()
                 state.status = transition(
                     state.status, RunEvent.FINISH, {"output_task_complete": True}
                 )
