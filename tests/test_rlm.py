@@ -542,7 +542,7 @@ async def test_recursive_history_selection_refuses_before_model(case):
         return "legacy history"
 
     if case == "factory":
-        support.register_run_checkpoint_factory(lambda *_: None)
+        support.register_run_checkpoint_store(lambda *_: None)
     elif case == "legacy":
         support.register_run_history_provider(legacy)
     else:

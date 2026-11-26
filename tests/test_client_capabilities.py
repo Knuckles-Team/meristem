@@ -70,7 +70,7 @@ async def test_real_run_binds_only_selected_tool(
     support.register_run_decision_provider(lambda request: plan)
     result = await run(support.request(task="do it"))
     assert result.output == "client reply"
-    assert observed == [{tool}, {tool}]
+    assert observed == [{tool, "update_plan"}] * 2
     assert len(transport.calls) == 1
     assert transport.calls[0][0] == method
     assert all(transport.calls[0][1][key] == value for key, value in params.items())

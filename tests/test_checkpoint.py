@@ -48,7 +48,7 @@ def bind(port):
     async def scope(request, plan):
         yield port
 
-    support.register_run_checkpoint_factory(scope)
+    support.register_run_checkpoint_store(scope)
 
 
 def setup(port, *, limit=50):
@@ -307,3 +307,29 @@ async def test_dependency_checkpoint_restores_completed_tasks_and_shared_budget(
     assert finished["outputs"] == ["d"]
     again = await run(request, plan=plan)
     assert again.output == "d" and prompts == ["A", "C", "D"]
+
+
+@pytest.mark.spec("MERISTEM-RUN-R001.9.2.1")
+async def test_selected_current_run_checkpoint_resumes_through_the_store():
+    port = HostCheckpoint()
+    request, plan, prompts = setup(port)
+    await stop_after_first(request, plan)
+    stored = port.content
+
+    async def selection(_request):
+        return host_ports.RunCheckpointSelection(
+            run_id="same-run", current_run_checkpoint=stored, completed_history=None
+        )
+
+    support.register_run_checkpoint_provider(selection)
+    result = await run(request, plan=plan)
+    assert (result.status, result.output) == (RunStatus.COMPLETED, "reply:third")
+    # The first step is not repeated: the run continues from its checkpoint.
+    assert prompts == ["first", "second", "third"]
+
+    # Without a bound store the same selection still refuses before any effect.
+    support.register_run_checkpoint_store(None)
+    refused = await run(request, plan=plan)
+    assert refused.status is RunStatus.FAILED
+    assert "current-run checkpoint restore is unavailable" in refused.error
+    assert prompts == ["first", "second", "third"]

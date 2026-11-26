@@ -40,7 +40,11 @@ from meristem.harness.run_lifecycle import RunLifecycle
 from .budget import LiveSharedBudget, SharedBudget, initial_run_usage
 from .checkpoint import RunCheckpoint
 from .child_public_records import child_records_for
-from .dependency import iterate_dependency_plan, validate_dependency_plan
+from .dependency import (
+    iterate_dependency_plan,
+    received_plan_items,
+    validate_dependency_plan,
+)
 from .live_events import run_step
 from .media import MediaAdmission, apply_policy, reserve_images, resolve_refs
 from .metrics import MeasuredModel, RunMetrics
@@ -99,17 +103,17 @@ def build_agent(
         raise ValueError("unknown received execution constraint")
     if plan.execution_constraint == "text-only":
         validate_text_plan(plan)
-    if plan.harness.plan_scaffold not in ("on", "off"):
-        raise ValueError("plan_scaffold must be on or off")
+    # Every run but a text-only one owns a plan scaffold: current state is
+    # shown, not opted into.
     capabilities: list[Any] = (
-        [
+        []
+        if plan.execution_constraint == "text-only"
+        else [
             PlanScaffold(
                 scaffold if scaffold is not None else host_ports.PlanState(),
                 publisher,
             )
         ]
-        if plan.harness.plan_scaffold == "on"
-        else []
     )
     if shared_budget is not None:
         capabilities.append(shared_budget)
@@ -353,8 +357,12 @@ async def iterate_run(
         admission = _attachment_input(request, run_plan)
         attachments = admission.parts
         state.media_fallbacks = admission.fallbacks
-        if run_plan.harness.plan_scaffold == "on":
+        if run_plan.execution_constraint != "text-only":
             state.scaffold = host_ports.PlanState()
+            if run_plan.dependency_plan is not None:
+                state.scaffold.replace_received(
+                    received_plan_items(run_plan.dependency_plan)
+                )
         lifecycle = (
             run_plan.lifecycle
             if run_plan.lifecycle is not None
@@ -611,6 +619,7 @@ async def iterate_run(
                                         checkpoint=checkpoint,
                                         event_publisher=event_publisher,
                                         child_records=child_records,
+                                        scaffold_publisher=publisher,
                                     )
                                 ) as execution:
                                     async for event in execution:

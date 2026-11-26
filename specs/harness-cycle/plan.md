@@ -138,7 +138,7 @@ Sequence. `.1`, then `.2`, tag `v6.0.0`, then `.3`. Arbora adopts after the tag,
 | `register_scaffold_publication_factory / register_optional_scaffold_publication_factory` | `scaffold_publication` |
 | `register_run_history_provider` | `run_history` |
 | `register_run_checkpoint_provider` | `run_checkpoints` |
-| `register_run_checkpoint_factory` | `checkpoint_factory` |
+| `register_run_checkpoint_factory` | `checkpoint_store` |
 
 **Moved types and readers.**
 

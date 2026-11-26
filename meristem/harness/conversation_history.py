@@ -116,7 +116,7 @@ def decode_completed_history(content: str, *, run_id: str) -> list[ModelMessage]
 
 
 async def _read_checkpoint_selection(
-    request: Any, provider: RunCheckpointProvider
+    request: Any, provider: RunCheckpointProvider, *, restorable: bool = False
 ) -> str | None:
     try:
         selection = await provider(request)
@@ -133,7 +133,10 @@ async def _read_checkpoint_selection(
         raise ValueError("run checkpoint selection is invalid")
     # Presence is authoritative even for empty, malformed or in-flight content.
     # Never reinterpret it as prior history or silently start a replacement run.
-    if selection.current_run_checkpoint is not None:
+    # A current-run checkpoint is restored by the bound ``checkpoint_store``
+    # transaction (``RunCheckpoint.restore``), never from this read. Without a
+    # bound store its presence refuses before any effect.
+    if selection.current_run_checkpoint is not None and not restorable:
         raise RuntimeError("current-run checkpoint restore is unavailable")
     if selection.completed_history is not None and not isinstance(
         selection.completed_history, str
@@ -152,7 +155,9 @@ async def read_run_history(ports: HostPorts, request: Any) -> str | None:
     """Use one checkpoint read; legacy history is only for an unbound new port."""
     checkpoint_provider = ports.run_checkpoints
     if checkpoint_provider is not None:
-        return await _read_checkpoint_selection(request, checkpoint_provider)
+        return await _read_checkpoint_selection(
+            request, checkpoint_provider, restorable=ports.run_checkpoint_bound()
+        )
     provider = ports.run_history
     if provider is None:
         return None

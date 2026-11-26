@@ -16,7 +16,13 @@ from pydantic_ai import Agent, BinaryContent
 from pydantic_ai.exceptions import UsageLimitExceeded
 from pydantic_ai.usage import UsageLimits
 
-from meristem.host_ports import DurableRunEventPublisher, ToolCaller, ToolStepResult
+from meristem.host_ports import (
+    DurableRunEventPublisher,
+    PlanItem,
+    ScaffoldPublisher,
+    ToolCaller,
+    ToolStepResult,
+)
 
 from .budget import SharedBudget
 from .checkpoint import RunCheckpoint
@@ -131,6 +137,23 @@ def transition_task(
 class _ToolExecution:
     output: Any
     record: dict[str, Any]
+
+
+def _task_label(task: RunTask) -> str:
+    """One line naming a received task for the published plan."""
+    if task.call is not None:
+        detail = f"{task.call.server}.{task.call.tool}"
+    else:
+        lines = task.prompt.strip().splitlines()
+        detail = lines[0][:160] if lines else ""
+    return f"{task.task_id}: {detail}" if detail else task.task_id
+
+
+def received_plan_items(graph: DependencyPlan) -> tuple[PlanItem, ...]:
+    """The received dependency plan as the run's current plan, in declaration order."""
+    return tuple(
+        PlanItem(text=_task_label(task), status="pending") for task in graph.tasks
+    )
 
 
 def _json_bytes(value: Any) -> bytes:
@@ -535,6 +558,7 @@ async def _execute_dependency_plan(
     event_publisher: DurableRunEventPublisher | None = None,
     child_records: Any = None,
     deadline_scope: asyncio.Timeout | None = None,
+    scaffold_publisher: ScaffoldPublisher | None = None,
 ) -> None:
     """Refill a free slot after any successful prerequisite, not a whole wave.
 
@@ -603,6 +627,24 @@ async def _execute_dependency_plan(
         and tool_order[tool_terminal_cursor] in completed_tasks
     ):
         tool_terminal_cursor += 1
+
+    async def progress(statuses: Mapping[str, str]) -> None:
+        """Move the published plan items of tasks to their new status."""
+        scaffold = state.scaffold
+        if scaffold is None or not statuses:
+            return
+        _, items = scaffold.read_versioned()
+        if not scaffold.received:
+            return  # the model replaced the received plan; its edit stands
+        updated = tuple(
+            PlanItem(text=item.text, status=statuses.get(task.task_id, item.status))  # type: ignore[arg-type]
+            for task, item in zip(graph.tasks, items, strict=True)
+        )
+        if updated == items:
+            return
+        revision, current = scaffold.replace_received(updated)
+        if scaffold_publisher is not None:
+            await scaffold_publisher.publish(revision, current)
 
     def sync_usage() -> None:
         state.usage.clear()
@@ -1078,6 +1120,7 @@ async def _execute_dependency_plan(
         return (key,)
 
     try:
+        await progress({key: "done" for key in completed_tasks})
         while ready or active:
             while ready and len(active) < graph.max_concurrency:
                 node = graph.tasks[heapq.heappop(ready)]
@@ -1097,6 +1140,7 @@ async def _execute_dependency_plan(
                     execute(node), name=f"run:{state.run_id}:task:{node.task_id}"
                 )
                 event("task_started", node.task_id, status="running")
+                await progress({node.task_id: "in_progress"})
             done, _ = await asyncio.wait(
                 active.values(), return_when=asyncio.FIRST_COMPLETED
             )
@@ -1145,6 +1189,7 @@ async def _execute_dependency_plan(
                         # output is discarded with the failed run.
                         continue
                     released = await completed(key, result)
+                    await progress({key: "done" for key in released})
                     for released_key in released:
                         if state.status is RunStatus.RUNNING and any(
                             m in _output_text(outputs[released_key])
@@ -1281,6 +1326,7 @@ async def iterate_dependency_plan(
     checkpoint: RunCheckpoint | None = None,
     event_publisher: DurableRunEventPublisher | None = None,
     child_records: Any = None,
+    scaffold_publisher: ScaffoldPublisher | None = None,
 ) -> AsyncGenerator[dict[str, Any], None]:
     """Stream public events without making child dispatch wait for a viewer.
 
@@ -1318,6 +1364,7 @@ async def iterate_dependency_plan(
                     event_publisher,
                     child_records,
                     deadline_scope=scope,
+                    scaffold_publisher=scaffold_publisher,
                 )
         finally:
             events.put_nowait(None)
