@@ -30,6 +30,7 @@ from meristem.harness.conversation_history import (
     decode_completed_history,
     read_run_history,
 )
+from meristem.harness.default_consumers import register_default_consumers
 from meristem.harness.knowledge_tools import bind_knowledge_tools
 from meristem.harness.plan_runtime import PlanScaffold
 from meristem.harness.run_lifecycle import RunLifecycle
@@ -259,6 +260,7 @@ async def iterate_run(
     cfg = dict(config or {})
     state = GraphState(run_id=request.run_id, query=request.task, mode=request.mode)
     lifecycle: RunLifecycle | None = None
+    restore_search_state = None
     try:
         if shared_execution is not None and plan is None:
             raise ValueError("shared execution requires an explicit received plan")
@@ -342,6 +344,8 @@ async def iterate_run(
         if run_plan.lifecycle is None and lifecycle.enabled("champion_skill"):
             champion = ChampionApplied()
             lifecycle.add("champion_skill", "on_start", champion_on_start(champion))
+        if run_plan.lifecycle is None:
+            restore_search_state = register_default_consumers(lifecycle, request, state)
         await lifecycle.on_start(request, run_plan)
         if champion is not None and champion.instructions is not None:
             run_plan = replace(run_plan, instructions=champion.instructions)
@@ -377,6 +381,7 @@ async def iterate_run(
                     )
                 shared_execution.require(run_plan.budget)
             if checkpoint is not None:
+                checkpoint.before_restored_content = restore_search_state
                 await checkpoint.restore()
                 if checkpoint.restored:
                     # A current-run snapshot is authoritative.  It carries
@@ -570,6 +575,15 @@ async def iterate_run(
                                 if index == 0 and attachments:
                                     model_input = [prompt, *attachments]
                                 await lifecycle.before_step(state)
+                                if state.compiled_context and isinstance(prompt, str):
+                                    model_input = (
+                                        f"{state.compiled_context}\n\n{prompt}"
+                                        if not attachments or index
+                                        else [
+                                            f"{state.compiled_context}\n\n{prompt}",
+                                            *attachments,
+                                        ]
+                                    )
 
                                 async def after_result(result: Any) -> None:
                                     nonlocal history

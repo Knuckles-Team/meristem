@@ -162,6 +162,11 @@
       "owner": "meristem"
     },
     {
+      "path": "meristem/harness/default_consumers.py",
+      "disposition": "keep",
+      "owner": "meristem"
+    },
+    {
       "path": "meristem/harness/edit_engine.py",
       "disposition": "keep",
       "owner": "meristem"

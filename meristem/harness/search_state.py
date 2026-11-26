@@ -42,11 +42,12 @@ class SavedSearchState:
 
 
 def _canonical(value: Any) -> str:
+    """Compact JSON with sorted keys and raw UTF-8: the engine's digest recipe."""
     return json.dumps(
         value,
         sort_keys=True,
         separators=(",", ":"),
-        ensure_ascii=True,
+        ensure_ascii=False,
         allow_nan=False,
     )
 
@@ -76,7 +77,9 @@ async def save_search_state(
 
     A ``conflict_retained`` outcome stops the save and re-reads the latest
     revision; the caller receives ``SEARCH_STATE_REVISION_MISMATCH``. Engine
-    ``SEARCH_STATE_*`` codes pass through.
+    ``SEARCH_STATE_*`` codes pass through. The write is the engine's
+    ``SyncMemorySnapshot`` ``submit`` action with the content digest and the
+    expected head revision (none for the first revision).
     """
     bound = _port(port)
     revision = previous_revision + 1
@@ -88,16 +91,21 @@ async def save_search_state(
             **{name: list(getattr(state, name)) for name in FIELDS},
         }
     )
+    # The engine derives the four digests on read with the same recipe.
     answer = await bound.write(
         "SyncMemorySnapshot",
         {
             "request": {
-                "action": "push",
+                "action": {
+                    "action": "submit",
+                    "content": document,
+                    "content_digest": hashlib.sha256(document.encode()).hexdigest(),
+                    "expected_revision": previous_revision or None,
+                },
                 "doc_id": doc_id,
                 "doc_kind": DOC_KIND,
                 "request_id": request_id,
             },
-            "content": document,
         },
         run_ref=run_ref,
     )

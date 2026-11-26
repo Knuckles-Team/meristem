@@ -530,6 +530,10 @@ class GraphState:
     curriculum: Mapping[str, Any] | None = None
     """The task's subgoal hierarchy, checkpoints, trajectory and
     received depth for one curriculum submission (R028.1)."""
+    compiled_context: str | None = None
+    """The compiled fact prose the next model step receives (R036.2)."""
+    consumer_results: dict[str, Any] = field(default_factory=dict)
+    """What admitted consumer steps received, by consumer name."""
 
     def add_usage(self, usage: Any) -> None:
         for key in ("requests", "tool_calls", "input_tokens", "output_tokens"):
