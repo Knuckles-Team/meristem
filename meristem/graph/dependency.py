@@ -16,10 +16,12 @@ from pydantic_ai import Agent, BinaryContent
 from pydantic_ai.exceptions import UsageLimitExceeded
 from pydantic_ai.usage import UsageLimits
 
+from meristem.harness.tool_action_guard import ToolActionRefused, admit_tool_action
 from meristem.host_ports import (
     ApprovalWaiter,
     DecisionPort,
     DurableRunEventPublisher,
+    PlanConfirmer,
     PlanItem,
     ScaffoldPublisher,
     ToolCaller,
@@ -651,6 +653,50 @@ def _attach_record(error: BaseException, record: dict[str, Any]) -> BaseExceptio
     return error
 
 
+def guard_tool_caller(
+    caller: ToolCaller,
+    *,
+    confirm: PlanConfirmer | None,
+    state: Any,
+    tool_classes: Mapping[str, str],
+) -> ToolCaller:
+    """Wrap ``caller`` so a risky tool after untrusted content needs admission.
+
+    The one attach point of the tool guard (MERISTEM-HARNESS-CYCLE-R055): every
+    tool step of a dependency plan reaches the host caller through here. A
+    refusal, a denial and a missing host answer all map to ``ToolCallRefused``;
+    the admission refs go to the run state for the trace.
+    """
+
+    async def guarded(
+        server: str, tool: str, arguments: Mapping[str, Any], task_id: str
+    ) -> ToolStepResult:
+        try:
+            admission = await admit_tool_action(
+                confirm,
+                run_ref=state.run_id,
+                tool=tool,
+                tool_class=tool_classes.get(tool, ""),
+                after_untrusted=state.untrusted_seen,
+                arguments_digest=hashlib.sha256(
+                    json.dumps(arguments, sort_keys=True, default=str).encode()
+                ).hexdigest(),
+            )
+        except ToolActionRefused as refusal:
+            raise ToolCallRefused(refusal.code) from None
+        if admission is not None:
+            state.consumer_results.setdefault("tool_action_admissions", {})[task_id] = {
+                "approval_ref": admission.approval_ref,
+                "decision_ref": admission.decision_ref,
+            }
+        result = _tool_result(await caller(server, tool, arguments, task_id))
+        if result.outcome == "ok":
+            state.untrusted_seen = True
+        return result
+
+    return guarded
+
+
 def _tool_result(value: Any) -> ToolStepResult:
     return value if isinstance(value, ToolStepResult) else ToolStepResult(result=value)
 
@@ -981,6 +1027,23 @@ async def _execute_dependency_plan(
         task: RunTask, record: Mapping[str, Any], *, step: int
     ) -> None:
         """Publish the same bounded record that the terminal run event carries."""
+        admission = state.consumer_results.get("tool_action_admissions", {}).get(
+            task.task_id
+        )
+        state.tool_trace.append(
+            {
+                "task_id": task.task_id,
+                "name": record["tool"],
+                "args_digest": hashlib.sha256(
+                    json.dumps(
+                        record["arguments"], sort_keys=True, default=str
+                    ).encode()
+                ).hexdigest(),
+                "outcome": record["outcome"],
+                "elapsed_seconds": record["elapsed_seconds"],
+                **(admission or {}),
+            }
+        )
         content: dict[str, Any] = {
             "step": step,
             "task_id": task.task_id,

@@ -291,6 +291,12 @@ class SummaryResult:
 SummaryProvider = Callable[[Mapping[str, Any], str], Awaitable[SummaryResult]]
 """``(summary_context, admission_ref) -> SummaryResult``; wrapper retries stay inside."""
 
+RunTraceSink = Callable[[Mapping[str, Any]], Awaitable[None]]
+"""``(trace) -> None``: the run's tool trace as plain data; arbora encodes and commits it."""
+
+TechniqueMeasure = Callable[[str, str, str], Awaitable[Mapping[str, Any]]]
+"""``(technique, arm, config_digest) -> metrics`` for one run of one benchmark arm."""
+
 StudyContentReader = Callable[[str, str, str, int], Awaitable[bytes]]
 """``(tenant_id, graph, node, revision) -> body bytes`` of one graph-held source."""
 
@@ -674,6 +680,8 @@ class HostPorts:
     confirm: PlanConfirmer | None = None
     summary_provider: SummaryProvider | None = None
     study_content: StudyContentReader | None = None
+    run_trace: RunTraceSink | None = None
+    technique_measure: TechniqueMeasure | None = None
     approval: ApprovalWaiter | None = None
     models: ModelProvider | None = None
     events: RunEventSink | None = None

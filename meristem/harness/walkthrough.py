@@ -26,7 +26,8 @@ def build_walkthrough_manifest(
         bound = [
             {"span_id": e.get("span_id") or e.get("task_id"), "step": index}
             for index, e in enumerate(events)
-            if e.get("path") == section["path"]
+            if (e.get("path") or (e.get("arguments") or {}).get("path"))
+            == section["path"]
         ]
         notes.append({**section, "spans": bound})
     return {"sections": notes}

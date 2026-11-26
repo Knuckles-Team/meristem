@@ -15,7 +15,6 @@ BODY = {
 }
 
 
-@pytest.mark.spec("MERISTEM-HARNESS-CYCLE-R057")
 async def test_receipt_submitted_and_attestation_applied():
     port = RecordedEnginePort(
         {
