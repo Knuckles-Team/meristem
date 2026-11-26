@@ -21,7 +21,7 @@ from meristem.harness import (
     preplan,
     task_run,
 )
-from meristem.harness.changeset_loop import run_changeset_cycle
+from meristem.harness.changeset_loop import VerifierSettings, run_changeset_cycle
 from meristem.harness.edit_engine import Edit
 from meristem.harness.run_lifecycle import ConsumerRefused
 from meristem.harness.task_run import TaskRunContext
@@ -219,6 +219,17 @@ class CodingToolset(FunctionToolset[Any]):
         )
         return result if isinstance(result, str) else f"refused: {result['refused']}"
 
+    def _verifier(self, fast_gates: Sequence[str]) -> VerifierSettings | None:
+        cfg = self._config
+        if not cfg.verifier_cases:
+            return None
+        return VerifierSettings(
+            cfg.verifier_cases,
+            tuple(fast_gates),
+            cfg.attack_policy_revision,
+            cfg.verifier_revision,
+        )
+
     async def submit_changeset(
         self, edits: list[dict[str, str]], fast_gates: list[str]
     ) -> str:
@@ -236,6 +247,7 @@ class CodingToolset(FunctionToolset[Any]):
             submitter=submitter,
             gate_runner=runner,
             ports=self._ports,
+            verifier=self._verifier(fast_gates),
         )
         return result.changeset_id or result.reason
 
