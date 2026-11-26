@@ -30,7 +30,7 @@ from meristem.harness.conversation_history import (
     decode_completed_history,
     read_run_history,
 )
-from meristem.harness.default_consumers import register_default_consumers
+from meristem.harness.default_consumers import bind_default_consumers
 from meristem.harness.knowledge_tools import bind_knowledge_tools
 from meristem.harness.plan_runtime import PlanScaffold
 from meristem.harness.run_lifecycle import RunLifecycle
@@ -345,7 +345,7 @@ async def iterate_run(
             champion = ChampionApplied()
             lifecycle.add("champion_skill", "on_start", champion_on_start(champion))
         if run_plan.lifecycle is None:
-            restore_search_state = register_default_consumers(lifecycle, request, state)
+            restore_search_state = bind_default_consumers(lifecycle, request, state)
         await lifecycle.on_start(request, run_plan)
         if champion is not None and champion.instructions is not None:
             run_plan = replace(run_plan, instructions=champion.instructions)

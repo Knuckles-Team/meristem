@@ -1,0 +1,146 @@
+# The removed-name map of MERISTEM-HARNESS-CYCLE-R089 (plan.md, Release 6.0.0 and the HostPorts map).
+# `old` and `new` are dotted names; `kind` is function, module or type.
+
+[[removed]]
+old = "meristem.host_ports.register_run_decision_provider"
+new = "meristem.host_ports.HostPorts.decide"
+kind = "function"
+
+[[removed]]
+old = "meristem.host_ports.register_tool_caller"
+new = "meristem.host_ports.HostPorts.caller"
+kind = "function"
+
+[[removed]]
+old = "meristem.host_ports.register_model_provider"
+new = "meristem.host_ports.HostPorts.models"
+kind = "function"
+
+[[removed]]
+old = "meristem.host_ports.register_run_event_sink"
+new = "meristem.host_ports.HostPorts.events"
+kind = "function"
+
+[[removed]]
+old = "meristem.host_ports.register_durable_run_event_factory"
+new = "meristem.host_ports.HostPorts.durable_run_events"
+kind = "function"
+
+[[removed]]
+old = "meristem.host_ports.register_harness_probe_provider"
+new = "meristem.host_ports.HostPorts.probe"
+kind = "function"
+
+[[removed]]
+old = "meristem.host_ports.register_harness_cycle_provider"
+new = "meristem.host_ports.HostPorts.cycle"
+kind = "function"
+
+[[removed]]
+old = "meristem.host_ports.register_active_child_input_factory"
+new = "meristem.host_ports.HostPorts.active_child_input"
+kind = "function"
+
+[[removed]]
+old = "meristem.host_ports.register_native_toolset_provider"
+new = "meristem.host_ports.HostPorts.native"
+kind = "function"
+
+[[removed]]
+old = "meristem.host_ports.register_fleet_catalog_provider"
+new = "meristem.host_ports.HostPorts.fleet"
+kind = "function"
+
+[[removed]]
+old = "meristem.host_ports.register_authority_keepalive"
+new = "meristem.host_ports.HostPorts.keepalive"
+kind = "function"
+
+[[removed]]
+old = "meristem.host_ports.register_remote_toolset_provider"
+new = "meristem.host_ports.HostPorts.remote"
+kind = "function"
+
+[[removed]]
+old = "meristem.host_ports.register_tool_client_factory"
+new = "meristem.host_ports.HostPorts.tool_client"
+kind = "function"
+
+[[removed]]
+old = "meristem.host_ports.register_outbound_credential_provider"
+new = "meristem.host_ports.HostPorts.credentials"
+kind = "function"
+
+[[removed]]
+old = "meristem.host_ports.register_delegated_identity_provider"
+new = "meristem.host_ports.HostPorts.identity"
+kind = "function"
+
+[[removed]]
+old = "meristem.host_ports.register_scaffold_publication_factory"
+new = "meristem.host_ports.HostPorts.scaffold_publication"
+kind = "function"
+
+[[removed]]
+old = "meristem.host_ports.register_optional_scaffold_publication_factory"
+new = "meristem.host_ports.HostPorts.scaffold_publication"
+kind = "function"
+
+[[removed]]
+old = "meristem.host_ports.register_run_history_provider"
+new = "meristem.host_ports.HostPorts.run_history"
+kind = "function"
+
+[[removed]]
+old = "meristem.host_ports.register_run_checkpoint_provider"
+new = "meristem.host_ports.HostPorts.run_checkpoints"
+kind = "function"
+
+[[removed]]
+old = "meristem.host_ports.register_run_checkpoint_factory"
+new = "meristem.host_ports.HostPorts.checkpoint_factory"
+kind = "function"
+
+[[removed]]
+old = "meristem.runtime.PlanItem"
+new = "meristem.host_ports.PlanItem"
+kind = "type"
+
+[[removed]]
+old = "meristem.runtime.PlanState"
+new = "meristem.host_ports.PlanState"
+kind = "type"
+
+[[removed]]
+old = "meristem.runtime.ToolStepResult"
+new = "meristem.host_ports.ToolStepResult"
+kind = "type"
+
+[[removed]]
+old = "meristem.runtime.ToolOutcome"
+new = "meristem.host_ports.ToolOutcome"
+kind = "type"
+
+[[removed]]
+old = "meristem.host_ports.read_run_history"
+new = "meristem.harness.conversation_history.read_run_history"
+kind = "function"
+
+[[removed]]
+old = "meristem.host_ports.read_recursive_run_history"
+new = "meristem.harness.conversation_history.read_recursive_run_history"
+kind = "function"
+
+[[removed]]
+old = "meristem.harness.harness_cycle"
+new = "meristem.graph.harness_cycle"
+kind = "module"
+
+[[removed]]
+old = "meristem.harness.hosted_run"
+new = "meristem.graph.hosted_run"
+kind = "module"
+
+# Fields the host record gained after the map was written; no register function ever existed.
+[[added]]
+field = "engine_decision"

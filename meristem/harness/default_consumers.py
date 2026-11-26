@@ -32,7 +32,7 @@ def _received(request: Any, key: str) -> dict[str, Any] | None:
     return dict(value) if isinstance(value, dict) else None
 
 
-def register_default_consumers(
+def bind_default_consumers(
     lifecycle: RunLifecycle, request: Any, state: Any
 ) -> Callable[[], Awaitable[None]] | None:
     """Bind the admitted default steps; return the checkpoint restore step.
