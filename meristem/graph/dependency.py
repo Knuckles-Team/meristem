@@ -839,6 +839,9 @@ async def _execute_dependency_plan(
                 tool_record_buffer[task.task_id] = (task, record, task_step)
                 raise _attach_record(exc, record) from None
             try:
+                subset = (plan.harness.action_space or {}).get("tool_subset")
+                if subset is not None and task.call.tool not in subset:
+                    raise ToolCallRefused("TOOL_NOT_ALLOWED")
                 budget.reserve_tool_call()
                 await publish_durable(
                     "tool_call",
