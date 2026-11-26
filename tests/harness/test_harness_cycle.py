@@ -1214,3 +1214,70 @@ async def test_wrong_run_identity_is_refused(monkeypatch):
             candidates=[],
             ports=support.PORTS,
         )
+
+
+@pytest.mark.spec("MERISTEM-HARNESS-CYCLE-R001.3")
+async def test_probe_conditions_materialized_and_matched() -> None:
+    """A host executor drives ``execute_graph`` per probe and echoes its conditions."""
+    from meristem.graph.runner import execute_graph
+
+    seen: list[dict] = []
+
+    def model(messages, info):
+        return ModelResponse(parts=[TextPart("done")])
+
+    support.register_run_decision_provider(
+        lambda request: RunPlan(model=FunctionModel(model), steps=(request.task,))
+    )
+    wrong_digest = False
+
+    async def executor(*, graph, config, task, run_id, budget_ref, metadata, **kw):
+        # The conditions this host actually materialized for the probe.
+        actual = conditions_digest(
+            task=task,
+            seed=metadata["harness_probe"]["seed"],
+            model_ref=kw["requested_model_id"],
+            budget_ref=budget_ref,
+        )
+        seen.append({"run_id": run_id, "digest": actual})
+        result = await execute_graph(
+            graph,
+            config,
+            task,
+            run_id=run_id,
+            mode=kw["mode"],
+            requested_model_id=kw["requested_model_id"],
+            agent_name=kw["agent_name"],
+            ports=support.PORTS,
+        )
+        return {
+            **result,
+            "conditions_digest": "0" * 64 if wrong_digest else actual,
+        }
+
+    support.register_harness_probe_provider(executor)
+    kwargs = dict(
+        graph=object(),
+        config=None,
+        task="classify",
+        seed="seed-1",
+        model_ref="model-1",
+        budget_ref="budget-1",
+        run_id="run-1",
+        current_version_ref="v-0",
+        candidates=_probe_candidates(),
+        ports=support.PORTS,
+    )
+    traces = await probe_candidates(**kwargs)
+
+    requested = conditions_digest(
+        task="classify", seed="seed-1", model_ref="model-1", budget_ref="budget-1"
+    )
+    assert [t.candidate_id for t in traces] == ["current", "c-0", "c-1"]
+    assert {s["digest"] for s in seen} == {requested}
+    assert {t.conditions_digest for t in traces} == {requested}
+    assert [t.trace_id for t in traces] == [s["run_id"] for s in seen]
+
+    wrong_digest = True
+    with pytest.raises(CycleRefusal, match="probe_trace_missing"):
+        await probe_candidates(**kwargs)

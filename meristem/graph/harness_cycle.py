@@ -198,7 +198,9 @@ async def probe_candidates(
 ) -> tuple[ProbeTrace, ...]:
     """Probe the current harness and each candidate under one shared condition.
 
-    The host must admit and materialize each probe. The requested condition
+    The host must admit and materialize each probe. The host returns the
+    digest of the conditions it materialized; a digest that differs from the
+    requested one refuses ``probe_trace_missing``. The requested condition
     digest is not evidence of actual execution or a measurement receipt.
     Without the host executor, refuse before starting any probe.
     """
@@ -245,6 +247,10 @@ async def probe_candidates(
         except Exception:
             raise CycleRefusal("probe_trace_missing") from None
         if not isinstance(result, Mapping) or result.get("run_id") != trace_id:
+            raise CycleRefusal("probe_trace_missing")
+        materialized = result.get("conditions_digest")
+        if materialized is not None and materialized != digest:
+            # The host ran the probe under other conditions than requested.
             raise CycleRefusal("probe_trace_missing")
         status = result.get("status")
         try:
@@ -556,7 +562,7 @@ async def persist(
         "adopted_version_ref": adopted.component_version_ref,
         "lesson": lesson,
     }
-    log_answer = await engine.log("HarnessAdoption", run_ref=run_ref)
+    log_answer = await engine.log("HarnessAdoption", write, run_ref=run_ref)
     if log_answer.refusal_code is not None:
         if log_answer.refusal_code == "insufficient_evidence":
             raise CycleRefusal("measurement_unavailable")

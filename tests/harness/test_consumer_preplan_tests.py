@@ -26,7 +26,6 @@ def _bind(code: int):
     gates = Gates({"make test": (code, "ok")}, files={"out.bin": "bytes"})
     engine = ScriptedEngine(
         {
-            "put_blob": [{"outcome": "committed"}],
             "log": [{"outcome": "committed", "record_digest": "rec"}],
         }
     )
@@ -41,7 +40,7 @@ async def test_receipt_submitted_before_planning():
     engine, events = _bind(0)
     seen: list = []
     await _run(tool_plan("run_preplan", {}, seen, CONFIG))
-    assert [c[0] for c in engine.calls] == ["put_blob", "log"]
+    assert [c[0] for c in engine.calls] == ["log"]
     (result,) = seen
     receipt = result["receipt"]
     assert result["reusable"] is True and receipt["artifact_count"] == 1

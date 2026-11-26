@@ -1,4 +1,4 @@
-"""Store the typed step graph before compile (MERISTEM-HARNESS-CYCLE-R022.1)."""
+"""Send the typed step graph with its compile record (MERISTEM-HARNESS-CYCLE-R022.1)."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import hashlib
 import ports_support as support
 import pytest
 from pydantic_ai.models.test import TestModel
-from support.recorded_engine import RecordedEnginePort, params_digest
+from support.recorded_engine import RecordedEnginePort
 
 from meristem.graph import HarnessConfig, RunPlan, create_graph_agent, execute_graph
 from meristem.harness import plan
@@ -37,15 +37,10 @@ async def _run_with_consumer(
 
 
 @pytest.mark.spec("MERISTEM-HARNESS-CYCLE-R022.1")
-async def test_graph_stored_before_compile():
+async def test_graph_sent_with_compile_record():
     port = RecordedEnginePort(
         {
             "answers": [
-                {
-                    "method": "put_blob",
-                    "params_digest": params_digest({"sha256": SOURCE_DIGEST}),
-                    "answer": {"outcome": "committed", "record_digest": "blob-1"},
-                },
                 {
                     "method": "log",
                     "params": {"op": "RunRecord"},
@@ -66,9 +61,9 @@ async def test_graph_stored_before_compile():
     result = await _run_with_consumer(store, port=port)
 
     assert result["status"] == "completed"
-    # The store call precedes the compile call.
-    assert [method for method, _ in port.calls] == ["put_blob", "log"]
-    assert port.calls[0] == ("put_blob", params_digest({"sha256": SOURCE_DIGEST}))
+    # The graph and the compile record travel in one engine call.
+    assert [method for method, _ in port.calls] == ["log"]
+    assert port.bodies == [("RunRecord", dict(plan._step_graph(DRAFT)))]
     assert stored["result"].source_digest == SOURCE_DIGEST
     assert stored["result"].program_ref == "record-1"
 
@@ -114,17 +109,7 @@ async def test_unbound_engine_port_refuses_and_decides_nothing():
 
 @pytest.mark.spec("MERISTEM-HARNESS-CYCLE-R022.1")
 async def test_unlisted_consumer_never_runs():
-    port = RecordedEnginePort(
-        {
-            "answers": [
-                {
-                    "method": "put_blob",
-                    "params_digest": params_digest({"sha256": SOURCE_DIGEST}),
-                    "answer": {"outcome": "committed"},
-                }
-            ]
-        }
-    )
+    port = RecordedEnginePort({"answers": []})
     support.register_engine_decision_port(port)
 
     async def store(_state) -> None:
