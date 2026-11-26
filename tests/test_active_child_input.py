@@ -57,6 +57,7 @@ def reset_port():
     support.register_active_child_input_factory(None)
 
 
+@pytest.mark.spec("MERISTEM-RUN-R009")
 async def test_input_waits_for_next_model_request_and_preserves_budget() -> None:
     port = Port()
     bind(port)
@@ -315,6 +316,7 @@ async def test_entire_invalid_batch_refuses_before_receipts_or_model() -> None:
     assert port.receipts == [] and calls == 0
 
 
+@pytest.mark.spec("MERISTEM-RUN-R009")
 async def test_host_order_is_preserved_and_completion_does_not_reopen_port() -> None:
     from dataclasses import replace
 
