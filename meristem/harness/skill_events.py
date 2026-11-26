@@ -60,13 +60,20 @@ async def send_engine(
 ) -> bool:
     """Send one engine call; ``False`` when the pinned engine cannot serve it.
 
-    A method the released engine lacks, a refused or forbidden method and an
-    unbound port all surface as unavailable. The caller counts it and goes on;
-    nothing here raises for an absent method.
+    A method the released engine lacks, a refused or forbidden method, an
+    unbound port and a transport failure (connection or timeout) all surface
+    as unavailable. The caller counts it and goes on. Any other error,
+    including ``AttributeError`` and ``LookupError``, is a programming error
+    and propagates.
     """
     try:
         await send(method, payload)
-    except (EngineDecisionRefused, NotImplementedError, AttributeError, LookupError):
+    except (
+        EngineDecisionRefused,
+        NotImplementedError,
+        ConnectionError,
+        TimeoutError,
+    ):
         return False
     return True
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from meristem.harness.run_lifecycle import RunLifecycle
-from meristem.harness.skill_events import SkillEventRecorder
+from meristem.harness.skill_events import SkillEventRecorder, send_engine
 
 
 class Recording:
@@ -68,3 +68,22 @@ async def test_cancelled_maps_to_error_and_missing_method_is_unavailable():
     event = await recorder.on_skill_end(outcome="cancelled")
     assert event is not None and recorder.unavailable == 1
     assert event.as_invocation()["outcome"] == {"error": {"code": "SKILL_CANCELLED"}}
+
+
+@pytest.mark.spec("MERISTEM-HARNESS-CYCLE-R091")
+@pytest.mark.parametrize("error", [ConnectionError, TimeoutError, NotImplementedError])
+async def test_send_engine_reports_engine_and_transport_errors_unavailable(error):
+    async def send(method, payload):
+        raise error(method)
+
+    assert await send_engine(send, "SkillTelemetry", {}) is False
+
+
+@pytest.mark.spec("MERISTEM-HARNESS-CYCLE-R091")
+@pytest.mark.parametrize("error", [AttributeError, LookupError, KeyError])
+async def test_send_engine_lets_programming_errors_surface(error):
+    async def send(method, payload):
+        raise error("bug")
+
+    with pytest.raises(error):
+        await send_engine(send, "SkillTelemetry", {})
