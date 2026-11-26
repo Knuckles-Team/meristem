@@ -153,3 +153,8 @@ def test_legacy_sparql_path_is_owned_by_the_engine_not_meristem() -> None:
     assert_absent("knowledge_graph/backends/sparql", "knowledge_graph/setup")
     assert "setup-databases" not in console_scripts()
     assert references(("stardog_sync", "sparql_ingestor"), include_tests=True) == []
+
+
+@pytest.mark.spec("MERISTEM-RUN-R016")
+def test_only_the_meristem_console_script_remains() -> None:
+    assert set(console_scripts()) == {"meristem"}
