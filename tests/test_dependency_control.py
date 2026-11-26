@@ -35,14 +35,6 @@ from meristem.graph.dependency import (
 from meristem.graph.state import TaskEvent, TaskStatus, TaskTransitionRefused
 from meristem.host_ports import ApprovalOutcome, DecisionVerdict, HostPorts
 
-SPEC_1 = "MERISTEM-RUN-R018.1"
-SPEC_2 = "MERISTEM-RUN-R018.2"
-SPEC_3 = "MERISTEM-RUN-R018.3"
-SPEC_4 = "MERISTEM-RUN-R018.4"
-SPEC_5 = "MERISTEM-RUN-R018.5"
-SPEC_6 = "MERISTEM-RUN-R018.6"
-SPEC_7 = "MERISTEM-RUN-R018.7"
-
 
 def tool(task_id: str, *deps: str, arguments=None) -> RunTask:
     return RunTask(
@@ -134,7 +126,7 @@ def kinds(events, kind):
     return [event for event in events if event["type"] == kind]
 
 
-@pytest.mark.spec(SPEC_1)
+@pytest.mark.spec("MERISTEM-RUN-R018.1")
 def test_control_fields_validate_and_ports_register():
     ports = HostPorts()
     assert ports.decision_port() is None and ports.approval_waiter() is None
@@ -193,7 +185,7 @@ def test_control_fields_validate_and_ports_register():
         assert label
 
 
-@pytest.mark.spec(SPEC_2)
+@pytest.mark.spec("MERISTEM-RUN-R018.2")
 async def test_exclusive_branch_skips_untaken_arm_until_join(events):
     fakes = Fakes(
         verdicts={"b": DecisionVerdict(record_id="rec-1", taken_task_ids=("x",))}
@@ -224,7 +216,7 @@ async def test_exclusive_branch_skips_untaken_arm_until_join(events):
     assert json.loads(result.output) == {"task": "x"} or "x" in result.output
 
 
-@pytest.mark.spec(SPEC_2)
+@pytest.mark.spec("MERISTEM-RUN-R018.2")
 @pytest.mark.parametrize(
     ("kind", "taken", "expected_called"),
     [
@@ -254,7 +246,7 @@ async def test_branch_verdict_is_validated_against_declared_arms(
         assert "BranchVerdictInvalid" in (result.error or "")
 
 
-@pytest.mark.spec(SPEC_2)
+@pytest.mark.spec("MERISTEM-RUN-R018.2")
 async def test_branch_abstention_fails_the_step(events):
     Fakes(verdicts={"b": DecisionVerdict(abstention="BRANCH_NO_ARM")})
     tasks = [branch("b", "exclusive", "x"), tool("x", "b"), join("j", "b", "x")]
@@ -263,7 +255,7 @@ async def test_branch_abstention_fails_the_step(events):
     assert "BRANCH_NO_ARM" in (result.error or "")
 
 
-@pytest.mark.spec(SPEC_2)
+@pytest.mark.spec("MERISTEM-RUN-R018.2")
 async def test_parallel_split_skips_the_decision_port(events):
     fakes = Fakes()
     tasks = [
@@ -279,7 +271,7 @@ async def test_parallel_split_skips_the_decision_port(events):
     assert verdict["taken_task_ids"] == ["x", "y"]
 
 
-@pytest.mark.spec(SPEC_2)
+@pytest.mark.spec("MERISTEM-RUN-R018.2")
 async def test_join_with_every_arm_skipped_is_skipped_too(events):
     Fakes(verdicts={"outer": DecisionVerdict(taken_task_ids=("keep",))})
     tasks = [
@@ -297,7 +289,7 @@ async def test_join_with_every_arm_skipped_is_skipped_too(events):
     assert skipped == {"side", "inner", "i1", "inner_join"}
 
 
-@pytest.mark.spec(SPEC_2)
+@pytest.mark.spec("MERISTEM-RUN-R018.2")
 def test_arm_closure_keeps_only_joins():
     nodes = {
         t.task_id: t
@@ -315,7 +307,7 @@ def test_arm_closure_keeps_only_joins():
     assert arm_closure("j", nodes, children) == ((), ())
 
 
-@pytest.mark.spec(SPEC_2)
+@pytest.mark.spec("MERISTEM-RUN-R018.2")
 def test_skip_edge_admits_an_untaken_arm_guard():
     for status in (TaskStatus.BLOCKED, TaskStatus.READY):
         assert (
@@ -326,7 +318,7 @@ def test_skip_edge_admits_an_untaken_arm_guard():
             transition_task(status, TaskEvent.SKIP, {})
 
 
-@pytest.mark.spec(SPEC_3)
+@pytest.mark.spec("MERISTEM-RUN-R018.3")
 async def test_approval_wait_frees_slot_and_reject_skips_dependents(events):
     gate = asyncio.Event()
     fakes = Fakes(gate=gate)
@@ -361,7 +353,7 @@ async def test_approval_wait_frees_slot_and_reject_skips_dependents(events):
     }
 
 
-@pytest.mark.spec(SPEC_3)
+@pytest.mark.spec("MERISTEM-RUN-R018.3")
 @pytest.mark.parametrize(
     ("verdict", "error"),
     [("reject", "ApprovalRejected"), ("timeout", "ApprovalTimedOut")],
@@ -378,7 +370,7 @@ async def test_rejected_or_timed_out_approval_fails_and_skips_dependents(
     assert any(e["type"] == "task_blocked" and e["task_id"] == "after" for e in events)
 
 
-@pytest.mark.spec(SPEC_3)
+@pytest.mark.spec("MERISTEM-RUN-R018.3")
 async def test_cancelled_run_cancels_the_approval_wait(events):
     gate = asyncio.Event()
     fakes = Fakes(gate=gate)
@@ -396,7 +388,7 @@ async def test_cancelled_run_cancels_the_approval_wait(events):
     assert fakes.called == []
 
 
-@pytest.mark.spec(SPEC_3)
+@pytest.mark.spec("MERISTEM-RUN-R018.3")
 async def test_missing_approval_timeout_uses_the_default():
     fakes = Fakes()
     tasks = [
@@ -408,7 +400,7 @@ async def test_missing_approval_timeout_uses_the_default():
     assert fakes.waits[0][3] == 86_400
 
 
-@pytest.mark.spec(SPEC_4)
+@pytest.mark.spec("MERISTEM-RUN-R018.4")
 async def test_decision_step_outputs_verdict_and_abstention_fails(events):
     fakes = Fakes(
         verdicts={"d": DecisionVerdict(outputs=[{"tier": "gold"}], record_id="rec-2")}
@@ -440,7 +432,7 @@ async def test_decision_step_outputs_verdict_and_abstention_fails(events):
     assert "use" not in fakes.called
 
 
-@pytest.mark.spec(SPEC_5)
+@pytest.mark.spec("MERISTEM-RUN-R018.5")
 @pytest.mark.parametrize(
     ("task", "bound", "error"),
     [
@@ -464,7 +456,7 @@ async def test_missing_ports_refuse_before_any_task(task, bound, error, events):
     assert [event["type"] for event in events] == ["error"]
 
 
-@pytest.mark.spec(SPEC_5)
+@pytest.mark.spec("MERISTEM-RUN-R018.5")
 async def test_ports_not_needed_by_a_plan_may_be_unbound():
     support.PORTS.caller = Fakes().caller
     support.PORTS.decision = None
@@ -478,7 +470,7 @@ async def test_ports_not_needed_by_a_plan_may_be_unbound():
     assert result.status is RunStatus.COMPLETED, result.error
 
 
-@pytest.mark.spec(SPEC_6)
+@pytest.mark.spec("MERISTEM-RUN-R018.6")
 async def test_events_cite_verdicts_waits_and_skips(events):
     Fakes(verdicts={"b": DecisionVerdict(record_id="rec-9", taken_task_ids=("x",))})
     tasks = [
@@ -507,7 +499,8 @@ async def test_events_cite_verdicts_waits_and_skips(events):
     ] == [("y", "y", "b")]
 
 
-@pytest.mark.spec(SPEC_7)
+@pytest.mark.spec("MERISTEM-RUN-R018")
+@pytest.mark.spec("MERISTEM-RUN-R018.7")
 @pytest.mark.parametrize(
     ("outcome", "status", "error"),
     [
@@ -558,7 +551,7 @@ async def test_process_plan_branches_waits_and_joins(outcome, status, error, eve
         assert "done" not in fakes.called
 
 
-@pytest.mark.spec(SPEC_2)
+@pytest.mark.spec("MERISTEM-RUN-R018.2")
 async def test_tool_finished_behind_a_skipped_arm_tool_is_released(events):
     gate = asyncio.Event()
     fakes = Fakes(
@@ -603,7 +596,7 @@ class _Checkpoint:
         self.snapshots.append(content)
 
 
-@pytest.mark.spec(SPEC_2)
+@pytest.mark.spec("MERISTEM-RUN-R018.2")
 async def test_restored_branch_reapplies_its_recorded_verdict(events):
     store = _Checkpoint()
 
