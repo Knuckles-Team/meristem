@@ -34,6 +34,7 @@ from meristem.harness.conversation_history import (
 from meristem.harness.default_consumers import bind_default_consumers
 from meristem.harness.knowledge_tools import bind_knowledge_tools
 from meristem.harness.plan_runtime import PlanScaffold
+from meristem.harness.program_reuse import report_reuse, reuse_program
 from meristem.harness.run_lifecycle import RunLifecycle
 
 from .budget import LiveSharedBudget, SharedBudget, initial_run_usage
@@ -363,6 +364,8 @@ async def iterate_run(
         if run_plan.lifecycle is None and lifecycle.enabled("champion_skill"):
             champion = ChampionApplied()
             lifecycle.add("champion_skill", "on_start", champion_on_start(champion))
+        if lifecycle.enabled("step_usage"):
+            state.metrics.bind_usage(state.pending_usage.append, run_id=request.run_id)
         if run_plan.lifecycle is None:
             restore_search_state = bind_default_consumers(lifecycle, request, state)
         await lifecycle.on_start(request, run_plan)
@@ -550,6 +553,32 @@ async def iterate_run(
                                     run_plan.render_receipt, run_plan.instructions
                                 )
                                 yield emit(state, "render_receipt_checked", **evidence)
+                            if lifecycle.enabled("program_reuse"):
+                                run_plan, reuse = await reuse_program(
+                                    request,
+                                    run_plan,
+                                    state,
+                                    request.ports.engine_decision_port(),
+                                    restricted=restricted,
+                                    restored=checkpoint is not None
+                                    and checkpoint.restored,
+                                )
+                                deps.plan = run_plan
+                                steps = run_plan.steps[
+                                    : max(run_plan.stop.max_steps, 0)
+                                ]
+                                reuse_events: list[dict[str, Any]] = []
+                                await report_reuse(
+                                    reuse,
+                                    state,
+                                    request.ports.engine_decision_port(),
+                                    reuse_events.append,
+                                )
+                                for event in reuse_events:
+                                    fields = {
+                                        k: v for k, v in event.items() if k != "type"
+                                    }
+                                    yield emit(state, event["type"], **fields)
                             agent = build_agent(
                                 run_plan,
                                 state.run_id,
@@ -662,6 +691,8 @@ async def iterate_run(
                                         state.usage.clear()
                                         state.add_usage(shared_budget.usage)
                                 text = _text(result.output)
+                                for usage in _drain_usage(state):
+                                    yield emit(state, "step_usage", **usage)
                                 yield emit(state, "node_transition", output=text)
                                 await lifecycle.after_step(state, result)
                                 if (
@@ -720,9 +751,17 @@ async def iterate_run(
         state.error = f"{type(exc).__name__}: {exc}"
         yield emit(state, "error", error=state.error, result=_result(state))
         return
+    for usage in _drain_usage(state):
+        yield emit(state, "step_usage", **usage)
     yield emit(
         state, "graph_complete", status=state.status.value, result=_result(state)
     )
+
+
+def _drain_usage(state: GraphState) -> list[dict[str, Any]]:
+    """Take the step-usage facts recorded since the last flush (R003.1)."""
+    taken, state.pending_usage = state.pending_usage, []
+    return [{k: v for k, v in event.items() if k != "type"} for event in taken]
 
 
 def _result(state: GraphState) -> dict[str, Any]:

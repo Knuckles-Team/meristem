@@ -512,6 +512,14 @@ class GraphState:
     """Images the received fallback replaced with a placeholder (R017.2)."""
     consumer_results: dict[str, Any] = field(default_factory=dict)
     """What admitted consumer steps received, by consumer name."""
+    pending_usage: list[dict[str, Any]] = field(default_factory=list)
+    """Step-usage facts not yet emitted as run events."""
+    engine_records: dict[str, str] = field(default_factory=dict)
+    """Record digest of each applied engine decision, by question kind."""
+
+    def note_record(self, kind: str, digest: str) -> None:
+        """Keep the digest of the decision a consumer applied (R004.1)."""
+        self.engine_records[kind] = digest
 
     def add_usage(self, usage: Any) -> None:
         for key in ("requests", "tool_calls", "input_tokens", "output_tokens"):

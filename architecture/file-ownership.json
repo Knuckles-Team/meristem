@@ -242,6 +242,71 @@
       "owner": "meristem"
     },
     {
+      "path": "meristem/harness/designation.py",
+      "disposition": "keep",
+      "owner": "meristem"
+    },
+    {
+      "path": "meristem/harness/engine_step.py",
+      "disposition": "keep",
+      "owner": "meristem"
+    },
+    {
+      "path": "meristem/harness/fanout.py",
+      "disposition": "keep",
+      "owner": "meristem"
+    },
+    {
+      "path": "meristem/harness/harness_config.py",
+      "disposition": "keep",
+      "owner": "meristem"
+    },
+    {
+      "path": "meristem/harness/instructions.py",
+      "disposition": "keep",
+      "owner": "meristem"
+    },
+    {
+      "path": "meristem/harness/memory_routes.py",
+      "disposition": "keep",
+      "owner": "meristem"
+    },
+    {
+      "path": "meristem/harness/program_reuse.py",
+      "disposition": "keep",
+      "owner": "meristem"
+    },
+    {
+      "path": "meristem/harness/run_outcomes.py",
+      "disposition": "keep",
+      "owner": "meristem"
+    },
+    {
+      "path": "meristem/harness/runtime_quota.py",
+      "disposition": "keep",
+      "owner": "meristem"
+    },
+    {
+      "path": "meristem/harness/served_answers.py",
+      "disposition": "keep",
+      "owner": "meristem"
+    },
+    {
+      "path": "meristem/harness/tool_necessity.py",
+      "disposition": "keep",
+      "owner": "meristem"
+    },
+    {
+      "path": "meristem/harness/trajectory.py",
+      "disposition": "keep",
+      "owner": "meristem"
+    },
+    {
+      "path": "meristem/harness/verification.py",
+      "disposition": "keep",
+      "owner": "meristem"
+    },
+    {
       "path": "meristem/harness/search_state.py",
       "disposition": "keep",
       "owner": "meristem"
