@@ -27,6 +27,11 @@ from meristem.host_ports import (
 from .state import GraphState, RunBudget, RunPlan, RunPlanFailure, RunRequest
 
 
+def snapshot_run_usage(usage: RunUsage) -> tuple[int, int]:
+    """The ``(input_tokens, output_tokens)`` counters of a run at this moment."""
+    return (int(usage.input_tokens), int(usage.output_tokens))
+
+
 def initial_run_usage(plan: RunPlan | RunPlanFailure) -> RunUsage:
     """Snapshot only the public counters; never estimate unreported usage."""
     usage = plan.initial_usage
