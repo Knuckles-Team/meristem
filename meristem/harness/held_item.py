@@ -11,13 +11,29 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from meristem.harness.run_lifecycle import ConsumerRefused
 from meristem.host_ports import PlanConfirmer
 
-if TYPE_CHECKING:
-    from meristem.graph.state import HeldOutputConfig
+
+@dataclass(frozen=True)
+class HeldOutputConfig:
+    """The received refs that make one generated output a held output (R101).
+
+    The harness derives only the content digest of the exact output; every
+    other value is received from the host and the engine and carried as is.
+    ``encode`` turns the output text into the exact bytes the host digests
+    (default: UTF-8 of the text).
+    """
+
+    item_ref: str
+    engine_decision_ref: str
+    checklist: tuple[tuple[str, str], ...]
+    verifier: str | None = None
+    compiler: str | None = None
+    verification_ref: str | None = None
+    encode: Callable[[str], bytes] | None = None
 
 
 class HeldItemRefused(ConsumerRefused):
