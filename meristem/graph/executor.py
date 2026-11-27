@@ -33,6 +33,7 @@ from meristem.harness.conversation_history import (
 )
 from meristem.harness.default_consumers import TOOL_ACTION_GUARD, bind_default_consumers
 from meristem.harness.engine_step import with_assistant_profile
+from meristem.harness.held_item import held_output_block
 from meristem.harness.knowledge_tools import bind_knowledge_tools
 from meristem.harness.plan_runtime import PlanScaffold
 from meristem.harness.program_reuse import report_reuse, reuse_program
@@ -801,6 +802,10 @@ async def iterate_run(
         state.error = f"{type(exc).__name__}: {exc}"
         yield emit(state, "error", error=state.error, result=_result(state))
         return
+    if state.status is RunStatus.COMPLETED and run_plan.harness.held_output is not None:
+        state.held_output = held_output_block(
+            state.outputs[-1] if state.outputs else "", run_plan.harness.held_output
+        )
     for usage in _drain_usage(state):
         yield emit(state, "step_usage", **usage)
     yield emit(
@@ -824,6 +829,7 @@ def _result(state: GraphState) -> dict[str, Any]:
         error=state.error,
         metrics=state.metrics.snapshot(),
         media_fallbacks=state.media_fallbacks,
+        held_output=state.held_output,
     ).as_dict()
 
 

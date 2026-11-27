@@ -163,3 +163,4 @@ Each task line reads `- [ ] T001 [P] [US1] <ID>-R012.4 description`. The task nu
 - [ ] T156 [US1] MERISTEM-HARNESS-CYCLE-R099 Run every eval case in a clean-room sandbox. Size: S, 1 PR, 2 hours.
 - [ ] T157 [US1] MERISTEM-HARNESS-CYCLE-R100 Apply a received ablation arm with a blind label. Size: S, 1 PR, 2 hours.
 - [ ] T158 [US1] MERISTEM-HARNESS-CYCLE-R015.2 Carry the assistant profile ref in every decide request. Size: S, 1 PR, 2 hours.
+- [ ] T159 [US1] MERISTEM-HARNESS-CYCLE-R101 Emit the held-output block of a completed run. Size: S, 1 PR, 2 hours.
