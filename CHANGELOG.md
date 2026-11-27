@@ -7,9 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.0.0] - 2026-11-26
+
 ### Changed
 - Breaking, hard cutover (`MERISTEM-HARNESS-CYCLE-R088`): units import downward (`host_ports`, `runtime`, `harness`, `graph`, `rlm`) and hold no module-level state. The 19 `register_*` provider registrations are gone; the host builds one `meristem.host_ports.HostPorts` and sets it on `RunRequest.ports` (also `AgentRunExecutor(ports=...)`, `execute_graph(ports=...)`, `run_rlm(ports=...)`). The port functions (`emit_run_event`, `resolve_model`, `build_native_toolset`, `fleet_catalog` and the rest) are methods of `HostPorts`.
 - `PlanItem`, `PlanState`, `ToolStepResult` and `ToolOutcome` now live in `meristem.host_ports`; `read_run_history` and `read_recursive_run_history` move to `meristem.harness.conversation_history`; `harness_cycle` and `hosted_run` move to `meristem.graph`; `meristem.runtime` no longer re-exports the run contracts (import them from `meristem.graph`).
+
+### Removed names and their replacements
+- `meristem.host_ports.register_run_decision_provider` is now `meristem.host_ports.HostPorts.decide` (function).
+- `meristem.host_ports.register_tool_caller` is now `meristem.host_ports.HostPorts.caller` (function).
+- `meristem.host_ports.register_model_provider` is now `meristem.host_ports.HostPorts.models` (function).
+- `meristem.host_ports.register_run_event_sink` is now `meristem.host_ports.HostPorts.events` (function).
+- `meristem.host_ports.register_durable_run_event_factory` is now `meristem.host_ports.HostPorts.durable_run_events` (function).
+- `meristem.host_ports.register_harness_probe_provider` is now `meristem.host_ports.HostPorts.probe` (function).
+- `meristem.host_ports.register_harness_cycle_provider` is now `meristem.host_ports.HostPorts.cycle` (function).
+- `meristem.host_ports.register_active_child_input_factory` is now `meristem.host_ports.HostPorts.active_child_input` (function).
+- `meristem.host_ports.register_native_toolset_provider` is now `meristem.host_ports.HostPorts.native` (function).
+- `meristem.host_ports.register_fleet_catalog_provider` is now `meristem.host_ports.HostPorts.fleet` (function).
+- `meristem.host_ports.register_authority_keepalive` is now `meristem.host_ports.HostPorts.keepalive` (function).
+- `meristem.host_ports.register_remote_toolset_provider` is now `meristem.host_ports.HostPorts.remote` (function).
+- `meristem.host_ports.register_tool_client_factory` is now `meristem.host_ports.HostPorts.tool_client` (function).
+- `meristem.host_ports.register_outbound_credential_provider` is now `meristem.host_ports.HostPorts.credentials` (function).
+- `meristem.host_ports.register_delegated_identity_provider` is now `meristem.host_ports.HostPorts.identity` (function).
+- `meristem.host_ports.register_scaffold_publication_factory` is now `meristem.host_ports.HostPorts.scaffold_publication` (function).
+- `meristem.host_ports.register_optional_scaffold_publication_factory` is now `meristem.host_ports.HostPorts.scaffold_publication` (function).
+- `meristem.host_ports.register_run_history_provider` is now `meristem.host_ports.HostPorts.run_history` (function).
+- `meristem.host_ports.register_run_checkpoint_provider` is now `meristem.host_ports.HostPorts.run_checkpoints` (function).
+- `meristem.host_ports.register_run_checkpoint_factory` is now `meristem.host_ports.HostPorts.checkpoint_store` (function).
+- `meristem.runtime.PlanItem` is now `meristem.host_ports.PlanItem` (type).
+- `meristem.runtime.PlanState` is now `meristem.host_ports.PlanState` (type).
+- `meristem.runtime.ToolStepResult` is now `meristem.host_ports.ToolStepResult` (type).
+- `meristem.runtime.ToolOutcome` is now `meristem.host_ports.ToolOutcome` (type).
+- `meristem.host_ports.read_run_history` is now `meristem.harness.conversation_history.read_run_history` (function).
+- `meristem.host_ports.read_recursive_run_history` is now `meristem.harness.conversation_history.read_recursive_run_history` (function).
+- `meristem.harness.harness_cycle` is now `meristem.graph.harness_cycle` (module).
+- `meristem.harness.hosted_run` is now `meristem.graph.hosted_run` (module).
 
 ## [5.0.0] - 2026-10-30
 

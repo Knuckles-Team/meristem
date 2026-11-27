@@ -75,3 +75,26 @@ jobs:
           else
             gh release create "$TAG" --verify-tag --latest --title "$TAG" --generate-notes --notes-file "$RUNNER_TEMP/notes.md"
           fi
+
+  post-publish-import-check:
+    name: fresh-venv import check (MERISTEM-HARNESS-CYCLE-R089.3)
+    needs: publish-pypi
+    if: github.event_name == 'push' && github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - name: Import every new name from the published wheel
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv venv "$RUNNER_TEMP/fresh"
+          for attempt in 1 2 3 4 5 6; do
+            uv pip install --python "$RUNNER_TEMP/fresh/bin/python" "meristem==${TAG_NAME#v}" && break
+            sleep 20
+          done
+          "$RUNNER_TEMP/fresh/bin/python" -I scripts/check_published_imports.py tests/removed_paths.toml

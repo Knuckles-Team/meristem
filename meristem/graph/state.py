@@ -327,6 +327,25 @@ class ProgramReuseConfig:
 
 
 @dataclass(frozen=True)
+class HeldOutputConfig:
+    """The received refs that make one generated output a held output (R101).
+
+    The harness derives only the content digest of the exact output; every
+    other value is received from the host and the engine and carried as is.
+    ``encode`` turns the output text into the exact bytes the host digests
+    (default: UTF-8 of the text).
+    """
+
+    item_ref: str
+    engine_decision_ref: str
+    checklist: tuple[tuple[str, str], ...]
+    verifier: str | None = None
+    compiler: str | None = None
+    verification_ref: str | None = None
+    encode: Callable[[str], bytes] | None = None
+
+
+@dataclass(frozen=True)
 class HarnessConfig:
     """In-run settings the host passes through to the agent framework."""
 
@@ -343,6 +362,7 @@ class HarnessConfig:
     hard_threshold: float | None = None
     recent_window_fraction: float | None = None
     action_space: Mapping[str, Any] | None = None
+    held_output: HeldOutputConfig | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -537,6 +557,8 @@ class GraphState:
     """The compiled fact prose the next model step receives (R036.2)."""
     media_fallbacks: int = 0
     """Images the received fallback replaced with a placeholder (R017.2)."""
+    held_output: Mapping[str, Any] | None = None
+    """The held-output block of a completed run's exact output (R101)."""
     consumer_results: dict[str, Any] = field(default_factory=dict)
     """What admitted consumer steps received, by consumer name."""
     pending_usage: list[dict[str, Any]] = field(default_factory=list)
@@ -595,6 +617,7 @@ class RunResult:
     execution_mode: Literal["direct", "graph"] = "graph"
     metrics: Mapping[str, Any] = field(default_factory=dict)
     media_fallbacks: int = 0
+    held_output: Mapping[str, Any] | None = None
 
     def as_dict(self) -> dict[str, Any]:
         """The public wire form; the status travels as its enum value."""
@@ -610,6 +633,11 @@ class RunResult:
             **(
                 {"media_fallbacks": self.media_fallbacks}
                 if self.media_fallbacks
+                else {}
+            ),
+            **(
+                {"held_output": dict(self.held_output)}
+                if self.held_output is not None
                 else {}
             ),
         }
@@ -633,6 +661,7 @@ def _result_from_dict(data: Mapping[str, Any]) -> RunResult:
         error=data["error"],
         execution_mode=data["execution_mode"],
         metrics=dict(data["metrics"]),
+        held_output=data.get("held_output"),
     )
 
 

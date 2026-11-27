@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import ast
+import contextlib
 import dataclasses
 import importlib
 import tomllib
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -74,3 +76,59 @@ def test_every_hostports_field_has_one_replaced_register_function():
     added = {entry["field"] for entry in MAP.get("added", ())}
     assert mapped | added == HOSTPORTS_FIELDS
     assert not mapped & added
+
+
+@contextlib.asynccontextmanager
+async def _keepalive(*_args):
+    yield
+
+
+def _stub_ports(sink: list) -> host_ports.HostPorts:
+    """A HostPorts with every field bound to an inert stub; the event sink records."""
+    ports = host_ports.HostPorts(
+        **{
+            name: MagicMock(name=name, return_value=None)
+            for name in sorted(HOSTPORTS_FIELDS)
+        }
+    )
+    ports.events = lambda event: sink.append(dict(event))
+
+    async def no_checkpoint(request):
+        return host_ports.RunCheckpointSelection(
+            run_id=request.run_id, current_run_checkpoint=None, completed_history=None
+        )
+
+    ports.run_checkpoints = no_checkpoint
+    for name in (
+        "keepalive",
+        "tool_client",
+        "durable_run_events",
+        "active_child_input",
+        "scaffold_publication",
+        "checkpoint_store",
+    ):
+        setattr(ports, name, _keepalive)
+    return ports
+
+
+@pytest.mark.spec("MERISTEM-HARNESS-CYCLE-R089.3")
+async def test_stub_hostports_runs_a_one_step_graph_without_module_state():
+    from pydantic_ai.models.test import TestModel
+
+    from meristem.graph import RunPlan, RunRequest, RunStatus, run
+
+    first: list = []
+    second: list = []
+    plan = RunPlan(model=TestModel(custom_output_text="done"), steps=("q",))
+    one = await run(
+        RunRequest(task="t", run_id="r1", ports=_stub_ports(first)), plan=plan
+    )
+    two = await run(
+        RunRequest(task="t", run_id="r2", ports=_stub_ports(second)), plan=plan
+    )
+    assert one.status is RunStatus.COMPLETED
+    assert two.status is RunStatus.COMPLETED
+    assert one.output == two.output == "done"
+    assert first and second
+    assert {e.get("run_id") for e in first if "run_id" in e} <= {"r1"}
+    assert {e.get("run_id") for e in second if "run_id" in e} <= {"r2"}
