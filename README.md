@@ -11,7 +11,7 @@ Meristem is distributed, imported and run as `meristem` (repository `Knuckles-Te
 [![PyPI - Version](https://img.shields.io/pypi/v/meristem)](https://pypi.org/project/meristem/)
 [![Build](https://github.com/Knuckles-Team/meristem/actions/workflows/release.yml/badge.svg)](https://github.com/Knuckles-Team/meristem/actions/workflows/release.yml)
 
-*Version: 5.0.0*
+*Version: 6.0.0*
 
 ## What it contains
 
